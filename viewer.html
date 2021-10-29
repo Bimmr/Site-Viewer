@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Site Viewer</title>
+
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.6.3/css/all.css"
+    integrity="sha384-UHRtZLI+pbxtHCWp1t77Bi1L4ZtiqrqD80Kn4Z8NTSRyMA2Fd33n5dQ8lWUE00s/" crossorigin="anonymous">
+
+  <link rel="stylesheet" href="css/viewer.css">
+
+  <script src="js/utils.js" type="text/javascript"></script>
+  <script src="js/viewer.js" type="text/javascript"></script>
+
+</head>
+
+<body>
+  <div id="body-wrapper">
+    <aside id="sidebar">
+      <ul class="sidebar-menu">
+        <li class="sidebar-item active">
+          <i class="fa fa-eye fa-2x"></i>
+          <p>Overview</p>
+        </li>
+      </ul>
+      <span class="sidebar-split"></span>
+      <ul class="sidebar-menu">
+        <li class="sidebar-item">
+          <i class="fa fa-book fa-2x"></i>
+          <p>Pages</p>
+        </li>
+        <li class="sidebar-item">
+          <i class="fa fa-link fa-2x"></i>
+          <p>Links</p>
+        </li>
+        <li class="sidebar-item">
+          <i class="fa fa-file-alt fa-2x"></i>
+          <p>Files</p>
+        </li>
+        <li class="sidebar-item">
+          <i class="fa fa-image fa-2x"></i>
+          <p>Images</p>
+        </li>
+      </ul>
+      <span class="sidebar-split"></span>
+      <ul class="sidebar-menu">
+        <li class="sidebar-item">
+          <i class="fa fa-cog fa-2x"></i>
+          <p>Settings</p>
+        </li>
+      </ul>
+    </aside>
+    <main id="main">
+      <div id="crawling" class="view active">
+        <div class="view-wrapper">
+        <h1>Crawling:</h1>
+          <h3 id="crawlingSiteText"></h3>
+          <span class="icon-wrapper">
+            <i class="fas fa-spinner fa-pulse fa-10x"></i>
+          </span>
+        </div>
+      </div>
+      <div id="overview" class="view active">
+        <div class="view-wrapper">
+          <div class="card">
+            <div class="title">
+              <h1>Crawled:</h1>
+              <h3><span  id="crawledSiteText"></span><span id="crawledSiteCount"></span></h3>
+            </div>
+          </div>
+          <div class="row center-even">
+            <div class="col col-max40 card">
+              <h2 class="card-title">Pages</h2>
+              <p id="pages-count" class="count">0</p>
+            </div>
+            <div class="col col-max40 card">
+              <h2 class="card-title">Links</h2>
+              <p id="links-count" class="count">0</p>
+            </div>
+          </div>
+          <div class="row center-even">
+            <div class="col col-max40 card ">
+              <h2 class="card-title">Files</h2>
+              <p id="files-count" class="count">0</p>
+            </div>
+            <div class="col col-max40 card ">
+              <h2 class="card-title">Images</h2>
+              <p id="images-count" class="count">0</p>
+            </div>
+          </div>
+        </div>
+        <!-- <div class="card">
+          <h3 class="card-title">Enter a domain to start crawling</h3>
+          <div class="form-item border split">
+            <div>
+              <input type="text" id="url" required title=" ">
+              <label for="url">Domain</label>
+            </div>
+            <button id="crawlURL"><i class="fas fa-sitemap"></i> Crawl</button>
+          </div>
+        </div> -->
+      </div>
+      <div id="pages" class="view view-withTitle">
+        <div class="view-wrapper">
+          <div class="view-title">
+            <div class="select">
+              <input type="checkbox">
+            </div>
+            <div class="link">
+              <p>Page</p>
+            </div>
+            <div class="tools">
+              <p>Page Tools</p>
+            </div>
+          </div>
+          <div class="view-items">
+            <div class="view-row">
+              <div class="select">
+                <input type="checkbox">
+              </div>
+              <div class="type">
+                <i class="fas fa-file-pdf"></i>
+              </div>
+              <div class="link">
+                <p>https://bimmr.com/assets/Resume.pdf</p>
+              </div>
+              <div class="tools">
+                <a href="#download-file" title="Download Image"><i class="fas fa-file-download"></i></a>
+                <div class="hover-popup-icon">
+                  <i class="fas fa-info-circle"></i>
+                  <div class="hover-popup">
+                    <p><strong>Title:</strong> Resume Link
+                    </p>
+                    <p><strong>Text:</strong> Hire Me
+                    </p>
+                    <p><strong>Tags:</strong> Opens in new tab</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="links" class="view view-withTitle">
+        <div class="view-wrapper">
+          <div class="view-title">
+            <div class="select">
+              <input type="checkbox">
+            </div>
+            <div class="type">
+              <p>Link Type</p>
+            </div>
+            <div class="link">
+              <p>Link</p>
+            </div>
+            <div class="tools">
+              <p>Link Tools</p>
+            </div>
+          </div>
+          <div class="view-items">
+            <div class="view-row">
+              <div class="select">
+                <input type="checkbox">
+              </div>
+              <div class="type">
+                <i class="fas fa-file-pdf"></i>
+              </div>
+              <div class="link">
+                <p>https://bimmr.com/assets/Resume.pdf</p>
+              </div>
+              <div class="tools">
+                <a href="#download-file" title="Download Image"><i class="fas fa-file-download"></i></a>
+                <div class="hover-popup-icon">
+                  <i class="fas fa-info-circle"></i>
+                  <div class="hover-popup">
+                    <p><strong>Title:</strong> Resume Link
+                    </p>
+                    <p><strong>Text:</strong> Hire Me
+                    </p>
+                    <p><strong>Tags:</strong> Opens in new tab</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="files" class="view view-withTitle">
+        <div class="view-wrapper">
+          <div class="view-title">
+            <div class="select">
+              <input type="checkbox">
+            </div>
+            <div class="type">
+              <p>File Type</p>
+            </div>
+            <div class="link">
+              <p>Link</p>
+            </div>
+            <div class="tools">
+              <p>File Tools</p>
+            </div>
+          </div>
+          <div class="view-items">
+            <div class="view-row">
+              <div class="select">
+                <input type="checkbox">
+              </div>
+              <div class="type">
+                <i class="fas fa-file-pdf"></i>
+              </div>
+              <div class="link">
+                <p>https://bimmr.com/assets/Resume.pdf</p>
+              </div>
+              <div class="tools">
+                <a href="#download-file" title="Download Image"><i class="fas fa-file-download"></i></a>
+                <div class="hover-popup-icon">
+                  <i class="fas fa-info-circle"></i>
+                  <div class="hover-popup">
+                    <p><strong>Title:</strong> Resume Link
+                    </p>
+                    <p><strong>Text:</strong> Hire Me
+                    </p>
+                    <p><strong>Tags:</strong> Opens in new tab</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="images" class="view view-withTitle">
+        <div class="view-wrapper">
+          <div class="view-title">
+            <div class="select">
+              <input type="checkbox">
+            </div>
+            <div class="image">
+              <p>Image Preview</p>
+            </div>
+            <div class="link">
+              <p>Image Link</p>
+            </div>
+            <div class="tools">
+              <p>Image Tools</p>
+            </div>
+          </div>
+          <div class="view-items">
+            <div class="view-row">
+              <div class="select">
+                <input type="checkbox">
+              </div>
+              <div class="image">
+                <img src="https://bimmr.com/imgs/emile-perron-xrVDYZRGdw4-unsplash.jpg">
+              </div>
+              <div class="link">
+                <p class="extras"><strong>Tags:</strong> Found in style sheet background</p>
+                <p>https://bimmr.com/imgs/emile-perron-xrVDYZRGdw4-unsplash.jpg</p>
+              </div>
+              <div class="tools">
+                <a href="#download-image" title="Download Image"><i class="fas fa-file-download"></i></a>
+                <div class="hover-popup-icon">
+                  <i class="fas fa-info-circle"></i>
+                  <div class="hover-popup">
+                    <p><strong>Alt:</strong>
+                    </p>
+                    <p><strong>Tags:</strong> Background</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</body>
+
+</html>

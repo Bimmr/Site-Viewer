@@ -1,22 +1,29 @@
 //Crawled Pages
 let crawl = { all: { images: [], links: [], stylesheets: [], scripts: [] } }
+let crawlScripts = false
+let crawlStyleSheets = true
 
 //Regex for Chrome Extension
 let chromeExtensionRegex = new RegExp(/(chrome-extension:\/\/)\w*\//g)
 //Regex for background style
-let urlRegex = new RegExp(/(url\()[^\)]*/g)
+
+//Regex for background or background-image style
+let urlRegex = new RegExp(/(background|background-image):\s*url\((.*?)\)/g)
+let backgroundReplaceRegex = new RegExp(/(background|background-image):\s*url\(/g)
 //Regex for a tag link
 let aTagRegex = new RegExp(/(<a)(?:(?!<\/a>).)*/g)
 //Regex for quotes
 let quoteRegex = new RegExp(/["']/g)
+//Regex for external stylesheets
+let externalStylesheetRegex = new RegExp(/(<link)(?:(?!<\/link>).)*/g)
+//Regex for external scripts
+let externalScriptRegex = new RegExp(/(<script)(?:(?!<\/script>).)*/g)
 
 
 document.addEventListener("DOMContentLoaded", function () {
   let baseURL = window.tabURL ?? 'https://Bimmr.com'
   document.querySelector("#crawledSiteText").innerHTML = baseURL
-  //document.querySelector("#url").value = baseURL
   crawlURL(baseURL)
-
 
   //Sidebar controls
   document.querySelectorAll(".sidebar-item").forEach(item => item.addEventListener("click", event => {
@@ -46,6 +53,18 @@ async function crawlURL(url) {
       else throw new Error(res.error)
     })
     .then(data => {
+      
+      let type = "html"
+
+      if(url.indexOf(".css") == url.length - 4){
+        data = "<style>"+data+"</style>"
+        type = "css"
+      }
+        
+      if(url.indexOf(".js") == url.length - 3){
+        data = "<script>"+data+"</script>"
+        type = "js"
+      }
 
       let doc = (new DOMParser()).parseFromString(data, "text/html")
 
@@ -83,9 +102,10 @@ async function crawlURL(url) {
       })
 
       //Background Image styles
-      doc.querySelectorAll('*[style*="url"]').forEach(element => {
+      doc.querySelectorAll('*[style*="background"]').forEach(element => {
         if (element.style.cssText.match(urlRegex)) {
-          let src = element.style.cssText.match(urlRegex)[0].replace(chromeExtensionRegex, '/').replace('viewer.html', '').replace('url(', '').replace(quoteRegex, '')
+          let src = element.style.cssText.match(urlRegex)[0].replace(chromeExtensionRegex, '/').replace('viewer.html', '').replace(backgroundReplaceRegex, '').replace(quoteRegex, '')
+          src = src.substr(0, src.length - 1)
           let image = createImageObject(url, null, src)
           let found
           if (isUrlImage(image.src))
@@ -108,7 +128,9 @@ async function crawlURL(url) {
       doc.querySelectorAll('style').forEach(element => {
         if (element.innerHTML.match(urlRegex))
           element.innerHTML.match(urlRegex).forEach(style => {
-            let src = style.match(urlRegex)[0].replace(chromeExtensionRegex, '/').replace('viewer.html', '').replace('url(', '').replace(quoteRegex, '')
+            console.log(style)
+            let src = style.match(urlRegex)[0].replace(chromeExtensionRegex, '/').replace('viewer.html', '').replace(backgroundReplaceRegex, '').replace(quoteRegex, '')
+            src = src.substr(0, src.length - 1)
             let found
             let image = createImageObject(url, null, src)
             if (isUrlImage(image.src))
@@ -132,7 +154,8 @@ async function crawlURL(url) {
         //Look for BackgroundImages
         if (element.innerHTML.match(urlRegex))
           element.innerHTML.match(urlRegex).forEach(style => {
-            let src = element.innerHTML.match(urlRegex)[0].replace(chromeExtensionRegex, '/').replace('viewer.html', '').replace('url(', '').replace(quoteRegex, '')
+            let src = element.innerHTML.match(urlRegex)[0].replace(chromeExtensionRegex, '/').replace('viewer.html', '').replace(backgroundReplaceRegex, '').replace(quoteRegex, '')
+            src = src.substr(0, src.length - 1)
             let image = createImageObject(url, null, src)
             let found
             if (isUrlImage(image.src))
@@ -167,10 +190,31 @@ async function crawlURL(url) {
                 title: link.instances[0].title,
                 tags: { isNewTab: link.instances[0].tags.isNewTab, isInScriptTag: true }
               })
-          })
-
-        //TODO: Crawl style.css and scripts.js for images and links as well
+          }) 
       })
+
+      if(crawlStyleSheets && type=="html")
+        doc.querySelectorAll('link').forEach(element => {
+          if(element.rel == "stylesheet"){
+            let linkSheet = element.href
+            linkSheet = linkSheet.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
+            if(isUrlLocal(linkSheet))
+              linkSheet = url + linkSheet
+            crawlURL(linkSheet)
+            crawl.all.stylesheets.push(linkSheet)
+          }  
+        })
+      if(crawlScripts && type=="html")
+        doc.querySelectorAll('script').forEach(element => {
+          if(element.src){
+            let linkScript = element.src
+            linkScript = linkScript.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
+            if(isUrlLocal(linkScript))
+              linkScript = url + linkScript
+            crawlURL(linkScript)
+            crawl.all.scripts.push(linkScript)
+          }  
+        })
 
       //Page
       let page = {
@@ -524,7 +568,7 @@ function updateImages() {
 
 function createLinkObject(url, element) {
   let link = { tags: {} }
-  link.href = element.href.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
+  link.href = element.href ? element.href.replace(chromeExtensionRegex, '/').replace('viewer.html', '') : '#'
   link.instances = [{
     title: element.title,
     text: element.text,

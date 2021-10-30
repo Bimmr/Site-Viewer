@@ -1,3 +1,5 @@
+//TODO: Add settings to control crawling stylesheets and scripts
+
 //Crawled Pages
 let crawl = { all: { images: [], links: [], stylesheets: [], scripts: [] } }
 let crawlScripts = false

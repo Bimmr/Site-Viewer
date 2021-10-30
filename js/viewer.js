@@ -53,16 +53,16 @@ async function crawlURL(url) {
       else throw new Error(res.error)
     })
     .then(data => {
-      
+
       let type = "html"
 
-      if(url.indexOf(".css") == url.length - 4){
-        data = "<style>"+data+"</style>"
+      if (url.indexOf(".css") == url.length - 4) {
+        data = "<style>" + data + "</style>"
         type = "css"
       }
-        
-      if(url.indexOf(".js") == url.length - 3){
-        data = "<script>"+data+"</script>"
+
+      if (url.indexOf(".js") == url.length - 3) {
+        data = "<script>" + data + "</script>"
         type = "js"
       }
 
@@ -190,30 +190,32 @@ async function crawlURL(url) {
                 title: link.instances[0].title,
                 tags: { isNewTab: link.instances[0].tags.isNewTab, isInScriptTag: true }
               })
-          }) 
+          })
       })
 
-      if(crawlStyleSheets && type=="html")
+      if (crawlStyleSheets && type == "html")
         doc.querySelectorAll('link').forEach(element => {
-          if(element.rel == "stylesheet"){
+          if (element.rel == "stylesheet") {
             let linkSheet = element.href
             linkSheet = linkSheet.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
-            if(isUrlLocal(linkSheet))
+            if (isUrlLocal(linkSheet))
               linkSheet = url + linkSheet
-            crawlURL(linkSheet)
+            if (!crawl.all.stylesheets.find(i => i == linkSheet))
+              crawlURL(linkSheet)
             crawl.all.stylesheets.push(linkSheet)
-          }  
+          }
         })
-      if(crawlScripts && type=="html")
+      if (crawlScripts && type == "html")
         doc.querySelectorAll('script').forEach(element => {
-          if(element.src){
+          if (element.src) {
             let linkScript = element.src
             linkScript = linkScript.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
-            if(isUrlLocal(linkScript))
+            if (isUrlLocal(linkScript))
               linkScript = url + linkScript
-            crawlURL(linkScript)
+            if (!crawl.all.scripts.find(i => i == linkScript))
+              crawlURL(linkScript)
             crawl.all.scripts.push(linkScript)
-          }  
+          }
         })
 
       //Page
@@ -404,9 +406,9 @@ function updateLinks() {
           <i class="fas fa-info fa-stack-1x fa-inverse"></i>
         </span>
               <div class="hover-popup">`+
-              '<p>' + linkTagsText + '</p>' +
-              '<p>' + instancesText + '</p>' +
-              `</div>
+        '<p>' + linkTagsText + '</p>' +
+        '<p>' + instancesText + '</p>' +
+        `</div>
               </div>
           </div>
         </div>

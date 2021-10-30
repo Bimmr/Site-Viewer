@@ -9,9 +9,9 @@ const isUrlImage = url => url.indexOf(".png") >= 0 || url.indexOf(".gif") >= 0 |
 
 /* Create an HTML Element from a string */
 function createElementFromHTML(htmlString) {
-    var div = document.createElement('div');
-    div.innerHTML = htmlString.trim();
-    return div.firstChild;
+    var template = document.createElement('template');
+    template.innerHTML = htmlString.trim();
+    return template.content.firstChild;
 }
 
 function getURLIcon(url) {

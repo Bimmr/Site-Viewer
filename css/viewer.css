@@ -21,12 +21,6 @@ hr{
   margin: 5px 0;
 }
 
-.show{
-  display: block !important;
-}
-.hidden{
-  display: none !important;
-}
 
 #body-wrapper {
   display: flex;
@@ -229,7 +223,8 @@ hr{
   padding: 5px 10px;
   color: #4a4a4a;
   transition: color .3s;
-}.view-row .info .hover-popup-icon span{
+}
+.view-row .info .hover-popup-icon span{
   font-size: .8em;
 }
 .view-row .info .hover-popup-icon i:first-of-type{
@@ -245,6 +240,20 @@ hr{
   width: 100%;
   text-align: center;
 } 
+
+.view .multi-wrapper{
+  transition: bottom .3s;
+  display: flex;
+  position: fixed;
+  bottom: -100%;
+  left: calc(50% + calc(var(--sidebarWidth) / 2));
+  transform: translateX(-50%);
+  height: 50px
+}
+.view .multi-wrapper.active{
+  bottom: 0;
+}
+
 /* Crawling View */
 #crawling.view{
   background: #fff;
@@ -323,7 +332,6 @@ hr{
   flex-basis: 15%;
 }
 /* Links & Files View */
-
 #links .type,
 #files .type {
   width: 10%;
@@ -349,8 +357,12 @@ hr{
   justify-content: center;
 }
 /* Links View */
+
+#links .select{
+  flex-basis: 0;
+}
 #links .link {
-  flex-basis: 75%
+  flex-basis: 80%
 }
 
 #links .view-items .tools{
@@ -509,7 +521,7 @@ hr{
   padding: 10px 20px;
   text-transform: uppercase;
   margin: 0 10px;
-  border-radius: 2px;
+  border-radius: 5px;
   cursor: pointer;
   position: relative;
   transition: background-color .35s;

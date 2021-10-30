@@ -20,6 +20,8 @@ let quoteRegex = new RegExp(/["']/g)
 let externalStylesheetRegex = new RegExp(/(<link)(?:(?!<\/link>).)*/g)
 //Regex for external scripts
 let externalScriptRegex = new RegExp(/(<script)(?:(?!<\/script>).)*/g)
+//Regex for non word file name
+let nonWordRegex = new RegExp(/[^a-z0-9A-Z.]/gi)
 
 
 document.addEventListener("DOMContentLoaded", function () {
@@ -35,9 +37,19 @@ document.addEventListener("DOMContentLoaded", function () {
     document.querySelector(".view#" + view)?.classList.add("active")
   }))
 
-  //Crawl button
-  //document.querySelector("#overview #crawlURL").addEventListener("click", event => crawlURL(document.querySelector("#url").value))
-
+  document.querySelectorAll(".view-title .select").forEach(item => item.addEventListener("click", event => {
+    let view = item.parentNode.parentNode
+    view.querySelectorAll(".view-items .select input").forEach(item => item.click())
+  }))
+  document.querySelectorAll(".downloadSelected").forEach(item => item.addEventListener("click", event => {
+    let items = document.querySelectorAll(".view.active .view-items .select input:checked")
+    items.forEach(item => item.parentNode.parentNode.querySelector("a.download i").click())
+  }))
+  document.querySelectorAll(".crawlSelected").forEach(item => item.addEventListener("click", event => {
+    let items = document.querySelectorAll(".view.active .view-items .select input:checked")
+    items.forEach(item => item.parentNode.parentNode.querySelector("a.crawl i")?.click())
+    document.querySelector(".view.active .view-title .select input:checked").checked = false
+  }))
 })
 
 async function crawlURL(url) {
@@ -130,7 +142,6 @@ async function crawlURL(url) {
       doc.querySelectorAll('style').forEach(element => {
         if (element.innerHTML.match(urlRegex))
           element.innerHTML.match(urlRegex).forEach(style => {
-            console.log(style)
             let src = style.match(urlRegex)[0].replace(chromeExtensionRegex, '/').replace('viewer.html', '').replace(backgroundReplaceRegex, '').replace(quoteRegex, '')
             src = src.substr(0, src.length - 1)
             let found
@@ -237,6 +248,9 @@ async function crawlURL(url) {
       updateImages()
       updateFiles()
       updateOverview()
+
+      updateAll()
+
       console.log(crawl)
 
     }).catch(error => {
@@ -247,6 +261,15 @@ async function crawlURL(url) {
   setTimeout(function () {
     document.querySelector("#crawling").classList.remove("active")
   }, 500)
+}
+function updateAll() {
+
+  document.querySelectorAll(".view .view-items .select input").forEach(i => i.addEventListener("click", function () {
+    if (Array.from(document.querySelectorAll(".view.active .view-items .select input")).filter(i => i.checked).length >= 2)
+      document.querySelector(".view.active .multi-wrapper").classList.add("active")
+    else
+      document.querySelector(".view.active .multi-wrapper").classList.remove("active")
+  }))
 }
 
 function updateOverview() {
@@ -280,6 +303,7 @@ function updateOverview() {
 }
 function updatePages() {
   let wrapper = document.querySelector("#pages .view-items")
+
   let html = ''
   crawl.all.links.forEach(link => {
     if (link.tags.isLocal && isUrlHTML(link.href) && !isUrlAnchor(link.href) && link.href != "/") {
@@ -344,8 +368,12 @@ function updatePages() {
   document.querySelectorAll("#pages .download").forEach(element => element.addEventListener("click", event => {
     event.preventDefault()
     let url = event.target.parentNode.href
-    let nonWordRegex = new RegExp(/[^a-z0-9A-Z.]/gi)
-    var name = url.replace(nonWordRegex, '_')
+    let name = url.substr(url.indexOf("://")+3)
+    if(name.indexOf("/") >= 0)
+      name = name.substr(name.indexOf("/")+1)
+    name = name.replace(nonWordRegex, '_')
+    if(!name || name.length == 0)
+      name ="index.html"
     chrome.downloads.download({ url: url, filename: name })
   }))
   document.querySelectorAll("#pages .crawl").forEach(element => element.addEventListener("click", event => {
@@ -357,6 +385,7 @@ function updatePages() {
     event.target.parentNode.remove()
     crawlURL(url)
   }))
+
 }
 function updateLinks() {
 
@@ -389,9 +418,9 @@ function updateLinks() {
 
       html += `
         <div class="view-row">
-          <div class="select">
+          <!--<div class="select">
             <input type="checkbox">
-          </div>
+          </div>-->
           <div class="type">`+
         getURLIcon(link.href) +
         `</div>
@@ -422,15 +451,6 @@ function updateLinks() {
     wrapper.innerHTML = html
   else
     wrapper.innerHTML = `<div class="empty-row">There are no items here.</div>`
-
-  document.querySelectorAll("#links .download").forEach(element => element.addEventListener("click", event => {
-    event.preventDefault()
-
-    let url = event.target.parentNode.href
-    let nonWordRegex = new RegExp(/[^a-z0-9A-Z.]/gi)
-    var name = url.replace(nonWordRegex, '_')
-    chrome.downloads.download({ url: url, filename: name })
-  }))
 }
 function updateFiles() {
 
@@ -502,8 +522,10 @@ function updateFiles() {
     event.preventDefault()
 
     let url = event.target.parentNode.href
-    let nonWordRegex = new RegExp(/[^a-z0-9A-Z.]/gi)
-    var name = url.replace(nonWordRegex, '_')
+    let name = url.substr(url.indexOf("://")+3)
+    if(name.indexOf("/") >= 0)
+      name = name.substr(name.indexOf("/")+1)
+    name = name.replace(nonWordRegex, '_')
     chrome.downloads.download({ url: url, filename: name })
   }))
 }
@@ -563,8 +585,10 @@ function updateImages() {
     event.preventDefault()
 
     let url = event.target.parentNode.href
-    let nonWordRegex = new RegExp(/[^a-z0-9A-Z.]/gi)
-    var name = url.replace(nonWordRegex, '_')
+    let name = url.substr(url.indexOf("://")+3)
+    if(name.indexOf("/") >= 0)
+      name = name.substr(name.indexOf("/")+1)
+    name = name.replace(nonWordRegex, '_')
     chrome.downloads.download({ url: url, filename: name })
   }))
 

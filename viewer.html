@@ -53,7 +53,7 @@
     <main id="main">
       <div id="crawling" class="view active">
         <div class="view-wrapper">
-        <h1>Crawling:</h1>
+          <h1>Crawling:</h1>
           <h3 id="crawlingSiteText"></h3>
           <span class="icon-wrapper">
             <i class="fas fa-spinner fa-pulse fa-10x"></i>
@@ -65,7 +65,7 @@
           <div class="card">
             <div class="title">
               <h1>Crawled:</h1>
-              <h3><span  id="crawledSiteText"></span><span id="crawledSiteCount"></span></h3>
+              <h3><span id="crawledSiteText"></span><span id="crawledSiteCount"></span></h3>
             </div>
           </div>
           <div class="row center-even">
@@ -89,16 +89,6 @@
             </div>
           </div>
         </div>
-        <!-- <div class="card">
-          <h3 class="card-title">Enter a domain to start crawling</h3>
-          <div class="form-item border split">
-            <div>
-              <input type="text" id="url" required title=" ">
-              <label for="url">Domain</label>
-            </div>
-            <button id="crawlURL"><i class="fas fa-sitemap"></i> Crawl</button>
-          </div>
-        </div> -->
       </div>
       <div id="pages" class="view view-withTitle">
         <div class="view-wrapper">
@@ -117,13 +107,19 @@
             <div class="empty-row">There are no items here.</div>
           </div>
         </div>
+        <div class="multi-wrapper">
+          <div class="form-item">
+            <button class="downloadSelected">Download Selected</button>
+            <button class="crawlSelected">Crawl Selected</button>
+          </div>
+        </div>
       </div>
       <div id="links" class="view view-withTitle">
         <div class="view-wrapper">
           <div class="view-title">
-            <div class="select">
+            <!-- <div class="select">
               <input type="checkbox">
-            </div>
+            </div> -->
             <div class="type">
               <p>Link Type</p>
             </div>
@@ -161,6 +157,11 @@
             <div class="empty-row">There are no items here.</div>
           </div>
         </div>
+        <div class="multi-wrapper">
+          <div class="form-item">
+            <button class="downloadSelected">Download Selected</button>
+          </div>
+        </div>
       </div>
 
       <div id="images" class="view view-withTitle">
@@ -183,6 +184,11 @@
             <div class="view-row">
               <div class="empty-row">There are no items here.</div>
             </div>
+          </div>
+        </div>
+        <div class="multi-wrapper">
+          <div class="form-item">
+            <button class="downloadSelected">Download Selected</button>
           </div>
         </div>
       </div>

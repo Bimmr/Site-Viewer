@@ -51,13 +51,13 @@
           <span class="newContent"><i class="fas fa-star-of-life"></i></span>
         </li>
       </ul>
-      <span class="sidebar-split"></span>
+      <!-- <span class="sidebar-split"></span>
       <ul class="sidebar-menu">
         <li class="sidebar-item">
           <i class="fa fa-cog fa-2x"></i>
           <p>Settings</p>
         </li>
-      </ul>
+      </ul> -->
     </aside>
     <main id="main">
       <div id="crawling" class="view active">
@@ -90,10 +90,10 @@
               <h2 class="card-title">Links</h2>
               <p id="links-count" class="count">0</p>
             </div>
-            
+
           </div>
           <div class="row center-even">
-           
+
             <div class="col card ">
               <h2 class="card-title">Files</h2>
               <p id="files-count" class="count">0</p>
@@ -113,7 +113,8 @@
               <input type="checkbox">
             </div>
             <div class="link">
-              <p>Page</p>
+              <p>Page</p> 
+              <a title="Toggle Filter" href="#" class="filter-icon"><i class="fa fa-search"></i></a>
             </div>
             <div class="tools">
               <p>Page Tools</p>
@@ -121,6 +122,12 @@
           </div>
           <div class="view-items">
             <div class="empty-row">There are no items here.</div>
+          </div>
+        </div>
+        <div class="searchbar">
+          <div class="form-item" style="margin: 0;width: 100%">
+            <input type="text" required="required" title=" ">
+            <span class="icon"><i class="fas fa-search"></i></span>
           </div>
         </div>
         <div class="multi-wrapper">
@@ -134,14 +141,12 @@
       <div id="links" class="view view-withTitle">
         <div class="view-wrapper">
           <div class="view-title">
-            <!-- <div class="select">
-              <input type="checkbox">
-            </div> -->
             <div class="type">
               <p>Link Type</p>
             </div>
             <div class="link">
               <p>Link</p>
+              <a title="Toggle Filter" href="#" class="filter-icon"><i class="fa fa-search"></i></a>
             </div>
             <div class="tools">
               <p>Link Tools</p>
@@ -151,6 +156,12 @@
             <div class="view-row">
               <div class="empty-row">There are no items here.</div>
             </div>
+          </div>
+        </div>
+        <div class="searchbar">
+          <div class="form-item" style="margin: 0;width: 100%">
+            <input type="text" required="required" title=" ">
+            <span class="icon"><i class="fas fa-search"></i></span>
           </div>
         </div>
       </div>
@@ -165,13 +176,21 @@
             </div>
             <div class="link">
               <p>Link</p>
+              <a title="Toggle Filter" href="#" class="filter-icon"><i class="fa fa-search"></i></a>
             </div>
             <div class="tools">
               <p>File Tools</p>
             </div>
           </div>
+
           <div class="view-items">
             <div class="empty-row">There are no items here.</div>
+          </div>
+        </div>
+        <div class="searchbar">
+          <div class="form-item" style="margin: 0;width: 100%">
+            <input type="text" required="required" title=" ">
+            <span class="icon"><i class="fas fa-search"></i></span>
           </div>
         </div>
         <div class="multi-wrapper">
@@ -192,6 +211,7 @@
             </div>
             <div class="link">
               <p>Link</p>
+              <a title="Toggle Filter" href="#" class="filter-icon"><i class="fa fa-search"></i></a>
             </div>
             <div class="tools">
               <p>File Tools</p>
@@ -199,6 +219,12 @@
           </div>
           <div class="view-items">
             <div class="empty-row">There are no items here.</div>
+          </div>
+        </div>
+        <div class="searchbar">
+          <div class="form-item" style="margin: 0;width: 100%">
+            <input type="text" required="required" title=" ">
+            <span class="icon"><i class="fas fa-search"></i></span>
           </div>
         </div>
         <div class="multi-wrapper">
@@ -219,6 +245,7 @@
             </div>
             <div class="link">
               <p>Image Link</p>
+              <a title="Toggle Filter" href="#" class="filter-icon"><i class="fa fa-search"></i></a>
             </div>
             <div class="tools">
               <p>Image Tools</p>
@@ -229,6 +256,12 @@
               <div class="empty-row">There are no items here.</div>
             </div>
           </div>
+        </div> 
+        <div class="searchbar">
+          <div class="form-item" style="margin: 0;width: 100%">
+            <input type="text" required="required" title=" ">
+            <span class="icon"><i class="fas fa-search"></i></span>
+          </div>
         </div>
         <div class="multi-wrapper">
           <div class="form-item">
@@ -236,7 +269,7 @@
           </div>
         </div>
       </div>
-
+      
     </main>
   </div>
 </body>

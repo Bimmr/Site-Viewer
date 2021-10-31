@@ -20,7 +20,9 @@ body {
 hr{
   margin: 5px 0;
 }
-
+.hidden{
+  display: none !important;
+}
 
 #body-wrapper {
   display: flex;
@@ -162,7 +164,8 @@ hr{
   right: -100%;
 }
 
-.view-title, .view-row {
+.view-title, 
+.view-row {
   display: flex;
   flex-flow: row nowrap;
   border-bottom: 1px solid #ddd;
@@ -217,7 +220,8 @@ hr{
   justify-content: center;
 }
 
-.view-title .tools, .view-row .tools {
+.view-title .tools, 
+.view-row .tools {
   flex-basis: 10%;
   display: flex;
   align-items: center;
@@ -253,6 +257,19 @@ hr{
   text-align: center;
 } 
 
+.view-title .filter-icon{
+  margin-left: 15px;
+  opacity: .25;
+  transition: opacity 0.2s, color 0.3s;
+  color: #fff;
+}
+.view-title .filter-icon.active{
+  color: #00a72a;
+  opacity: 0.75;
+}
+.view-title .filter-icon:hover{
+  opacity: 1;
+}
 .view .multi-wrapper{
   transition: bottom .3s;
   display: flex;
@@ -329,13 +346,11 @@ hr{
 /* Pages View */
 
 #pages .link {
-  flex-basis: 75%;
   display: flex;
-  flex-flow: column;
+  flex-basis: 75%;
   padding-left: 15px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  justify-content: center;
+  align-items: center;
+  justify-content: start;
 }
 #pages .view-title .tools{
   flex-basis: 20%;
@@ -365,11 +380,9 @@ hr{
 #assets .link ,
 #files .link {
   display: flex;
-  flex-flow: column;
+  justify-content: start;
   padding-left: 15px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  justify-content: center;
+  align-items: center;
 }
 /* Links View */
 
@@ -377,7 +390,7 @@ hr{
   flex-basis: 0;
 }
 #links .link {
-  flex-basis: 80%
+  flex-basis: 80%;
 }
 
 #links .view-items .tools{
@@ -419,13 +432,11 @@ hr{
 }
 
 #images .link {
-  flex-basis: 65%;
   display: flex;
-  flex-flow: column;
+  flex-basis: 65%;
   padding-left: 15px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  justify-content: center;
+  justify-content: start;
+  align-items: center;
 }
 #images .view-title .tools{
   flex-basis: 10%;
@@ -433,7 +444,39 @@ hr{
 #images .tools{
   flex-basis: 5%;
 }
-
+/* Searchbar style */
+.searchbar{
+  position: fixed;
+  top: -100%;
+  transition: top 0.3s, right 0.5s;
+  right: 5px;
+  width: 300px;
+  background: #4c4c4c;
+  border-radius: 5px;
+  display: flex;
+  flex-flow: row nowrap;
+  padding: 10px;
+  color: #fff;
+  box-shadow: 0 1px 4px 1px rgba(0,0,0,.14);
+}
+.view:not(.active) .searchbar.active{
+  right: -100%;
+}
+.searchbar.active{
+  top: 10px;
+}
+.searchbar .form-item input[type="text"]{
+  flex-basis: 90%;
+  max-width: 90%;
+  margin: 0;
+  padding: 0;
+  color: #fff;
+}
+.searchbar .form-item .icon{
+  flex-basis: 10%;
+  border-left: 1px solid #888;
+  padding-left: 10px;
+}
 /* Form Styles */
 
 .form-item {

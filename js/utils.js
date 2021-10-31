@@ -68,16 +68,11 @@ function sortLinks(a, b) {
         return 0
     }
 }
-/* @arr array you want to listen to
-   @callback function that will be called on any change inside array
- */
-   function listenChangesinArray(arr,callback){
-    // Add more methods here if you want to listen to them
-   ['pop','push','reverse','shift','unshift','splice','sort'].forEach((m)=>{
-       arr[m] = function(){
-                    var res = Array.prototype[m].apply(arr, arguments);  // call normal behaviour
-                    callback.apply(arr, arguments);  // finally call the callback supplied
-                    return res;
-                }
-   });
-}
+//Delay function
+function delay(fn, ms) {
+    let timer = 0;
+    return function (...args) {
+      clearTimeout(timer);
+      timer = setTimeout(fn.bind(this, ...args), ms || 0);
+    };
+  }

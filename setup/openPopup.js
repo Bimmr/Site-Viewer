@@ -15,6 +15,6 @@ function openPopup(){
   popupWindow = window.open(
     chrome.extension.getURL("viewer.html"),
     "SiteViewer",
-    "width=1280,height=550"
+    "width=1200,height=500"
   )
 }

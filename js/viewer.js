@@ -41,43 +41,58 @@ document.addEventListener("DOMContentLoaded", function () {
     let view = item.parentNode.parentNode
     view.querySelectorAll(".view-items .select input").forEach(item => item.click())
   }))
+
   document.querySelectorAll(".downloadSelected").forEach(item => item.addEventListener("click", event => {
     let items = document.querySelectorAll(".view.active .view-items .select input:checked")
     items.forEach(item => item.parentNode.parentNode.querySelector("a.download i").click())
   }))
+
   document.querySelectorAll(".crawlSelected").forEach(item => item.addEventListener("click", event => {
     let items = document.querySelectorAll(".view.active .view-items .select input:checked")
     items.forEach(item => item.parentNode.parentNode.querySelector("a.crawl i")?.click())
     document.querySelector(".view.active .view-title .select input:checked").checked = false
   }))
 
+  document.querySelectorAll(".filter-icon").forEach(item => item.addEventListener("click", event => {
+    item.classList.toggle("active")
+    let view = item.parentNode.parentNode.parentNode.parentNode
+    view.querySelector(".searchbar").classList.toggle("active")
+    let state = view.querySelector(".searchbar").classList.contains("active")
+    console.log(state)
+    if(!state){
+      view.querySelector(".searchbar .form-item input").value = ""
+      view.querySelectorAll(".view-items .view-row").forEach(item => item.classList.remove("hidden"))
+    }
+  }))
+  
+  document.querySelectorAll(".searchbar .form-item input").forEach(item => item.addEventListener("keyup", delay(function () {
+    let view = item.parentNode.parentNode.parentNode
+    let search = item.value.toLowerCase()
+    view.querySelectorAll(".view-items .view-row").forEach(item => {
+      if (item.querySelector("p").innerHTML.toLowerCase().indexOf(search) >= 0)
+        item.classList.remove("hidden")
+      else
+        item.classList.add("hidden")
+    })
+    
+  }, 500)))
+  
 
   let observer = new MutationObserver(function (mutations) {
     mutations.forEach(function (mutation) {
-        let view = mutation.target.parentNode.parentNode.id
-    console.log("Old: " + lastCounts[view] + " New: " + mutation.target.children.length)
-    if (mutation.target.children.length != lastCounts[view]) {
-      lastCounts[view] = mutation.target.children.length
-      let sidebarItem = Array.from(document.querySelectorAll(".sidebar-item p")).find(i => i.innerHTML.toLocaleLowerCase() == view)
-      if (!document.querySelector(".view#" + view).classList.contains("active"))
-        sidebarItem.parentNode.querySelector(".newContent").classList.add("active")
-    }
+      let view = mutation.target.parentNode.parentNode.id
+      if (mutation.target.children.length != lastCounts[view]) {
+        lastCounts[view] = mutation.target.children.length
+        let sidebarItem = Array.from(document.querySelectorAll(".sidebar-item p")).find(i => i.innerHTML.toLocaleLowerCase() == view)
+        if (!document.querySelector(".view#" + view).classList.contains("active"))
+          sidebarItem.parentNode.querySelector(".newContent").classList.add("active")
+      }
     })
   })
     document.querySelectorAll(".view-items").forEach(item => {
       observer.observe(item, { childList: true})
     })
-    
-  // document.querySelectorAll(".view-items").forEach(item => item.addEventListener("DOMSubtreeModified", event => {
-  //   let view = event.target.parentNode.parentNode.id
-  //   console.log("Old: " + lastCounts[view] + " New: " + event.target.children.length)
-  //   if (event.target.children.length != lastCounts[view]) {
-  //     lastCounts[view] = event.target.children.length
-  //     let sidebarItem = Array.from(document.querySelectorAll(".sidebar-item p")).find(i => i.innerHTML.toLocaleLowerCase() == view)
-  //     if (!document.querySelector(".view#" + view).classList.contains("active"))
-  //       sidebarItem.parentNode.querySelector(".newContent").classList.add("active")
-  //   }
-  // }))
+   
 })
 
 async function crawlURL(url) {

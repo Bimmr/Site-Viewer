@@ -26,20 +26,29 @@
       <span class="sidebar-split"></span>
       <ul class="sidebar-menu">
         <li class="sidebar-item">
-          <i class="fa fa-book fa-2x"></i>
+          <i class="fa fa-file fa-2x"></i>
           <p>Pages</p>
+          <span class="newContent"><i class="fas fa-star-of-life"></i></span>
+        </li>
+        <li class="sidebar-item">
+          <i class="fa fa-file-code fa-2x"></i>
+          <p>Assets</p>
+          <span class="newContent"><i class="fas fa-star-of-life"></i></span>
         </li>
         <li class="sidebar-item">
           <i class="fa fa-link fa-2x"></i>
           <p>Links</p>
+          <span class="newContent"><i class="fas fa-star-of-life"></i></span>
         </li>
         <li class="sidebar-item">
           <i class="fa fa-file-alt fa-2x"></i>
           <p>Files</p>
+          <span class="newContent"><i class="fas fa-star-of-life"></i></span>
         </li>
         <li class="sidebar-item">
           <i class="fa fa-image fa-2x"></i>
           <p>Images</p>
+          <span class="newContent"><i class="fas fa-star-of-life"></i></span>
         </li>
       </ul>
       <span class="sidebar-split"></span>
@@ -69,27 +78,34 @@
             </div>
           </div>
           <div class="row center-even">
-            <div class="col col-max40 card">
+            <div class="col  card">
               <h2 class="card-title">Pages</h2>
               <p id="pages-count" class="count">0</p>
             </div>
-            <div class="col col-max40 card">
+            <div class="col  card">
+              <h2 class="card-title">Assets</h2>
+              <p id="assets-count" class="count">0</p>
+            </div>
+            <div class="col card">
               <h2 class="card-title">Links</h2>
               <p id="links-count" class="count">0</p>
             </div>
+            
           </div>
           <div class="row center-even">
-            <div class="col col-max40 card ">
+           
+            <div class="col card ">
               <h2 class="card-title">Files</h2>
               <p id="files-count" class="count">0</p>
             </div>
-            <div class="col col-max40 card ">
+            <div class="col card ">
               <h2 class="card-title">Images</h2>
               <p id="images-count" class="count">0</p>
             </div>
           </div>
         </div>
       </div>
+
       <div id="pages" class="view view-withTitle">
         <div class="view-wrapper">
           <div class="view-title">
@@ -114,6 +130,7 @@
           </div>
         </div>
       </div>
+
       <div id="links" class="view view-withTitle">
         <div class="view-wrapper">
           <div class="view-title">
@@ -134,6 +151,33 @@
             <div class="view-row">
               <div class="empty-row">There are no items here.</div>
             </div>
+          </div>
+        </div>
+      </div>
+      <div id="assets" class="view view-withTitle">
+        <div class="view-wrapper">
+          <div class="view-title">
+            <div class="select">
+              <input type="checkbox">
+            </div>
+            <div class="type">
+              <p>File Type</p>
+            </div>
+            <div class="link">
+              <p>Link</p>
+            </div>
+            <div class="tools">
+              <p>File Tools</p>
+            </div>
+          </div>
+          <div class="view-items">
+            <div class="empty-row">There are no items here.</div>
+          </div>
+        </div>
+        <div class="multi-wrapper">
+          <div class="form-item">
+            <button class="downloadSelected">Download Selected</button>
+            <button class="crawlSelected">Crawl Selected</button>
           </div>
         </div>
       </div>

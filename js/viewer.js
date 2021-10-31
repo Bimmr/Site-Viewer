@@ -1,9 +1,8 @@
-//TODO: Add settings to control crawling stylesheets and scripts
-
 //Crawled Pages
-let crawl = { all: { images: [], links: [], stylesheets: [], scripts: [] } }
-let crawlScripts = false
-let crawlStyleSheets = true
+let crawl = { all: { images: [], links: [], assets: [] } }
+//Track lastHTML to show what has changed
+let lastCounts = { pages: 0, assets: 0, links: 0, files: 0, images: 0 }
+
 
 //Regex for Chrome Extension
 let chromeExtensionRegex = new RegExp(/(chrome-extension:\/\/)\w*\//g)
@@ -33,6 +32,7 @@ document.addEventListener("DOMContentLoaded", function () {
   document.querySelectorAll(".sidebar-item").forEach(item => item.addEventListener("click", event => {
     document.querySelectorAll(".sidebar-item.active, .view.active").forEach(activeItem => activeItem.classList.remove("active"))
     item.classList.add("active")
+    item.querySelector(".newContent")?.classList.remove("active")
     let view = item.querySelector("p").innerHTML.toLowerCase()
     document.querySelector(".view#" + view)?.classList.add("active")
   }))
@@ -50,6 +50,34 @@ document.addEventListener("DOMContentLoaded", function () {
     items.forEach(item => item.parentNode.parentNode.querySelector("a.crawl i")?.click())
     document.querySelector(".view.active .view-title .select input:checked").checked = false
   }))
+
+
+  let observer = new MutationObserver(function (mutations) {
+    mutations.forEach(function (mutation) {
+        let view = mutation.target.parentNode.parentNode.id
+    console.log("Old: " + lastCounts[view] + " New: " + mutation.target.children.length)
+    if (mutation.target.children.length != lastCounts[view]) {
+      lastCounts[view] = mutation.target.children.length
+      let sidebarItem = Array.from(document.querySelectorAll(".sidebar-item p")).find(i => i.innerHTML.toLocaleLowerCase() == view)
+      if (!document.querySelector(".view#" + view).classList.contains("active"))
+        sidebarItem.parentNode.querySelector(".newContent").classList.add("active")
+    }
+    })
+  })
+    document.querySelectorAll(".view-items").forEach(item => {
+      observer.observe(item, { childList: true})
+    })
+    
+  // document.querySelectorAll(".view-items").forEach(item => item.addEventListener("DOMSubtreeModified", event => {
+  //   let view = event.target.parentNode.parentNode.id
+  //   console.log("Old: " + lastCounts[view] + " New: " + event.target.children.length)
+  //   if (event.target.children.length != lastCounts[view]) {
+  //     lastCounts[view] = event.target.children.length
+  //     let sidebarItem = Array.from(document.querySelectorAll(".sidebar-item p")).find(i => i.innerHTML.toLocaleLowerCase() == view)
+  //     if (!document.querySelector(".view#" + view).classList.contains("active"))
+  //       sidebarItem.parentNode.querySelector(".newContent").classList.add("active")
+  //   }
+  // }))
 })
 
 async function crawlURL(url) {
@@ -84,6 +112,7 @@ async function crawlURL(url) {
 
       let links = []
       let images = []
+      let assets = []
 
       //Basic a tag
       doc.querySelectorAll("a").forEach(element => {
@@ -206,28 +235,18 @@ async function crawlURL(url) {
           })
       })
 
-      if (crawlStyleSheets && type == "html")
+      if (type == "html")
         doc.querySelectorAll('link').forEach(element => {
           if (element.rel == "stylesheet") {
-            let linkSheet = element.href
-            linkSheet = linkSheet.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
-            if (isUrlLocal(linkSheet))
-              linkSheet = url + linkSheet
-            if (!crawl.all.stylesheets.find(i => i == linkSheet))
-              crawlURL(linkSheet)
-            crawl.all.stylesheets.push(linkSheet)
+            let linkSheet = createAssetObject(url, element.href)
+            assets.push(linkSheet)
           }
         })
-      if (crawlScripts && type == "html")
+      if (type == "html")
         doc.querySelectorAll('script').forEach(element => {
           if (element.src) {
-            let linkScript = element.src
-            linkScript = linkScript.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
-            if (isUrlLocal(linkScript))
-              linkScript = url + linkScript
-            if (!crawl.all.scripts.find(i => i == linkScript))
-              crawlURL(linkScript)
-            crawl.all.scripts.push(linkScript)
+            let linkScript = createAssetObject(url, element.src)
+            assets.push(linkScript)
           }
         })
 
@@ -235,18 +254,24 @@ async function crawlURL(url) {
       let page = {
         title: doc.querySelector("title")?.innerHTML,
         links,
-        images
+        images,
+        assets
       }
+
       page.links.forEach(link => { if (!crawl.all.links.find(i => i.href == link.href)) crawl.all.links.push(link) })
       page.images.forEach(image => { if (!crawl.all.images.find(i => i.src == image.src)) crawl.all.images.push(image) })
+      page.assets.forEach(asset => { if (!crawl.all.assets.find(i => i.link == asset.link)) crawl.all.assets.push(asset) })
+
       crawl[url] = page
       crawl.all.links.sort(sortLinks)
+      //crawl.all.assets.sort(sortLinks)
 
 
       updatePages()
+      updateAssets()
       updateLinks()
-      updateImages()
       updateFiles()
+      updateImages()
       updateOverview()
 
       updateAll()
@@ -270,11 +295,37 @@ function updateAll() {
     else
       document.querySelector(".view.active .multi-wrapper").classList.remove("active")
   }))
+
+  document.querySelectorAll(".view .view-items .download").forEach(element => element.addEventListener("click", event => {
+    event.preventDefault()
+    let url = event.target.parentNode.href
+    let name = url.substr(url.indexOf("://") + 3)
+    if (name.indexOf("/") >= 0)
+      name = name.substr(name.indexOf("/") + 1)
+    name = name.replace(nonWordRegex, '_')
+    if (!name || name.length == 0)
+      name = "index.html"
+    chrome.downloads.download({ url: url, filename: name })
+  }))
+  document.querySelectorAll(".view .view-items .crawl").forEach(element => element.addEventListener("click", event => {
+    event.preventDefault()
+    let url = event.target.parentNode.getAttribute("data-link")
+
+
+    if (isUrlHTML(url))
+      crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].isCrawled = true
+    else
+      crawl.all.assets[crawl.all.assets.findIndex(i => i.link == url)].isCrawled = true
+
+    event.target.parentNode.remove()
+    crawlURL(url)
+  }))
 }
 
 function updateOverview() {
   let targetCount = [
     document.querySelectorAll("#pages .view-row").length,
+    document.querySelectorAll("#assets .view-row").length,
     document.querySelectorAll("#links .view-row").length,
     document.querySelectorAll("#files .view-row").length,
     document.querySelectorAll("#images .view-row").length
@@ -301,6 +352,7 @@ function updateOverview() {
   if (Object.keys(crawl).length - 2 > 0)
     document.querySelector("#crawledSiteCount").innerHTML = '(+' + (Object.keys(crawl).length - 2) + ')'
 }
+
 function updatePages() {
   let wrapper = document.querySelector("#pages .view-items")
 
@@ -365,28 +417,72 @@ function updatePages() {
   else
     wrapper.innerHTML = `<div class="empty-row">There are no items here.</div>`
 
-  document.querySelectorAll("#pages .download").forEach(element => element.addEventListener("click", event => {
-    event.preventDefault()
-    let url = event.target.parentNode.href
-    let name = url.substr(url.indexOf("://")+3)
-    if(name.indexOf("/") >= 0)
-      name = name.substr(name.indexOf("/")+1)
-    name = name.replace(nonWordRegex, '_')
-    if(!name || name.length == 0)
-      name ="index.html"
-    chrome.downloads.download({ url: url, filename: name })
-  }))
-  document.querySelectorAll("#pages .crawl").forEach(element => element.addEventListener("click", event => {
-    event.preventDefault()
-    let url = event.target.parentNode.getAttribute("data-link")
-    let linkObject = crawl.all.links.findIndex(i => i.href == url)
+}
 
-    crawl.all.links[linkObject].isCrawled = true
-    event.target.parentNode.remove()
-    crawlURL(url)
-  }))
+function updateAssets() {
+  let wrapper = document.querySelector("#assets .view-items")
+
+  let html = ''
+  crawl.all.assets.forEach(link => {
+
+    let linkTagsText = ''
+    let instancesText = ''
+    if (link.tags.isLocal)
+      linkTagsText += "<strong>Original URL</strong>: " + link._link + '<br>'
+
+    Object.keys(link.tags).forEach(i => linkTagsText += i != "isLocal" ? "<strong>" + i + "</strong>: " + link.tags[i] + "<br>" : '')
+    if (linkTagsText.length > 0)
+      linkTagsText = linkTagsText.substr(0, linkTagsText.length - 4) + '<hr>'
+
+    link.instances.forEach(i => {
+      instancesText += '<strong>' + i.foundOn + '</strong><br>'
+      Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "&nbsp;&nbsp;&nbsp;<strong>" + i1 + "</strong>: " + i.tags[i1] + "<br>" : '')
+      instancesText += '<hr>'
+    })
+
+    if (instancesText.length > 0)
+      instancesText = instancesText.substr(0, instancesText.length - 8)
+
+    html += `
+        <div class="view-row">
+          <div class="select">
+            <input type="checkbox">
+          </div>
+          <div class="type">`+
+      getURLIcon(link.link) +
+      `</div>
+          <div class="link">
+            <p>` + link.link + `</p>
+          </div>
+          <div class="tools">
+            <a class="download" href="`+ link.link + `" title="Download Page"><i class="fas fa-file-download"></i></a>`
+    if (!link.isCrawled && (isUrlScript(link.link) || isUrlStyleSheet(link.link)))
+      html += '<a class="crawl" target="_blank" href="#" data-link="' + link.link + '" title="Crawl page"><i class="fas fa-sitemap"></i></a>'
+    html +=
+      `</div>
+          <div class="info">
+            <div class="hover-popup-icon">
+            <span class="fa-stack fa-1x">
+            <i class="fas fa-square fa-stack-2x"></i>
+            <i class="fas fa-info fa-stack-1x fa-inverse"></i>
+          </span>
+              <div class="hover-popup">
+                <p>` + linkTagsText + `</p>
+                <p>` + instancesText + `</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      `
+
+  })
+  if (html.length > 0)
+    wrapper.innerHTML = html
+  else
+    wrapper.innerHTML = `<div class="empty-row">There are no items here.</div>`
 
 }
+
 function updateLinks() {
 
   let wrapper = document.querySelector("#links .view-items")
@@ -518,16 +614,6 @@ function updateFiles() {
     wrapper.innerHTML = `<div class="empty-row">There are no items here.</div>`
 
 
-  document.querySelectorAll("#files .download").forEach(element => element.addEventListener("click", event => {
-    event.preventDefault()
-
-    let url = event.target.parentNode.href
-    let name = url.substr(url.indexOf("://")+3)
-    if(name.indexOf("/") >= 0)
-      name = name.substr(name.indexOf("/")+1)
-    name = name.replace(nonWordRegex, '_')
-    chrome.downloads.download({ url: url, filename: name })
-  }))
 }
 function updateImages() {
   let wrapper = document.querySelector("#images .view-items")
@@ -581,17 +667,6 @@ function updateImages() {
   else
     wrapper.innerHTML = `<div class="empty-row">There are no items here.</div>`
 
-  document.querySelectorAll("#images .download").forEach(element => element.addEventListener("click", event => {
-    event.preventDefault()
-
-    let url = event.target.parentNode.href
-    let name = url.substr(url.indexOf("://")+3)
-    if(name.indexOf("/") >= 0)
-      name = name.substr(name.indexOf("/")+1)
-    name = name.replace(nonWordRegex, '_')
-    chrome.downloads.download({ url: url, filename: name })
-  }))
-
 }
 
 function createLinkObject(url, element) {
@@ -616,6 +691,23 @@ function createLinkObject(url, element) {
     link.href = link.href.startsWith("/") ? url + link.href : url + "/" + link.href
   }
   return link;
+}
+function createAssetObject(url, link) {
+  let asset = { tags: {} }
+  asset.link = link.replace(chromeExtensionRegex, '/')
+  asset.instances = [{
+    alt: link.title,
+    tags: {},
+    foundOn: url
+  }]
+  if (isUrlLocal(asset.link) || asset.link.indexOf(url) == 0) {
+    asset.tags.isLocal = true
+    asset._link = asset.link;
+    while (url.lastIndexOf("/") >= 8)
+      url = url.substr(0, url.lastIndexOf("/"))
+    asset.link = asset.link.startsWith("/") ? url + asset.link : url + "/" + asset.link
+  }
+  return asset;
 }
 function createImageObject(url, element, src) {
   let image = { tags: {} }

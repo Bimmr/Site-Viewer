@@ -106,6 +106,18 @@ hr{
   height: 1px;
   background-color: rgba(180, 180, 180, .3);
 }
+.sidebar-item .newContent{
+  color: #00a72a;
+  padding-left: 5px;
+  display: none;
+  font-size: .8em;
+  position: absolute;
+  right: 0;
+  top: 7px;
+}
+.sidebar-item .newContent.active{
+  display: inline-block
+}
 
 /* View Styles */
 
@@ -331,8 +343,9 @@ hr{
 #pages .view-items .tools{
   flex-basis: 15%;
 }
-/* Links & Files View */
+/* Links, Files & Files View */
 #links .type,
+#assets .type,
 #files .type {
   width: 10%;
   display: flex;
@@ -343,11 +356,13 @@ hr{
 }
 
 #links .view-row .type,
+#assets .view-row .type,
 #files .view-row .type {
   font-size: 1.75em;
 }
 
 #links .link,
+#assets .link ,
 #files .link {
   display: flex;
   flex-flow: column;
@@ -367,6 +382,15 @@ hr{
 
 #links .view-items .tools{
   flex-basis: 5%;
+}
+
+/* Assets View */
+
+#assets .link {
+  flex-basis: 70%
+}
+#assets .view-title .tools{
+  flex-basis: 15%;
 }
 /* Files View */
 #files .view-title .tools{

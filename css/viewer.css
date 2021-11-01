@@ -351,6 +351,7 @@ hr{
   padding-left: 15px;
   align-items: center;
   justify-content: start;
+  overflow: auto;
 }
 #pages .view-title .tools{
   flex-basis: 20%;
@@ -383,6 +384,7 @@ hr{
   justify-content: start;
   padding-left: 15px;
   align-items: center;
+  overflow: auto;
 }
 /* Links View */
 
@@ -437,6 +439,7 @@ hr{
   padding-left: 15px;
   justify-content: start;
   align-items: center;
+  overflow: auto;
 }
 #images .view-title .tools{
   flex-basis: 10%;

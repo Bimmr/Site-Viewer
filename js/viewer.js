@@ -9,8 +9,7 @@ let chromeExtensionRegex = new RegExp(/(chrome-extension:\/\/)\w*\//g)
 //Regex for background style
 
 //Regex for background or background-image style
-let urlRegex = new RegExp(/(background|background-image):\s*url\((.*?)\)/g)
-let backgroundReplaceRegex = new RegExp(/(background|background-image):\s*url\(/g)
+let urlRegex = new RegExp(/background(-image)?\s*:(.*?)(url)\(\s*(\'|")?(?<image>.*?)\3?(\'|")?\s*\)/g)
 //Regex for a tag link
 let aTagRegex = new RegExp(/(<a)(?:(?!<\/a>).)*/g)
 //Regex for quotes
@@ -162,8 +161,8 @@ async function crawlURL(url) {
       //Background Image styles
       doc.querySelectorAll('*[style*="background"]').forEach(element => {
         if (element.style.cssText.match(urlRegex)) {
-          let src = element.style.cssText.match(urlRegex)[0].replace(chromeExtensionRegex, '/').replace('viewer.html', '').replace(backgroundReplaceRegex, '').replace(quoteRegex, '')
-          src = src.substr(0, src.length - 1)
+          let src = urlRegex.exec(element.style.cssText).groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
+          urlRegex.lastIndex = 0;
           let image = createImageObject(url, null, src)
           let found
           if (isUrlImage(image.src))
@@ -186,8 +185,8 @@ async function crawlURL(url) {
       doc.querySelectorAll('style').forEach(element => {
         if (element.innerHTML.match(urlRegex))
           element.innerHTML.match(urlRegex).forEach(style => {
-            let src = style.match(urlRegex)[0].replace(chromeExtensionRegex, '/').replace('viewer.html', '').replace(backgroundReplaceRegex, '').replace(quoteRegex, '')
-            src = src.substr(0, src.length - 1)
+            let src = urlRegex.exec(style).groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
+            urlRegex.lastIndex = 0
             let found
             let image = createImageObject(url, null, src)
             if (isUrlImage(image.src))
@@ -211,8 +210,8 @@ async function crawlURL(url) {
         //Look for BackgroundImages
         if (element.innerHTML.match(urlRegex))
           element.innerHTML.match(urlRegex).forEach(style => {
-            let src = element.innerHTML.match(urlRegex)[0].replace(chromeExtensionRegex, '/').replace('viewer.html', '').replace(backgroundReplaceRegex, '').replace(quoteRegex, '')
-            src = src.substr(0, src.length - 1)
+            let src = urlRegex.exec(style).groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
+            urlRegex.lastIndex = 0
             let image = createImageObject(url, null, src)
             let found
             if (isUrlImage(image.src))

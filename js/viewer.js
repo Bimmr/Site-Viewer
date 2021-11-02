@@ -3,11 +3,10 @@ let crawl = { all: { images: [], links: [], assets: [] } }
 //Track lastHTML to show what has changed
 let lastCounts = { pages: 0, assets: 0, links: 0, files: 0, images: 0 }
 
+let crawling = []
 
 //Regex for Chrome Extension
 let chromeExtensionRegex = new RegExp(/(chrome-extension:\/\/)\w*\//g)
-//Regex for background style
-
 //Regex for background or background-image style
 let urlRegex = new RegExp(/background(-image)?\s*:(.*?)(url)\(\s*(\'|")?(?<image>.*?)\3?(\'|")?\s*\)/g)
 //Regex for a tag link
@@ -127,12 +126,15 @@ document.addEventListener("DOMContentLoaded", function () {
 async function crawlURL(url) {
 
   //Update Overview with crawling info, and show loading
-  document.querySelector("#crawlingSiteText").innerHTML = url
+  if (crawling.length == 0)
+    document.querySelector("#crawlingSiteText").innerHTML = url
   document.querySelector("#crawling").classList.add("active")
 
   //Remove Trailing /
   if (url.lastIndexOf('/') == url.length - 1)
     url = url.substr(0, url.length - 1)
+
+  crawling.push(url)
 
   fetch(url)
     .then(res => {
@@ -311,7 +313,7 @@ async function crawlURL(url) {
         assets
       }
 
-      //If this is the first time it's been crawled, add it to the list of pages
+      //For Links - add link to crawl all list or add to instance if already crawled
       page.links.forEach(link => {
         if (!crawl.all.links.find(i => i.href == link.href)) crawl.all.links.push(link)
         else {
@@ -319,6 +321,7 @@ async function crawlURL(url) {
           crawl.all.links.find(i => i.href == link.href).instances = [...instances, ...link.instances]
         }
       })
+      //For images - add link to crawl all list or add to instance if already crawled
       page.images.forEach(image => {
         if (!crawl.all.images.find(i => i.src == image.src)) crawl.all.images.push(image)
         else {
@@ -326,6 +329,7 @@ async function crawlURL(url) {
           crawl.all.images.find(i => i.src == image.src).instances = [...instances, ...image.instances]
         }
       })
+      //For assets - add link to crawl all list or add to instance if already crawled
       page.assets.forEach(asset => {
         if (!crawl.all.assets.find(i => i.link == asset.link)) crawl.all.assets.push(asset)
         else {
@@ -348,16 +352,30 @@ async function crawlURL(url) {
       updateImages()
       updateOverview()
 
+      //Update Listeners
       updateAll()
+
+      //find and remove element from array
+      let index = crawling.indexOf(url)
+      if (index > -1) crawling.splice(index, 1)
+
+      //Remove Crawling overlay if not crawling anything else, otherwise update crawling text to the next thing thats been crawling the longest
+      if (crawling.length == 0)
+        document.querySelector("#crawling").classList.remove("active")
+      else
+        document.querySelector("#crawlingSiteText").innerHTML = crawling[0]
 
     }).catch(error => {
       console.log(error)
-    })
 
-  //Remove Crawling overlay after 0.5s
-  //setTimeout(function () {
-  document.querySelector("#crawling").classList.remove("active")
-  //}, 500)
+      //find and remove element from array
+      let index = crawling.indexOf(url)
+      if (index > -1) crawling.splice(index, 1)
+
+      //Remove crawling overlay if not crawling anything else
+      if (crawling.length == 0)
+        document.querySelector("#crawling").classList.remove("active")
+    })
 }
 
 /*
@@ -378,16 +396,23 @@ function updateAll() {
   document.querySelectorAll(".view-items .download").forEach(element => {
     element.onclick = event => {
       event.preventDefault()
+      //Get url to download
       let url = event.target.parentNode.href
+      //get file name removing the http(s)://
       let name = url.substr(url.indexOf("://") + 3)
+      //If still containing a /, start the string after that
       if (name.indexOf("/") >= 0)
         name = name.substr(name.indexOf("/") + 1)
+      //Replace any remaining / with double _ then replace all non alphanumeric characters with single _
       name = name.replace("/", "__").replace(nonWordRegex, '_')
+      //If the name is empty, assume you're downloading the home page
       if (!name || name.length == 0)
         name = "index.html"
+      //If there is no extension, add .html
       if (name.indexOf(".") < 0)
         name += ".html"
-      chrome.downloads.download({ url: url})
+      //Download the file
+      chrome.downloads.download({ url: url })
     }
   })
 

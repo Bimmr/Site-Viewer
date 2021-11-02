@@ -12,7 +12,7 @@ chrome.runtime.onInstalled.addListener(function () {
 });
 chrome.downloads.onDeterminingFilename.addListener(function (item, suggest) {
     //If item download is from this extension
-    if (item.byExtensionId == chrome.runtime.id) {
+    if (item.byExtensionName == "Site Viewer") {
 
         //Regex for non word file name
         let nonWordRegex = new RegExp(/[^a-z0-9A-Z.]/gi)
@@ -27,5 +27,6 @@ chrome.downloads.onDeterminingFilename.addListener(function (item, suggest) {
         if (name.indexOf(".") < 0)
             name += ".html"
         suggest({ filename: name })
-    }
+    }else
+        suggest()
 });

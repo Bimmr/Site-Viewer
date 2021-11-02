@@ -366,7 +366,7 @@ async function crawlURL(url) {
 function updateAll() {
 
   //If more than one item is selected, show the multi-item wrapper
-  document.querySelectorAll(".view .view-items .select input").forEach(i => i.onclick =  function () {
+  document.querySelectorAll(".view .view-items .select input").forEach(i => i.onclick = function () {
     if (Array.from(document.querySelectorAll(".view.active .view-items .select input")).filter(i => i.checked).length >= 2)
       document.querySelector(".view.active .multi-wrapper").classList.add("active")
     else
@@ -382,10 +382,12 @@ function updateAll() {
       let name = url.substr(url.indexOf("://") + 3)
       if (name.indexOf("/") >= 0)
         name = name.substr(name.indexOf("/") + 1)
-      name = name.replace(nonWordRegex, '_')
+      name = name.replace("/", "__").replace(nonWordRegex, '_')
       if (!name || name.length == 0)
         name = "index.html"
-      chrome.downloads.download({ url: url, filename: name })
+      if (name.indexOf(".") < 0)
+        name += ".html"
+      chrome.downloads.download({ url: url})
     }
   })
 
@@ -627,7 +629,7 @@ function setupPopup(url) {
         <div class="tools">`+
       '<a class="goto" target="_blank" href="' + href + '" title="Go to link"><i class="fas fa-external-link-alt"></i></a>'
     if (htmlIndex != 'links')
-      html[htmlIndex] += '<a class="download" href="'+ href + '" title="Download Page"><i class="fas fa-file-download"></i></a>'
+      html[htmlIndex] += '<a class="download" href="' + href + '" title="Download Page"><i class="fas fa-file-download"></i></a>'
     html[htmlIndex] += `</div>
           <div class="info">
           <div class="hover-popup-icon">

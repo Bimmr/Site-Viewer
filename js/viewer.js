@@ -356,52 +356,56 @@ async function crawlURL(url) {
 
   //Remove Crawling overlay after 0.5s
   //setTimeout(function () {
-    document.querySelector("#crawling").classList.remove("active")
+  document.querySelector("#crawling").classList.remove("active")
   //}, 500)
 }
 
 /*
-* Function to run AFTER each view is updated
+* Function to run AFTER each view and popup-view is updated
 */
 function updateAll() {
 
   //If more than one item is selected, show the multi-item wrapper
-  document.querySelectorAll(".view .view-items .select input").forEach(i => i.addEventListener("click", function () {
+  document.querySelectorAll(".view .view-items .select input").forEach(i => i.onclick =  function () {
     if (Array.from(document.querySelectorAll(".view.active .view-items .select input")).filter(i => i.checked).length >= 2)
       document.querySelector(".view.active .multi-wrapper").classList.add("active")
     else
       document.querySelector(".view.active .multi-wrapper").classList.remove("active")
-  }))
+  })
 
-  //Add download event to all view items that have a download icon
+  //Add download event to all view-items that have a download icon
   //TODO: Add option in settings to enable if localizing (fetching and adding to HTML File) of assets is wanted
-  document.querySelectorAll(".view .view-items .download").forEach(element => element.addEventListener("click", event => {
-    event.preventDefault()
-    let url = event.target.parentNode.href
-    let name = url.substr(url.indexOf("://") + 3)
-    if (name.indexOf("/") >= 0)
-      name = name.substr(name.indexOf("/") + 1)
-    name = name.replace(nonWordRegex, '_')
-    if (!name || name.length == 0)
-      name = "index.html"
-    chrome.downloads.download({ url: url, filename: name })
-  }))
+  document.querySelectorAll(".view-items .download").forEach(element => {
+    element.onclick = event => {
+      event.preventDefault()
+      let url = event.target.parentNode.href
+      let name = url.substr(url.indexOf("://") + 3)
+      if (name.indexOf("/") >= 0)
+        name = name.substr(name.indexOf("/") + 1)
+      name = name.replace(nonWordRegex, '_')
+      if (!name || name.length == 0)
+        name = "index.html"
+      chrome.downloads.download({ url: url, filename: name })
+    }
+  })
 
-  //Add crawl event to all view items that have a crawl icon
-  document.querySelectorAll(".view .view-items .crawl").forEach(element => element.addEventListener("click", event => {
-    event.preventDefault()
-    let url = event.target.parentNode.getAttribute("data-link")
+  //Add crawl event to all view-items that have a crawl icon
+  document.querySelectorAll(".view-items .crawl").forEach(element => {
+    element.onclick = event => {
+      event.preventDefault()
+      let url = event.target.parentNode.getAttribute("data-link")
 
-    //Check if the item being crawled is an HTML page or an asset
-    if (isUrlHTML(url))
-      crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].isCrawled = true
-    else
-      crawl.all.assets[crawl.all.assets.findIndex(i => i.link == url)].isCrawled = true
+      //Check if the item being crawled is an HTML page or an asset
+      if (isUrlHTML(url))
+        crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].isCrawled = true
+      else
+        crawl.all.assets[crawl.all.assets.findIndex(i => i.link == url)].isCrawled = true
 
-    //Remove Crawl Icon
-    event.target.parentNode.remove()
-    crawlURL(url)
-  }))
+      //Remove Crawl Icon
+      event.target.parentNode.remove()
+      crawlURL(url)
+    }
+  })
 }
 
 /*
@@ -623,7 +627,7 @@ function setupPopup(url) {
         <div class="tools">`+
       '<a class="goto" target="_blank" href="' + href + '" title="Go to link"><i class="fas fa-external-link-alt"></i></a>'
     if (htmlIndex != 'links')
-      html[htmlIndex] += '<a class="download" href="`+ link.link + `" title="Download Page"><i class="fas fa-file-download"></i></a>'
+      html[htmlIndex] += '<a class="download" href="'+ href + '" title="Download Page"><i class="fas fa-file-download"></i></a>'
     html[htmlIndex] += `</div>
           <div class="info">
           <div class="hover-popup-icon">

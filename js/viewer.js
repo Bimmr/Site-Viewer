@@ -22,12 +22,14 @@ let externalScriptRegex = new RegExp(/(<script)(?:(?!<\/script>).)*/g)
 let nonWordRegex = new RegExp(/[^a-z0-9A-Z.]/gi)
 
 
+//When DOM is loaded set up the listeners and events
 document.addEventListener("DOMContentLoaded", function () {
 
   //Crawl base url
   let baseURL = window.tabURL ?? 'https://Bimmr.com'
   document.querySelector("#crawledSiteText").innerHTML = baseURL
   crawlURL(baseURL)
+
 
   //Sidebar controls
   document.querySelectorAll(".sidebar-item").forEach(item => item.addEventListener("click", event => {
@@ -42,10 +44,16 @@ document.addEventListener("DOMContentLoaded", function () {
   document.querySelector(".popup .popup-close i").addEventListener("click", event => {
     event.target.parentNode.parentNode.parentNode.parentNode.classList.remove("active")
   })
-  document.querySelector(".popup-outerWrapper").addEventListener("click", event => {
-    if (document.querySelector(".popup-outerWrapper") == event.target)
+  document.querySelector(".popup .popup-outerWrapper").addEventListener("click", event => {
+    if (document.querySelector(".popup .popup-outerWrapper") == event.target)
       document.querySelector(".popup.active").classList.remove("active")
   })
+  document.querySelectorAll(".popup .popup-nav-item").forEach(item => item.addEventListener("click", event => {
+    document.querySelectorAll(".popup .popup-nav-item.active, .popup .popup-view.active").forEach(activeItem => activeItem.classList.remove("active"))
+    item.classList.add("active")
+    let view = item.querySelector("p").innerHTML.toLowerCase()
+    document.querySelector(".popup .popup-view#popup-view-" + view)?.classList.add("active")
+  }))
 
   //Select All controls
   document.querySelectorAll(".view-title .select").forEach(item => item.addEventListener("click", event => {
@@ -106,12 +114,16 @@ document.addEventListener("DOMContentLoaded", function () {
     })
   })
   //Watch all view items for changes
-  document.querySelectorAll(".view-items").forEach(item => {
+  document.querySelectorAll(".view .view-items").forEach(item => {
     observer.observe(item, { childList: true })
   })
 
 })
 
+/*
+* Function to crawl the URL for images, links, scripts, and stylesheets
+* @param {string} url - The url to crawl
+*/
 async function crawlURL(url) {
 
   //Update Overview with crawling info, and show loading
@@ -294,15 +306,33 @@ async function crawlURL(url) {
       //Add page to crawled object
       let page = {
         title: doc.querySelector("title")?.innerHTML,
-        links,
+        links: links.sort(sortLinks),
         images,
         assets
       }
 
       //If this is the first time it's been crawled, add it to the list of pages
-      page.links.forEach(link => { if (!crawl.all.links.find(i => i.href == link.href)) crawl.all.links.push(link) })
-      page.images.forEach(image => { if (!crawl.all.images.find(i => i.src == image.src)) crawl.all.images.push(image) })
-      page.assets.forEach(asset => { if (!crawl.all.assets.find(i => i.link == asset.link)) crawl.all.assets.push(asset) })
+      page.links.forEach(link => {
+        if (!crawl.all.links.find(i => i.href == link.href)) crawl.all.links.push(link)
+        else {
+          let instances = crawl.all.links.find(i => i.href == link.href).instances
+          crawl.all.links.find(i => i.href == link.href).instances = [...instances, ...link.instances]
+        }
+      })
+      page.images.forEach(image => {
+        if (!crawl.all.images.find(i => i.src == image.src)) crawl.all.images.push(image)
+        else {
+          let instances = crawl.all.images.find(i => i.src == image.src).instances
+          crawl.all.images.find(i => i.src == image.src).instances = [...instances, ...image.instances]
+        }
+      })
+      page.assets.forEach(asset => {
+        if (!crawl.all.assets.find(i => i.link == asset.link)) crawl.all.assets.push(asset)
+        else {
+          let instances = crawl.all.assets.find(i => i.link == asset.link).instances
+          crawl.all.assets.find(i => i.link == asset.link).instances = [...instances, ...asset.instances]
+        }
+      })
 
       //Add crawled page to crawl object
       crawl[url] = page
@@ -325,12 +355,14 @@ async function crawlURL(url) {
     })
 
   //Remove Crawling overlay after 0.5s
-  setTimeout(function () {
+  //setTimeout(function () {
     document.querySelector("#crawling").classList.remove("active")
-  }, 500)
+  //}, 500)
 }
 
-
+/*
+* Function to run AFTER each view is updated
+*/
 function updateAll() {
 
   //If more than one item is selected, show the multi-item wrapper
@@ -371,6 +403,10 @@ function updateAll() {
     crawlURL(url)
   }))
 }
+
+/*
+* Function to update the Overview view
+*/
 function updateOverview() {
 
   //Get count of view-rows in each view
@@ -421,6 +457,10 @@ function updateOverview() {
     document.querySelector("#crawledLinks").innerHTML = crawledHTML
   }
 }
+
+/*
+* Function to update the Pages view
+*/
 function updatePages() {
   //Hide Multi-wrapper if view is updated
   document.querySelector("#pages .multi-wrapper").classList.remove("active")
@@ -436,27 +476,25 @@ function updatePages() {
 
       //Create string of tags and instances
       let linkTagsText = ''
-      let instancesText = ''
-      linkTagsText += "<strong>Original URL</strong>: " + link._href + '<br>'
+      let instancesText = '<strong>Instances:</strong><ul>'
+      linkTagsText += "Original URL: <strong>" + link._href + '</strong><br>'
 
       //No need to display isLocal if it's a page
-      Object.keys(link.tags).forEach(i => linkTagsText += i != "isLocal" ? "<strong>" + i + "</strong>: " + link.tags[i] + "<br>" : '')
+      Object.keys(link.tags).forEach(i => linkTagsText += i != "isLocal" ? "" + i + ": <strong>" + link.tags[i] + "</strong><br>" : '')
       if (linkTagsText.length > 0)
         linkTagsText = linkTagsText.substr(0, linkTagsText.length - 4) + '<hr>'
 
       //Add all instances to the instance string
       link.instances.forEach(i => {
-        instancesText += '<strong>' + i.foundOn + '</strong><br>'
+        instancesText += '<li>' + i.foundOn + '<ul>'
         if (i.title)
-          instancesText += '&nbsp;&nbsp;&nbsp;<strong>Title</strong>: ' + i.title + '<br>'
+          instancesText += '<li>Title: <strong>' + i.title + '</strong></li>'
         if (i.text)
-          instancesText += '&nbsp;&nbsp;&nbsp;<strong>Text</strong>: ' + i.text + '<br>'
-        Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "&nbsp;&nbsp;&nbsp;<strong>" + i1 + "</strong>: " + i.tags[i1] + "<br>" : '')
-        instancesText += '<hr>'
+          instancesText += '<li>Text: <strong>' + i.text + '</strong></li>'
+        Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "<li>" + i1 + ": <strong>" + i.tags[i1] + "</strong></li>" : '')
+        instancesText += '</ul></li>'
       })
-
-      if (instancesText.length > 0)
-        instancesText = instancesText.substr(0, instancesText.length - 8)
+      instancesText += '</ul>'
 
       //Add to HTML to html string for the item
       html += `
@@ -469,10 +507,12 @@ function updatePages() {
           </div>
           <div class="tools">
             <a class="download" href="`+ link.href + `" title="Download Page"><i class="fas fa-file-download"></i></a>` +
-        '<a class="inspect" href="#" title="Inspect Page" data-link="' + link.href + '"><i class="fas fa-search"></i></a>' +
-        '<a class="goto" target="_blank" href="`+ link.href + `" title="Go to page"><i class="fas fa-external-link-alt"></i></a>'
+        '<a class="goto" target="_blank" href="' + link.href + '" title="Go to page"><i class="fas fa-external-link-alt"></i></a>'
       if (!link.isCrawled)
         html += '<a class="crawl" target="_blank" href="#" data-link="' + link.href + '" title="Crawl page"><i class="fas fa-sitemap"></i></a>'
+      else {
+        html += '<a class="inspect" href="#" title="Inspect Page" data-link="' + link.href + '"><i class="fas fa-search"></i></a>'
+      }
       html +=
         `</div>
           <div class="info">
@@ -481,10 +521,10 @@ function updatePages() {
             <i class="fas fa-square fa-stack-2x"></i>
             <i class="fas fa-info fa-stack-1x fa-inverse"></i>
           </span>
-              <div class="hover-popup">
-                <p>` + linkTagsText + `</p>
-                <p>` + instancesText + `</p>
-              </div>
+              <div class="hover-popup">`+
+        linkTagsText +
+        instancesText +
+        `</div>
             </div>
           </div>
         </div>
@@ -502,11 +542,181 @@ function updatePages() {
   document.querySelectorAll(".view .view-items .inspect").forEach(element => element.addEventListener("click", event => {
     event.preventDefault()
     let url = event.target.parentNode.getAttribute("data-link")
-
+    setupPopup(url)
     document.querySelector(".popup").classList.add("active")
-
   }))
 }
+
+/* 
+* Function to setup the popup according to the url
+* @param {string} url - The url to setup the popup for
+*/
+function setupPopup(url) {
+
+  //Remove any trailing /
+  if (url.lastIndexOf("/") == url.length - 1)
+    url = url.substr(0, url.length - 1)
+
+  // Get the popup and the crawled object to inspect
+  let popup = document.querySelector("#popup")
+  let page = crawl[url]
+
+  //Add popup content
+  popup.querySelector(".card-title").innerHTML = '<h2>' + page.title + '</h2>' + '<h3>' + url + '<br><br></h3>'
+
+  let html = { links: '', files: '', assets: '', images: '' }
+  let htmlIndex = 'images'
+
+  //Loop through all links and assets
+  let items = [...page.links, ...page.assets]
+  items.forEach(link => {
+
+    let href = link.href ? link.href : link.link
+
+    let isAsset = link.link ? true : false
+    let isLocalPage = link.tags.isLocal && !isUrlAnchor(href)
+
+    htmlIndex = 'images'
+
+    //Check if it's an asset
+    if (isAsset)
+      htmlIndex = 'assets';
+
+    //Files are only if the link isn't a HTML page or a protocol link
+    else if (!isUrlHTML(href) && !isUrlProtocol(href))
+      htmlIndex = 'files';
+
+    //Links are only if not local or is an anchor link
+    else
+      htmlIndex = 'links';
+
+    //Create string of tags and instances
+    let linkTagsText = ''
+    let instancesText = '<strong>Instances:</strong><ul>'
+
+    if (link.tags.isLocal)
+      linkTagsText += "Original URL: <strong>" + link._href + '</strong><br>'
+    Object.keys(link.tags).forEach(i => linkTagsText += "" + i + ": <strong>" + link.tags[i] + "</strong><br>")
+    if (linkTagsText.length > 0)
+      linkTagsText = linkTagsText.substr(0, linkTagsText.length - 4) + '<hr>'
+
+    //Add all instances to the instance string
+    link.instances.forEach(i => {
+      instancesText += '<li>' + i.foundOn + '<ul>'
+      if (i.title)
+        instancesText += '<li>Title: <strong>' + i.title + '</strong></li>'
+      if (i.text)
+        instancesText += '<li>Text: <strong>' + i.text + '</strong></li>'
+      Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "<li>" + i1 + ": <strong>" + i.tags[i1] + "</strong></li>" : '')
+      instancesText += '</ul></li>'
+    })
+    instancesText += '</ul>'
+
+    html[htmlIndex] +=
+      '<div class="view-row">' +
+      '<div class="type">' +
+      (isLocalPage && !isAsset ? '<i class="far fa-file"></i>' : getURLIcon(href)) +
+      `</div>
+            <div class="link">`+
+      '<p>' + href + '</p>' +
+      `</div>
+        <div class="tools">`+
+      '<a class="goto" target="_blank" href="' + href + '" title="Go to link"><i class="fas fa-external-link-alt"></i></a>'
+    if (htmlIndex != 'links')
+      html[htmlIndex] += '<a class="download" href="`+ link.link + `" title="Download Page"><i class="fas fa-file-download"></i></a>'
+    html[htmlIndex] += `</div>
+          <div class="info">
+          <div class="hover-popup-icon">
+            <span class="fa-stack fa-1x">
+              <i class="fas fa-square fa-stack-2x"></i>
+              <i class="fas fa-info fa-stack-1x fa-inverse"></i>
+            </span>
+            <div class="hover-popup">`+
+      linkTagsText +
+      instancesText +
+      `</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      `
+  })
+
+  //Loop through all images
+  page.images.forEach(image => {
+
+    //Create string of tags and instances
+    let imageTagsText = ''
+    let instancesText = '<strong>Instances:</strong><ul>'
+
+    Object.keys(image.tags).forEach(i => imageTagsText += "" + i + ": <strong>" + image.tags[i] + "</strong><br>")
+    if (imageTagsText.length > 0)
+      imageTagsText = imageTagsText.substr(0, imageTagsText.length - 4) + '<hr>'
+
+    image.instances.forEach(i => {
+      instancesText += '<li>' + i.foundOn + '<ul>'
+      if (i.alt)
+        instancesText += '<li>Alt: <strong>' + i.alt + '</strong></li>'
+      Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "<li>" + i1 + ": <strong>" + i.tags[i1] + "</strong></li>" : '')
+      instancesText += '</ul></li>'
+    })
+    instancesText += '</ul>'
+
+    //Add to HTML to html string for the item
+    html.images += `
+        <div class="view-row">
+           
+          <div class="image">`+
+      '<img src="' + image.src + '">' +
+      `</div>
+          <div class="link">`+
+      '<p>' + image.src + '</p>' +
+      `</div>
+       <div class="tools">
+        <a class="goto" target="_blank" href="` + image.src + `" title="Open Image"><i class="fas fa-external-link-alt"></i></a>
+         <a class="download" href="`+ image.src + `" title="Download Image"><i class="fas fa-file-download"></i></a>
+         </div>
+         <div class="info">
+         <div class="hover-popup-icon">
+            <span class="fa-stack fa-1x">
+              <i class="fas fa-square fa-stack-2x"></i>
+              <i class="fas fa-info fa-stack-1x fa-inverse"></i>
+            </span>
+                <div class="hover-popup">` +
+      imageTagsText +
+      instancesText +
+      `</div>
+      </div>
+              </div>
+       </div>
+     </div>
+     `
+  })
+
+  //Add all HTML to the popup
+  if (html.links.length == 0)
+    html.links = '<div class="empty-row">There are no items here.</div>'
+  popup.querySelector("#popup-view-links .view-items").innerHTML = html.links
+
+  if (html.files.length == 0)
+    html.files = '<div class="empty-row">There are no items here.</div>'
+  popup.querySelector("#popup-view-files .view-items").innerHTML = html.files
+
+  if (html.assets.length == 0)
+    html.assets = '<div class="empty-row">There are no items here.</div>'
+  popup.querySelector("#popup-view-assets .view-items").innerHTML = html.assets
+
+  if (html.images.length == 0)
+    html.images = '<div class="empty-row">There are no items here.</div>'
+  popup.querySelector("#popup-view-images .view-items").innerHTML = html.images
+
+  //UpdateAll to make sure goto and download icons are activated
+  updateAll()
+}
+
+/*
+* Function to update the Assets view
+*/
 function updateAssets() {
   //Hide Multi-wrapper if view is updated
   document.querySelector("#assets .multi-wrapper").classList.remove("active")
@@ -520,23 +730,21 @@ function updateAssets() {
 
     //Create string of tags and isntances
     let linkTagsText = ''
-    let instancesText = ''
+    let instancesText = '<strong>Instances:</strong><ul>'
     if (link.tags.isLocal)
-      linkTagsText += "<strong>Original URL</strong>: " + link._link + '<br>'
+      linkTagsText += "Original URL: <strong>" + link._link + '</strong><br>'
 
-    Object.keys(link.tags).forEach(i => linkTagsText += i != "isLocal" ? "<strong>" + i + "</strong>: " + link.tags[i] + "<br>" : '')
+    Object.keys(link.tags).forEach(i => linkTagsText += i != "isLocal" ? "" + i + ": <strong>" + link.tags[i] + "</strong><br>" : '')
     if (linkTagsText.length > 0)
       linkTagsText = linkTagsText.substr(0, linkTagsText.length - 4) + '<hr>'
 
     //Add all instances to the instance string
     link.instances.forEach(i => {
-      instancesText += '<strong>' + i.foundOn + '</strong><br>'
-      Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "&nbsp;&nbsp;&nbsp;<strong>" + i1 + "</strong>: " + i.tags[i1] + "<br>" : '')
-      instancesText += '<hr>'
+      instancesText += '<li>' + i.foundOn + '<ul>'
+      Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "<li>" + i1 + ": <strong>" + i.tags[i1] + "</strong></li>" : '')
+      instancesText += '</ul></li>'
     })
-
-    if (instancesText.length > 0)
-      instancesText = instancesText.substr(0, instancesText.length - 8)
+    instancesText += '</ul>'
 
     //Add to HTML to html string for the item
     html += `
@@ -562,10 +770,10 @@ function updateAssets() {
             <i class="fas fa-square fa-stack-2x"></i>
             <i class="fas fa-info fa-stack-1x fa-inverse"></i>
           </span>
-              <div class="hover-popup">
-                <p>` + linkTagsText + `</p>
-                <p>` + instancesText + `</p>
-              </div>
+              <div class="hover-popup">`+
+      linkTagsText +
+      instancesText +
+      `</div>
             </div>
           </div>
         </div>
@@ -578,6 +786,10 @@ function updateAssets() {
     wrapper.innerHTML = `<div class="empty-row">There are no items here.</div>`
 
 }
+
+/*
+* Function to update the Links view
+*/
 function updateLinks() {
   //Hide Multi-wrapper if view is updated
   let wrapper = document.querySelector("#links .view-items")
@@ -590,27 +802,25 @@ function updateLinks() {
 
       //Create string of tags and instances
       let linkTagsText = ''
-      let instancesText = ''
+      let instancesText = '<strong>Instances:</strong><ul>'
 
       if (link.tags.isLocal)
-        linkTagsText += "<strong>Original URL</strong>: " + link._href + '<br>'
-      Object.keys(link.tags).forEach(i => linkTagsText += "<strong>" + i + "</strong>: " + link.tags[i] + "<br>")
+        linkTagsText += "Original URL: <strong>" + link._href + '</strong><br>'
+      Object.keys(link.tags).forEach(i => linkTagsText += "" + i + ": <strong>" + link.tags[i] + "</strong><br>")
       if (linkTagsText.length > 0)
         linkTagsText = linkTagsText.substr(0, linkTagsText.length - 4) + '<hr>'
 
       //Add all instances to the instance string
       link.instances.forEach(i => {
-        instancesText += '<strong>' + i.foundOn + '</strong><br>'
+        instancesText += '<li>' + i.foundOn + '<ul>'
         if (i.title)
-          instancesText += '&nbsp;&nbsp;&nbsp;<strong>Title</strong>: ' + i.title + '<br>'
+          instancesText += '<li>Title: <strong>' + i.title + '</strong></li>'
         if (i.text)
-          instancesText += '&nbsp;&nbsp;&nbsp;<strong>Text</strong>: ' + i.text + '<br>'
-        Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "&nbsp;&nbsp;&nbsp;<strong>" + i1 + "</strong>: " + i.tags[i1] + "<br>" : '')
-        instancesText += '<hr>'
+          instancesText += '<li>Text: <strong>' + i.text + '</strong></li>'
+        Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "<li>" + i1 + ": <strong>" + i.tags[i1] + "</strong></li>" : '')
+        instancesText += '</ul></li>'
       })
-
-      if (instancesText.length > 0)
-        instancesText = instancesText.substr(0, instancesText.length - 8)
+      instancesText += '</ul>'
 
       //Add to HTML to html string for the item
       html += `
@@ -634,8 +844,8 @@ function updateLinks() {
               <i class="fas fa-info fa-stack-1x fa-inverse"></i>
             </span>
             <div class="hover-popup">`+
-        '<p>' + linkTagsText + '</p>' +
-        '<p>' + instancesText + '</p>' +
+        linkTagsText +
+        instancesText +
         `</div>
             </div>
           </div>
@@ -650,6 +860,10 @@ function updateLinks() {
   else
     wrapper.innerHTML = `<div class="empty-row">There are no items here.</div>`
 }
+
+/* 
+* Function to update the Files view
+*/
 function updateFiles() {
   //Hide Multi-wrapper if view is updated
   document.querySelector("#files .multi-wrapper").classList.remove("active")
@@ -663,27 +877,25 @@ function updateFiles() {
 
       //Create string of tags and instances
       let linkTagsText = ''
-      let instancesText = ''
+      let instancesText = '<strong>Instances:</strong><ul>'
 
       if (link.tags.isLocal)
-        linkTagsText += "<strong>Original URL</strong>: " + link._href + '<br>'
-      Object.keys(link.tags).forEach(i => linkTagsText += "<strong>" + i + "</strong>: " + link.tags[i] + "<br>")
+        linkTagsText += "Original URL: <strong>" + link._href + '</strong><br>'
+      Object.keys(link.tags).forEach(i => linkTagsText += "" + i + ": <strong>" + link.tags[i] + "</strong><br>")
       if (linkTagsText.length > 0)
         linkTagsText = linkTagsText.substr(0, linkTagsText.length - 4) + '<hr>'
 
       //Add all instances to the instance string
       link.instances.forEach(i => {
-        instancesText += '<strong>' + i.foundOn + '</strong><br>'
+        instancesText += '<li>' + i.foundOn + '<ul>'
         if (i.title)
-          instancesText += '&nbsp;&nbsp;&nbsp;<strong>Title</strong>: ' + i.title + '<br>'
+          instancesText += '<li>Title: <strong>' + i.title + '</strong></li>'
         if (i.text)
-          instancesText += '&nbsp;&nbsp;&nbsp;<strong>Text</strong>: ' + i.text + '<br>'
-        Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "&nbsp;&nbsp;&nbsp;<strong>" + i1 + "</strong>: " + i.tags[i1] + "<br>" : '')
-        instancesText += '<hr>'
+          instancesText += '<li>Text: <strong>' + i.text + '</strong></li>'
+        Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "<li>" + i1 + ": <strong>" + i.tags[i1] + "</strong></li>" : '')
+        instancesText += '</ul></li>'
       })
-
-      if (instancesText.length > 0)
-        instancesText = instancesText.substr(0, instancesText.length - 8)
+      instancesText += '</ul>'
 
       //Add to HTML to html string for the item
       html += `
@@ -707,8 +919,8 @@ function updateFiles() {
           <i class="fas fa-info fa-stack-1x fa-inverse"></i>
         </span>
               <div class="hover-popup">`+
-        '<p>' + linkTagsText + '</p>' +
-        '<p>' + instancesText + '</p>' +
+        linkTagsText +
+        instancesText +
         `</div>
         </div>
           </div>
@@ -723,6 +935,10 @@ function updateFiles() {
   else
     wrapper.innerHTML = `<div class="empty-row">There are no items here.</div>`
 }
+
+/*
+* Function to update Image View
+*/
 function updateImages() {
   //Hide Multi-wrapper if view is updated
   document.querySelector("#images .multi-wrapper").classList.remove("active")
@@ -735,16 +951,21 @@ function updateImages() {
 
     //Create string of tags and instances
     let imageTagsText = ''
-    let instancesText = ''
+    let instancesText = '<strong>Instances:</strong><ul>'
 
-    Object.keys(image.tags).forEach(i => imageTagsText += "<strong>" + i + "</strong>: " + image.tags[i] + "<br>")
+
+    Object.keys(image.tags).forEach(i => imageTagsText += "" + i + ": <strong>" + image.tags[i] + "</strong><br>")
+    if (imageTagsText.length > 0)
+      imageTagsText = imageTagsText.substr(0, imageTagsText.length - 4) + '<hr>'
+
     image.instances.forEach(i => {
-      instancesText += '<strong>' + i.foundOn + '</strong><br>'
+      instancesText += '<li>' + i.foundOn + '<ul>'
       if (i.alt)
-        instancesText += '&nbsp;&nbsp;&nbsp;<strong>Alt</strong>: ' + i.alt + '<br>'
-      Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "&nbsp;&nbsp;&nbsp;<strong>" + i1 + "</strong>: " + i.tags[i1] + "<br>" : '')
-      instancesText += '<br>'
+        instancesText += '<li>Alt: <strong>' + i.alt + '</strong></li>'
+      Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "<li>" + i1 + ": <strong>" + i.tags[i1] + "</strong></li>" : '')
+      instancesText += '</ul></li>'
     })
+    instancesText += '</ul>'
 
     //Add to HTML to html string for the item
     html += `
@@ -759,6 +980,7 @@ function updateImages() {
       '<p>' + image.src + '</p>' +
       `</div>
        <div class="tools">
+         <a class="goto" target="_blank" href="` + image.src + `" title="Open Image"><i class="fas fa-external-link-alt"></i></a>
          <a class="download" href="`+ image.src + `" title="Download Image"><i class="fas fa-file-download"></i></a>
          </div>
          <div class="info">
@@ -768,8 +990,8 @@ function updateImages() {
               <i class="fas fa-info fa-stack-1x fa-inverse"></i>
             </span>
                 <div class="hover-popup">` +
-      '<p>' + imageTagsText + '<br></p>' +
-      '<p>' + instancesText + '</p>' +
+      imageTagsText +
+      instancesText +
       `</div>
       </div>
               </div>
@@ -787,7 +1009,7 @@ function updateImages() {
 
 /*
 * Function to create a link object from an element
-* @param {url} url - The url location of where this element was
+* @param {string} url - The url location of where this element was
 * @param {Element} element - The element to create the link from
 */
 function createLinkObject(url, element) {
@@ -805,22 +1027,28 @@ function createLinkObject(url, element) {
   if (element.target == "_blank")
     link.instances[0].tags.isNewTab = true
 
-    //Check if link is local
+  //Check if link is local
   if (isUrlLocal(link.href) || link.href.indexOf(url) == 0) {
     link.tags.isLocal = true
     link._href = link.href;
-    
+
     //Clean up link by adding the url to the beginning if needed
     while (url.lastIndexOf("/") >= 8)
       url = url.substr(0, url.lastIndexOf("/"))
     link.href = link.href.startsWith("/") ? url + link.href : url + "/" + link.href
+
+    if (link._href == "/") {
+      link.isCrawled = true;
+      link.tags.isHomePage = true
+    }
   }
   return link;
 }
+
 /*
 * Function to create an asset object from a link
-* @param {url} url - The url location of where this element was
-* @param {link} link - The link to the asset
+* @param {string} url - The url location of where this element was
+* @param {string} link - The link to the asset
 */
 function createAssetObject(url, link) {
   //Create the asset object
@@ -844,12 +1072,11 @@ function createAssetObject(url, link) {
   return asset;
 }
 
-
 /*
 * Function to create an Image Object from an element/link
-* @param {url} url - The url location of where this element was
+* @param {string} url - The url location of where this element was
 * @param {Element} element - The element to create the image from (Optional)
-* @param {link} link - The link to the image - Will only use if element is null
+* @param {string} link - The link to the image - Will only use if element is null
 */
 function createImageObject(url, element, src) {
 

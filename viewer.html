@@ -275,17 +275,76 @@
           </div>
         </div>
       </div>
-      <div class="popup active">
+      <div id="popup" class="popup ">
         <div class="popup-outerWrapper">
           <div class="card popup-wrapper">
-            <h2 class="card-title">https://Bimmr.com</h2><span title="Close Popup" class="card-title-icon popup-close"><i
-                class="far fa-window-close tool-icon"></i></span>
+            <span class="card-title"><h2>Title</h2><h3>https://www.Sub-title.com</h3></span><span title="Close Popup"
+              class="card-title-icon popup-close"><i class="far fa-window-close tool-icon"></i></span>
+            <div class="popup-nav">
+              <div class="popup-nav-item active">
+                <p>Links</p>
+              </div>
+              <div class="popup-nav-item">
+                <p>Files</p>
+              </div>
+              <div class="popup-nav-item">
+                <p>Assets</p>
+              </div>
+              <div class="popup-nav-item">
+                <p>Images</p>
+              </div>
+            </div>
             <div class="popup-content">
-              <div class="popup-nav">
-                <div class="popup-nav-item active"><p>Files</p></div>
-                <div class="popup-nav-item"><p>Links</p></div>
-                <div class="popup-nav-item"><p>Assets</p></div>
-                <div class="popup-nav-item"><p>Images</p></div>
+              <div class="popup-view active" id="popup-view-links">
+                <div class="view-wrapper">
+                  <div class="view-items">
+                    <div class="view-row">
+                      <div class="empty-row">There are no items here.</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="popup-view" id="popup-view-files">
+                <div class="view-wrapper">
+                  <div class="view-items">
+                    <div class="view-row">
+                      <div class="empty-row">There are no items here.</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="multi-wrapper">
+                  <div class="form-item">
+                    <button class="downloadSelected">Download Selected</button>
+                  </div>
+                </div>
+              </div>
+              <div class="popup-view" id="popup-view-assets">
+                <div class="view-wrapper">
+                  <div class="view-items">
+                    <div class="view-row">
+                      <div class="empty-row">There are no items here.</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="multi-wrapper">
+                  <div class="form-item">
+                    <button class="downloadSelected">Download Selected</button>
+                  </div>
+                </div>
+              </div>
+              <div class="popup-view" id="popup-view-images">
+                <div class="view-wrapper">
+                  <div class="view-items">
+                    <div class="view-row">
+                      <div class="empty-row">There are no items here.</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="multi-wrapper">
+                  <div class="form-item">
+                    <button class="downloadSelected">Download Selected</button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

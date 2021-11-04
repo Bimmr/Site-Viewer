@@ -8,7 +8,7 @@ let crawling = []
 //Track lastHTML to show what has changed
 let lastCounts = { pages: 0, assets: 0, links: 0, files: 0, images: 0 }
 //Settings
-let settings = { combine: { onlyLocal: false, assets: true, images: true, imagesInAssets: true } }
+let settings = { combine: { onlyLocal: false, assets: false, images: false, imagesInAssets: true } }
 
 //Regex for Chrome Extension
 let chromeExtensionRegex = new RegExp(/(chrome-extension:\/\/)\w*\//g)

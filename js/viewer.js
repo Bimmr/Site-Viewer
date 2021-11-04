@@ -1,14 +1,26 @@
 //Crawled Pages
-let crawl = { all: { images: [], links: [], assets: [] } }
+let crawl = { all: { media: [], links: [], assets: [] } }
 let baseUrl = 'https://bimmr.com'
 let hostURL = 'https://bimmr.com'
 
 //Track whats being crawled
 let crawling = []
 //Track lastHTML to show what has changed
-let lastCounts = { pages: 0, assets: 0, links: 0, files: 0, images: 0 }
+let lastCounts = { pages: 0, assets: 0, links: 0, files: 0, media: 0 }
+
 //Settings
-let settings = { combine: { onlyLocal: false, assets: false, images: false, imagesInAssets: true } }
+let settings = {
+  crawl: {
+    onPageScripts: false,
+    onPageStyles: true
+  },
+  combine: {
+    onlyLocal: false,
+    assets: false,
+    media: false,
+    imagesInAssets: false
+  }
+}
 
 //Regex for Chrome Extension
 let chromeExtensionRegex = new RegExp(/(chrome-extension:\/\/)\w*\//g)
@@ -39,8 +51,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
 
   let url = new URL(baseUrl)
-  hostURL = url.protocol + "//" + url.host
-  baseUrl = hostURL + (url.path ? url.path : '')
+  hostURL = url.origin
+  baseUrl = hostURL + (url.pathname ? url.pathname : '')
 
   document.querySelector("#crawledSiteText").innerHTML = baseUrl
   crawlURL(baseUrl)
@@ -181,13 +193,28 @@ async function crawlURL(url, addToAll = true) {
 
         //Init lists
         let links = []
-        let images = []
+        let media = []
         let assets = []
 
         //Basic a tag - get link and add to crawl all list, but if already found add as an instance
         doc.querySelectorAll("a").forEach(element => {
           let link = createLinkObject(url, element)
-          if(link._href && link._href == "/") return
+          if ((link._href && (link._href.startsWith("?")))) return
+          let found
+          if (!(found = links.find(i => i.href == link.href || i.href == link._href))) {
+            links.push(link)
+          }
+          else
+            found.instances.push({
+              foundOn: url,
+              title: link.instances[0].title,
+              tags: { isNewTab: link.instances[0].tags.isNewTab }
+            })
+        })
+        //Basic iframe tag - get link and add to crawl all list, but if already found add as an instance
+        doc.querySelectorAll("iframe").forEach(element => {
+          let link = createLinkObject(url, createElementFromHTML(`<a href="${element.src}"></a>`))
+          if ((link._href && (link._href.startsWith("?")))) return
           let found
           if (!(found = links.find(i => i.href == link.href || i.href == link._href))) {
             links.push(link)
@@ -205,8 +232,8 @@ async function crawlURL(url, addToAll = true) {
         doc.querySelectorAll("img").forEach(element => {
           let image = createImageObject(url, element)
           let found
-          if (!(found = images.find(i => i.src == image.src)))
-            images.push(image)
+          if (!(found = media.find(i => i.src == image.src)))
+            media.push(image)
           else
             found.instances.push({
               foundOn: url,
@@ -214,6 +241,47 @@ async function crawlURL(url, addToAll = true) {
               tags: { isNewTab: image.instances[0].tags.isNewTab }
             })
         })
+
+        //Basic video tag - get video and add to crawl all list, but if already found add as an instance
+        doc.querySelectorAll("video").forEach(element => {
+
+          let image = createImageObject(url, null, element.poster)
+          let foundImage
+          if (!(foundImage = media.find(i => i.src == image.src)))
+            media.push(image)
+          else
+            foundImage.instances.push({
+              foundOn: url,
+              alt: image.instances[0].alt,
+              tags: { isNewTab: image.instances[0].tags.isNewTab }
+            })
+
+          let video = createImageObject(url, null, element.querySelector("source").src)
+          let foundVideo
+          if (!(foundVideo = media.find(i => i.src == video.src)))
+            media.push(video)
+          else
+            foundVideo.instances.push({
+              foundOn: url,
+              alt: video.instances[0].alt,
+              tags: { isNewTab: video.instances[0].tags.isNewTab }
+            })
+        })
+
+        //Basic audio tag - get audio and add to crawl all list, but if already found add as an instance
+        doc.querySelectorAll("audio").forEach(element => {
+          let audio = createImageObject(url, null, element.querySelector("source").src)
+          let foundAudio
+          if (!(foundAudio = media.find(i => i.src == audio.src)))
+            media.push(audio)
+          else
+            foundAudio.instances.push({
+              foundOn: url,
+              alt: audio.instances[0].alt,
+              tags: { isNewTab: audio.instances[0].tags.isNewTab }
+            })
+        })
+
 
         //Background Image styles - get image and add to crawl all list, but if already found add as an instance
         doc.querySelectorAll('*[style*="background"]').forEach(element => {
@@ -223,11 +291,11 @@ async function crawlURL(url, addToAll = true) {
             let image = createImageObject(url, null, src)
             let found
             if (isUrlImage(image.src))
-              if (!(found = images.find(i => i.src == image.src))) {
+              if (!(found = media.find(i => i.src == image.src))) {
                 image.instances[0].alt = element.alt || element.title
                 image.instances[0].tags.isBackground = true
                 image.instances[0].tags.isInline = true
-                images.push(image)
+                media.push(image)
               }
               else
                 found.instances.push({
@@ -239,75 +307,78 @@ async function crawlURL(url, addToAll = true) {
         })
 
         //Find Background Images hidden in style tags - get image and add to crawl all list, but if already found add as an instance
-        doc.querySelectorAll('style').forEach(element => {
-          if (element.innerHTML.match(urlRegex))
-            element.innerHTML.match(urlRegex).forEach(style => {
-              let src = urlRegex.exec(style).groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
-              urlRegex.lastIndex = 0
-              let found
-              let image = createImageObject(url, null, src)
-              if (isUrlImage(image.src))
-                if (!(found = images.find(i => i.src == image.src))) {
-                  image.instances[0].alt = element.alt || element.title
-                  image.instances[0].tags.isBackground = true
-                  image.instances[0].tags.isInStyleTag = true
-                  images.push(image)
-                }
-                else
-                  found.instances.push({
-                    foundOn: url,
-                    alt: image.instances[0].alt || element.title,
-                    tags: { isBackground: true, isInStyleTag: true }
-                  })
-            })
-        })
+        if (!isUrlHTMLFile(url) || (isUrlHTMLFile(url) && settings.crawl.onPageStyles))
+          doc.querySelectorAll('style').forEach(element => {
+            if (element.innerHTML.match(urlRegex))
+              element.innerHTML.match(urlRegex).forEach(style => {
+                let src = urlRegex.exec(style).groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
+                urlRegex.lastIndex = 0
+                let found
+                let image = createImageObject(url, null, src)
+                if (isUrlImage(image.src))
+                  if (!(found = media.find(i => i.src == image.src))) {
+                    image.instances[0].alt = element.alt || element.title
+                    image.instances[0].tags.isBackground = true
+                    image.instances[0].tags.isInStyleTag = true
+                    media.push(image)
+                  }
+                  else
+                    found.instances.push({
+                      foundOn: url,
+                      alt: image.instances[0].alt || element.title,
+                      tags: { isBackground: true, isInStyleTag: true }
+                    })
+              })
+          })
 
         //Find Background Images/Links in script tags - get links/images and add to crawl all list, but if already found add as an instance
-        doc.querySelectorAll('script').forEach(element => {
 
-          //Look for BackgroundImages
-          if (element.innerHTML.match(urlRegex))
-            element.innerHTML.match(urlRegex).forEach(style => {
-              let src = urlRegex.exec(style).groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
-              urlRegex.lastIndex = 0
-              let image = createImageObject(url, null, src)
-              let found
-              if (isUrlImage(image.src))
-                if (!(found = images.find(i => i.src == image.src))) {
-                  image.instances[0].alt = element.alt || element.title
-                  image.instances[0].tags.isBackground = true
-                  image.instances[0].tags.isInScriptTag = true
-                  images.push(image)
+        if (!isUrlHTMLFile(url) || (isUrlHTMLFile(url) && settings.crawl.onPageStyles))
+          doc.querySelectorAll('script').forEach(element => {
+
+            //Look for BackgroundImages
+            if (element.innerHTML.match(urlRegex))
+              element.innerHTML.match(urlRegex).forEach(style => {
+                let src = urlRegex.exec(style).groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
+                urlRegex.lastIndex = 0
+                let image = createImageObject(url, null, src)
+                let found
+                if (isUrlImage(image.src))
+                  if (!(found = media.find(i => i.src == image.src))) {
+                    image.instances[0].alt = element.alt || element.title
+                    image.instances[0].tags.isBackground = true
+                    image.instances[0].tags.isInScriptTag = true
+                    media.push(image)
+                  }
+                  else
+                    found.instances.push({
+                      foundOn: url,
+                      alt: image.instances[0].alt || element.title,
+                      tags: { isBackground: true, isInScriptTag: true }
+                    })
+              })
+
+            //Look for Links
+            if (element.innerHTML.match(aTagRegex))
+              element.innerHTML.match(aTagRegex).forEach(element => {
+                element += "</a>"
+                let linkElement = createElementFromHTML(element)
+                let link = createLinkObject(url, linkElement)
+                if ((link._href && (link._href.startsWith("?")))) return
+                let found
+
+                if (!(found = links.find(i => i.href == link.href) || (link.href.length == 1 && link.href[0] == '/'))) {
+                  link.instances[0].tags.isInScriptTag = true
+                  links.push(link)
                 }
                 else
                   found.instances.push({
                     foundOn: url,
-                    alt: image.instances[0].alt || element.title,
-                    tags: { isBackground: true, isInScriptTag: true }
+                    title: link.instances[0].title,
+                    tags: { isNewTab: link.instances[0].tags.isNewTab, isInScriptTag: true }
                   })
-            })
-
-          //Look for Links
-          if (element.innerHTML.match(aTagRegex))
-            element.innerHTML.match(aTagRegex).forEach(element => {
-              element += "</a>"
-              let linkElement = createElementFromHTML(element)
-              let link = createLinkObject(url, linkElement)
-              if(link._href && link._href == "/") return
-              let found
-
-              if (!(found = links.find(i => i.href == link.href) || (link.href.length == 1 && link.href[0] == '/'))) {
-                link.instances[0].tags.isInScriptTag = true
-                links.push(link)
-              }
-              else
-                found.instances.push({
-                  foundOn: url,
-                  title: link.instances[0].title,
-                  tags: { isNewTab: link.instances[0].tags.isNewTab, isInScriptTag: true }
-                })
-            })
-        })
+              })
+          })
 
         //Find and track all stylesheets as assets
         if (type == "html")
@@ -332,7 +403,7 @@ async function crawlURL(url, addToAll = true) {
           description: doc.querySelector("meta[name='description']")?.content,
           keywords: doc.querySelector("meta[name='keywords']")?.content,
           links: links.sort(sortLinks),
-          images,
+          media,
           assets,
           doc,
           data
@@ -349,11 +420,11 @@ async function crawlURL(url, addToAll = true) {
             }
           })
           //For images - add link to crawl all list or add to instance if already crawled
-          page.images.forEach(image => {
-            if (!crawl.all.images.find(i => i.src == image.src)) crawl.all.images.push(image)
+          page.media.forEach(file => {
+            if (!crawl.all.media.find(i => i.src == file.src)) crawl.all.media.push(file)
             else {
-              let instances = crawl.all.images.find(i => i.src == image.src).instances
-              crawl.all.images.find(i => i.src == image.src).instances = [...instances, ...image.instances]
+              let instances = crawl.all.media.find(i => i.src == file.src).instances
+              crawl.all.media.find(i => i.src == file.src).instances = [...instances, ...file.instances]
             }
           })
           //For assets - add link to crawl all list or add to instance if already crawled
@@ -377,7 +448,7 @@ async function crawlURL(url, addToAll = true) {
           updateAssets()
           updateLinks()
           updateFiles()
-          updateImages()
+          updateMedia()
           updateOverview()
 
           //Update Listeners
@@ -431,10 +502,10 @@ function updateAll() {
       event.preventDefault()
 
       //Get url to download
-      let url = event.target.href
+      let url = event.target.parentNode.href
 
       //If combining images and assets into one file
-      if (settings.combine) {
+      if (isUrlHTMLFile(url) && (settings.combine.assets || settings.combine.imagesInAssets || settings.combine.media)) {
 
         crawlIfNeeded(url).then(page => {
 
@@ -446,7 +517,7 @@ function updateAll() {
               pageDoc = await convertAllAssets(pageDoc)
             if (settings.combine.imagesInAssets)
               pageDoc = await convertAllStyleImages(pageDoc)
-            if (settings.combine.images)
+            if (settings.combine.media)
               pageDoc = await convertAllImages(pageDoc)
 
             //Create blob
@@ -505,9 +576,6 @@ function updateAll() {
                     else
                       return
                   })
-                } else {
-                  console.log("WHAT ARE YOU?!")
-                  console.log(element)
                 }
               })
             })
@@ -607,7 +675,7 @@ function updateAll() {
   document.querySelectorAll(".view-items .crawl").forEach(element => {
     element.onclick = event => {
       event.preventDefault()
-      let url = event.target.parentNode.getAttribute("href")
+      let url = event.target.parentNode.href
 
       //Check if the item being crawled is an HTML page or an asset
       if (isUrlHTMLFile(url))
@@ -633,7 +701,7 @@ function updateOverview() {
     document.querySelectorAll("#assets .view-row").length,
     document.querySelectorAll("#links .view-row").length,
     document.querySelectorAll("#files .view-row").length,
-    document.querySelectorAll("#images .view-row").length
+    document.querySelectorAll("#media .view-row").length
   ]
 
   //Get all counters in overview
@@ -694,7 +762,7 @@ function updatePages() {
 
       //Create string of tags and instances
       let linkTagsText = ''
-      let instancesText = '<strong>Instances:</strong><ul>'
+      let instancesText = '<strong>Instances:</strong>(' + link.instances.length + ')<ul>'
       linkTagsText += "Original URL: <strong>" + link._href + '</strong><br>'
 
       //No need to display isLocal if it's a page
@@ -770,10 +838,6 @@ function updatePages() {
 */
 function setupPopup(url) {
 
-  //Remove any trailing /
-  if (url.lastIndexOf("/") == url.length - 1)
-    url = url.substr(0, url.length - 1)
-
   // Get the popup and the crawled object to inspect
   let popup = document.querySelector("#popup")
   let page = crawl[url]
@@ -781,19 +845,20 @@ function setupPopup(url) {
   //Add popup content
   popup.querySelector(".card-title").innerHTML = '<h2>' + page.title + '</h2>' + '<h3>' + url + '<br><br></h3>'
 
-  let html = { links: '', files: '', assets: '', images: '' }
-  let htmlIndex = 'images'
+  let html = { links: '', files: '', assets: '', media: '' }
+  let htmlIndex = ''
 
   //Loop through all links and assets
   let items = [...page.links, ...page.assets]
   items.forEach(link => {
 
     let href = link.href ? link.href : link.link
+    let _href = link._href ? link._href : link._link
 
     let isAsset = link.link ? true : false
-    let isLocalPage = link.tags.isLocal && !isUrlAnchor(href)
+    let isLocalPage = isUrlLocal(href) && !isUrlAnchor(href)
 
-    htmlIndex = 'images'
+    htmlIndex = 'media'
 
     //Check if it's an asset
     if (isAsset)
@@ -809,10 +874,10 @@ function setupPopup(url) {
 
     //Create string of tags and instances
     let linkTagsText = ''
-    let instancesText = '<strong>Instances:</strong><ul>'
+    let instancesText = '<strong>Instances:</strong> (' + link.instances.length + ')<ul>'
 
     if (link.tags.isLocal)
-      linkTagsText += "Original URL: <strong>" + link._href + '</strong><br>'
+      linkTagsText += "Original URL: <strong>" + _href + '</strong><br>'
     Object.keys(link.tags).forEach(i => linkTagsText += "" + i + ": <strong>" + link.tags[i] + "</strong><br>")
     if (linkTagsText.length > 0)
       linkTagsText = linkTagsText.substr(0, linkTagsText.length - 4) + '<hr>'
@@ -860,19 +925,21 @@ function setupPopup(url) {
   })
 
   //Loop through all images
-  page.images.forEach(image => {
+  page.media.forEach(file => {
+
+    let isImage = isUrlImage(file.src)
 
     //Create string of tags and instances
-    let imageTagsText = ''
-    let instancesText = '<strong>Instances:</strong><ul>'
+    let fileTagsText = ''
+    let instancesText = '<strong>Instances:</strong>(' + file.instances.length + ')<ul>'
 
-    if (image._src)
-      imageTagsText += "Original URL: <strong>" + image._src + '</strong><br>'
-    Object.keys(image.tags).forEach(i => imageTagsText += "" + i + ": <strong>" + image.tags[i] + "</strong><br>")
-    if (imageTagsText.length > 0)
-      imageTagsText = imageTagsText.substr(0, imageTagsText.length - 4) + '<hr>'
+    if (file._src)
+      fileTagsText += "Original URL: <strong>" + file._src + '</strong><br>'
+    Object.keys(file.tags).forEach(i => fileTagsText += "" + i + ": <strong>" + file.tags[i] + "</strong><br>")
+    if (fileTagsText.length > 0)
+      fileTagsText = fileTagsText.substr(0, fileTagsText.length - 4) + '<hr>'
 
-    image.instances.forEach(i => {
+    file.instances.forEach(i => {
       instancesText += '<li>' + i.foundOn + '<ul>'
       if (i.alt)
         instancesText += '<li>Alt: <strong>' + i.alt + '</strong></li>'
@@ -882,18 +949,20 @@ function setupPopup(url) {
     instancesText += '</ul>'
 
     //Add to HTML to html string for the item
-    html.images += `
+    html.media += `
         <div class="view-row">
            
-          <div class="image">`+
-      '<img src="' + image.src + '">' +
-      `</div>
+          <div class="image">`
+    if (isImage)
+      html.media += '<img src="' + file.src + '">'
+    else html.media += getURLIcon(file.src)
+    html.media += `</div>
           <div class="link">`+
-      '<p>' + image.src + '</p>' +
+      '<p>' + file.src + '</p>' +
       `</div>
        <div class="tools">
-        <a class="goto" target="_blank" href="` + image.src + `" title="Open Image"><i class="fas fa-external-link-alt"></i></a>
-         <a class="download" href="`+ image.src + `" title="Download Image"><i class="fas fa-file-download"></i></a>
+        <a class="goto" target="_blank" href="` + file.src + `" title="Open Image"><i class="fas fa-external-link-alt"></i></a>
+         <a class="download" href="`+ file.src + `" title="Download Image"><i class="fas fa-file-download"></i></a>
          </div>
          <div class="info">
          <div class="hover-popup-icon">
@@ -902,7 +971,7 @@ function setupPopup(url) {
               <i class="fas fa-info fa-stack-1x fa-inverse"></i>
             </span>
                 <div class="hover-popup">` +
-      imageTagsText +
+      fileTagsText +
       instancesText +
       `</div>
       </div>
@@ -925,9 +994,9 @@ function setupPopup(url) {
     html.assets = '<div class="empty-row">There are no items here.</div>'
   popup.querySelector("#popup-view-assets .view-items").innerHTML = html.assets
 
-  if (html.images.length == 0)
-    html.images = '<div class="empty-row">There are no items here.</div>'
-  popup.querySelector("#popup-view-images .view-items").innerHTML = html.images
+  if (html.media.length == 0)
+    html.media = '<div class="empty-row">There are no items here.</div>'
+  popup.querySelector("#popup-view-media .view-items").innerHTML = html.media
 
   //UpdateAll to make sure goto and download icons are activated
   updateAll()
@@ -949,7 +1018,7 @@ function updateAssets() {
 
     //Create string of tags and isntances
     let linkTagsText = ''
-    let instancesText = '<strong>Instances:</strong><ul>'
+    let instancesText = '<strong>Instances:</strong>(' + link.instances.length + ')<ul>'
     if (link.tags.isLocal)
       linkTagsText += "Original URL: <strong>" + link._link + '</strong><br>'
 
@@ -1021,7 +1090,7 @@ function updateLinks() {
 
       //Create string of tags and instances
       let linkTagsText = ''
-      let instancesText = '<strong>Instances:</strong><ul>'
+      let instancesText = '<strong>Instances:</strong>(' + link.instances.length + ')<ul>'
 
       if (link.tags.isLocal)
         linkTagsText += "Original URL: <strong>" + link._href + '</strong><br>'
@@ -1096,7 +1165,7 @@ function updateFiles() {
 
       //Create string of tags and instances
       let linkTagsText = ''
-      let instancesText = '<strong>Instances:</strong><ul>'
+      let instancesText = '<strong>Instances:</strong>(' + link.instances.length + ')<ul>'
 
       if (link.tags.isLocal)
         linkTagsText += "Original URL: <strong>" + link._href + '</strong><br>'
@@ -1158,27 +1227,29 @@ function updateFiles() {
 /**
 * Function to update Image View
 */
-function updateImages() {
+function updateMedia() {
   //Hide Multi-wrapper if view is updated
-  document.querySelector("#images .multi-wrapper").classList.remove("active")
+  document.querySelector("#media .multi-wrapper").classList.remove("active")
 
   //Iterate all images in the crawl object adding to the HTML string
-  let wrapper = document.querySelector("#images .view-items")
+  let wrapper = document.querySelector("#media .view-items")
   let html = ''
 
-  crawl.all.images.forEach(image => {
+  crawl.all.media.forEach(file => {
+
+    let isImage = isUrlImage(file.src)
 
     //Create string of tags and instances
     let imageTagsText = ''
-    let instancesText = '<strong>Instances:</strong><ul>'
+    let instancesText = '<strong>Instances:</strong>(' + file.instances.length + ')<ul>'
 
-    if (image._src)
-      imageTagsText += "Original URL: <strong>" + image._src + '</strong><br>'
-    Object.keys(image.tags).forEach(i => imageTagsText += "" + i + ": <strong>" + image.tags[i] + "</strong><br>")
+    if (file._src)
+      imageTagsText += "Original URL: <strong>" + file._src + '</strong><br>'
+    Object.keys(file.tags).forEach(i => imageTagsText += "" + i + ": <strong>" + file.tags[i] + "</strong><br>")
     if (imageTagsText.length > 0)
       imageTagsText = imageTagsText.substr(0, imageTagsText.length - 4) + '<hr>'
 
-    image.instances.forEach(i => {
+    file.instances.forEach(i => {
       instancesText += '<li>' + i.foundOn + '<ul>'
       if (i.alt)
         instancesText += '<li>Alt: <strong>' + i.alt + '</strong></li>'
@@ -1193,15 +1264,17 @@ function updateImages() {
             <div class="select">
             <input type="checkbox">
           </div>
-          <div class="image">`+
-      '<img src="' + image.src + '">' +
-      `</div>
+          <div class="image">`
+    if (isImage)
+      html += '<img src="' + file.src + '">'
+    else html += getURLIcon(file.src)
+    html += `</div>
           <div class="link">`+
-      '<p>' + image.src + '</p>' +
+      '<p>' + file.src + '</p>' +
       `</div>
        <div class="tools">
-         <a class="goto" target="_blank" href="` + image.src + `" title="Open Image"><i class="fas fa-external-link-alt"></i></a>
-         <a class="download" href="`+ image.src + `" title="Download Image"><i class="fas fa-file-download"></i></a>
+         <a class="goto" target="_blank" href="` + file.src + `" title="Open Image"><i class="fas fa-external-link-alt"></i></a>
+         <a class="download" href="`+ file.src + `" title="Download Image"><i class="fas fa-file-download"></i></a>
          </div>
          <div class="info">
          <div class="hover-popup-icon">
@@ -1236,14 +1309,15 @@ function createLinkObject(url, element) {
 
   //Create the link object
   let link = { tags: {} }
-  link.href = element.getAttribute('href') || element.href
+  link.href = element.href
   link.instances = [{
     title: element.title,
     text: element.text,
     tags: {},
     foundOn: url
   }]
-  if(link.href)
+
+  if (link.href)
     link.href = link.href.replace(chromeExtensionRegex, '/').replace(viewerRegex, '')
   else
     link.href = ''
@@ -1258,12 +1332,13 @@ function createLinkObject(url, element) {
     link._href = link.href;
 
     //Clean up link by adding the url to the beginning if needed
-    if (!link.href.match(httpRegex)){
-      if(link.href.startsWith('/')){
+    if (!link.href.match(httpRegex)) {
+      if (link.href.startsWith('/')) {
         link.href = hostURL + link.href
-      }else{
+      } else if (!url.endsWith('/')) {
         link.href = url + '/' + link.href
-      }
+      } else
+        link.href = hostURL + '/' + link.href
     }
   }
   return link;
@@ -1296,12 +1371,14 @@ function createAssetObject(url, link) {
     asset._link = asset.link;
 
     //Clean up link by adding the url to the beginning if needed
-    if (!asset.link.match(httpRegex)){
-      if(asset.link.startsWith('/')){
+    if (!asset.link.match(httpRegex)) {
+      if (asset.link.startsWith('/')) {
         asset.link = hostURL + asset.link
-      }else{
+      } else if (!url.endsWith('/')) {
         asset.link = url + '/' + asset.link
       }
+      else
+        asset.link = hostURL + '/' + asset.link
     }
   }
   return asset;
@@ -1337,14 +1414,24 @@ function createImageObject(url, element, src) {
     image._src = image.src;
 
     //Clean up src by adding the url to the beginning if needed
-   //Clean up link by adding the url to the beginning if needed
-   if (!image.src.match(httpRegex)){
-    if(image.src.startsWith('/')){
-      image.src = hostURL + image.src
-    }else{
-      image.src = url + '/' + image.src
+    if (!image.src.match(httpRegex) && !image.src.startsWith('data:image/svg')) {
+      if (!isUrlHTMLFile(url)) {
+        //Deal with any images in assets by removing the asset from the url
+        if (url.endsWith('/'))
+          url = url.substr(0, url.length - 1)
+        url = url.substr(0, url.lastIndexOf('/'))
+      }
+      if (!image.src.match(httpRegex)) {
+        if (image.src.startsWith('/')) {
+          image.src = hostURL + image.src
+        } else if (!url.endsWith('/')) {
+          image.src = url + '/' + image.src
+        }
+        else
+          image.src = hostURL + '/' + image.src
+      }
+
     }
-  }
 
   }
   return image

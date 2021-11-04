@@ -120,6 +120,7 @@ hr {
   position: absolute;
   right: 0;
   top: 7px;
+  animation: 0.75s linear 0.2s infinite alternate loadingCrawl;
 }
 
 .sidebar-item .newContent.active {
@@ -393,7 +394,7 @@ hr {
 .view ul li::before, .popup-view ul li::before {
   content: "\f101";
   color: #00a72a;
-  font-family: "Font Awesome 5 Free";
+  font-family: "Font Awesome 6 Free";
   margin-left: -1em;
   padding-right: 4px;
   font-weight: 900;
@@ -484,9 +485,9 @@ hr {
   flex-basis: 70%
 }
 
-/* Images View */
+/* Media View */
 
-#images .image, #popup-view-images .image {
+#media .image, #popup-view-media .image {
   flex-basis: 20%;
   display: flex;
   align-items: center;
@@ -494,14 +495,18 @@ hr {
   padding: 5px;
 }
 
-#images .image img, #popup-view-images .image img {
+#media .image img, #popup-view-media .image img {
   width: 100%;
   max-height: 75px;
-  max-width: 100px;
   object-fit: contain;
 }
 
-#images .link, #popup-view-images .link {
+#media .view-row .image,
+#popup-view-media .view-row .image {
+  font-size: 3em;
+}
+
+#media .link, #popup-view-media .link {
   display: flex;
   flex-basis: 60%;
   padding-left: 15px;
@@ -510,11 +515,11 @@ hr {
   overflow: auto;
 }
 
-#images .view-title .tools, #popup-view-images .view-title .tools {
+#media .view-title .tools, #popup-view-media .view-title .tools {
   flex-basis: 15%;
 }
 
-#images .tools, #popup-view-images .tools {
+#media .tools, #popup-view-media .tools {
   flex-basis: 10%;
 }
 

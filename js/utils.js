@@ -1,12 +1,14 @@
 // Functions to check if the url is a specific type
-const isUrlHTMLFile = url => (url != "/" && new URL(url).pathname.split('/').pop().indexOf('.') <= 0) || url.indexOf(".html") >= 0 || url.indexOf("htm") >= 0 || url.indexOf("aspx") >= 0
+const isUrlHTMLFile = url => new URL(url).pathname.split('/').pop().indexOf('.') <= 0 || url.indexOf(".html") >= 0 || url.indexOf(".htm") >= 0 || url.indexOf(".aspx") >= 0 || url.indexOf(".php") >= 0
 const isUrlPDFFile = url => url.indexOf('.pdf') >= 0
 const isUrlProtocol = url => isUrlProtocolMailto(url) || isUrlProtocolTel(url)
 const isUrlProtocolMailto = url => url.indexOf('mailto:') >= 0
 const isUrlProtocolTel = url => url.indexOf('tel:') >= 0
-const isUrlLocal = url => (url.indexOf("://") == -1 && !isUrlProtocol(url)) || url.toLowerCase().indexOf(hostURL.toLowerCase()) == 0 || url.startsWith("/")
+const isUrlLocal = url => (url.toLowerCase().indexOf(hostURL.toLowerCase()) == 0 || !url.match(httpRegex)) && !isUrlProtocol(url)
 const isUrlAnchor = url => url.indexOf("#") >= 0
-const isUrlImage = url => url.indexOf(".png") >= 0 || url.indexOf(".gif") >= 0 || url.indexOf(".svg") >= 0 || url.indexOf(".jpg") >= 0 || url.indexOf(".jpeg") >= 0
+const isUrlImage = url => url.indexOf(".png") >= 0 || url.indexOf(".gif") >= 0 || url.indexOf(".svg") >= 0 || url.indexOf(".jpg") >= 0 || url.indexOf(".jpeg") >= 0 || url.indexOf(".bmp") >= 0 || url.indexOf(".ico") >= 0 || url.indexOf("data:image/svg") >= 0
+const isUrlVideo = url => url.indexOf(".mp4") >= 0 || url.indexOf(".webm") >= 0 || url.indexOf(".ogg") >= 0 
+const isUrlAudio = url => url.indexOf(".mp3") >= 0 || url.indexOf(".wav") >= 0 || url.indexOf(".ogg") >= 0 
 const isUrlStyleSheet = url => url.indexOf(".css") >= 0 || url.indexOf("fonts.googleapis.com/css") >= 0
 const isUrlScript = url => url.indexOf(".js") >= 0 || url.indexOf(".jsx") >= 0 || url.indexOf(".ts") >= 0 || url.indexOf(".tsx") >= 0 || url.indexOf("googletagmanager.com/gtag/js") >= 0
 const isUrlFont = url => url.indexOf(".ttf") >= 0 || url.indexOf("fonts.googleapis.com") >= 0
@@ -33,6 +35,10 @@ function getURLIcon(url) {
         return '<i class="fas fa-file-pdf"></i>'
     if (isUrlImage(url))
         return '<i class="fas fa-image"></i>'
+    if (isUrlVideo(url))
+        return '<i class="fas fa-file-video"></i>'
+    if (isUrlAudio(url))
+        return '<i class="fas fa-file-audio"></i>'
     if (isUrlFont(url))
         return '<i class="fas fa-pen-fancy"></i>'
     if (isUrlStyleSheet(url))
@@ -47,7 +53,7 @@ function getURLIcon(url) {
         return '<i class="fas fa-anchor"></i>'
     if (isUrlHTMLFile(url))
         return '<i class="fas fa-link"></i>'
-    return '<i class="fas fa-file"></i>'
+    return '<i class="fas fa-file-alt"></i>'
 }
 /**
 * Function to sort links depending on file type, and than alphabetically
@@ -58,6 +64,7 @@ function getURLIcon(url) {
 function sortLinks(a, b) {
     let aIndex = getFileIndex(a.href)
     let bIndex = getFileIndex(b.href)
+
     if (aIndex == bIndex)
         return a.href.localeCompare(b.href)
     else
@@ -69,6 +76,8 @@ function sortLinks(a, b) {
     * @returns {number} index of the file type
     */
     function getFileIndex(url) {
+        console.log(url)
+        console.log(new URL(url))
         if (isUrlPDFFile(url))
             return 1
         if (isUrlImage(url))

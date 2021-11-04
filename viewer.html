@@ -4,8 +4,7 @@
 <head>
   <title>Site Viewer</title>
 
-  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.6.3/css/all.css"
-    integrity="sha384-UHRtZLI+pbxtHCWp1t77Bi1L4ZtiqrqD80Kn4Z8NTSRyMA2Fd33n5dQ8lWUE00s/" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta2/css/all.min.css" integrity="sha512-YWzhKL2whUzgiheMoBFwW8CKV4qpHQAEuvilg9FAn5VJUDwKZZxkJNuGM4XkWuk94WCrrwslk8yWNGmY1EduTA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
 
   <link rel="stylesheet" href="css/viewer.css">
 
@@ -19,19 +18,19 @@
     <aside id="sidebar" class="sidebar">
       <ul class="sidebar-menu">
         <li class="sidebar-item active">
-          <i class="fa fa-eye fa-2x"></i>
+          <i class="fa-solid fa-binoculars fa-2x"></i>
           <p>Overview</p>
         </li>
       </ul>
       <span class="sidebar-split"></span>
       <ul class="sidebar-menu">
         <li class="sidebar-item">
-          <i class="fa fa-file fa-2x"></i>
+          &nbsp;<i class="fa fa-book-atlas fa-2x"></i>
           <p>Pages</p>
           <span class="newContent"><i class="fas fa-star-of-life"></i></span>
         </li>
         <li class="sidebar-item">
-          <i class="fa fa-file-code fa-2x"></i>
+          <i class="fa-solid fa-file-import fa-2x"></i>
           <p>Assets</p>
           <span class="newContent"><i class="fas fa-star-of-life"></i></span>
         </li>
@@ -41,13 +40,13 @@
           <span class="newContent"><i class="fas fa-star-of-life"></i></span>
         </li>
         <li class="sidebar-item">
-          <i class="fa fa-file-alt fa-2x"></i>
+          &nbsp;&nbsp;<i class="fa fa-file-invoice fa-2x"></i>
           <p>Files</p>
           <span class="newContent"><i class="fas fa-star-of-life"></i></span>
         </li>
         <li class="sidebar-item">
-          <i class="fa fa-image fa-2x"></i>
-          <p>Images</p>
+          <i class="fas fa-photo-video fa-2x"></i>
+          <p>Media</p>
           <span class="newContent"><i class="fas fa-star-of-life"></i></span>
         </li>
       </ul>
@@ -105,8 +104,8 @@
               <p id="files-count" class="count">0</p>
             </div>
             <div class="col card ">
-              <h2 class="card-title">Images</h2>
-              <p id="images-count" class="count">0</p>
+              <h2 class="card-title">Media</h2>
+              <p id="media-count" class="count">0</p>
             </div>
           </div>
         </div>
@@ -240,21 +239,21 @@
         </div>
       </div>
 
-      <div id="images" class="view view-withTitle">
+      <div id="media" class="view view-withTitle">
         <div class="view-wrapper">
           <div class="view-title">
             <div class="select">
               <input type="checkbox">
             </div>
             <div class="image">
-              <p>Image Preview</p>
+              <p>Media Preview</p>
             </div>
             <div class="link">
-              <p>Image Link</p>
+              <p>Media Link</p>
               <a title="Toggle Filter" href="#" class="filter-icon"><i class="fa fa-search"></i></a>
             </div>
             <div class="tools">
-              <p>Image Tools</p>
+              <p>Media Tools</p>
             </div>
           </div>
           <div class="view-items">
@@ -294,7 +293,7 @@
                 <p>Assets</p>
               </div>
               <div class="popup-nav-item">
-                <p>Images</p>
+                <p>Media</p>
               </div>
             </div>
             <div class="popup-content">
@@ -335,7 +334,7 @@
                   </div>
                 </div>
               </div>
-              <div class="popup-view" id="popup-view-images">
+              <div class="popup-view" id="popup-view-media">
                 <div class="view-wrapper">
                   <div class="view-items">
                     <div class="view-row">

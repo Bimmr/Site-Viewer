@@ -1,31 +1,84 @@
-/*
+/**
+ * I'm assuming this means it can run on http and https pages? - copied from another extention of mine to make this one work...
+ */
+chrome.runtime.onInstalled.addListener(function () {
+
+    chrome.declarativeContent.onPageChanged.removeRules(undefined, function () {
+        chrome.declarativeContent.onPageChanged.addRules([{
+            conditions: [new chrome.declarativeContent.PageStateMatcher({
+                pageUrl: { schemes: ['https', 'http'] },
+            })
+            ],
+            actions: [new chrome.declarativeContent.ShowPageAction()]
+        }]);
+    });
+});
+
+
+/**
 * Listen to files being downloaded and suggest the name if the file is being downloaded from Site Viewer
 */
 chrome.downloads.onDeterminingFilename.addListener(function (item, suggest) {
     //If item download is from this extension
-    if (item.byExtensionName == "Site Viewer") {
+    if (item.byExtenionId == chrome.runtime.id) {
+        storageGet(item.url).then(url => {
+            
+            if (url)
+                storageSet(item.url, null)
+            else
+                url = item.url
 
-        //Regex for non word file name
-        let nonWordRegex = new RegExp(/[^a-z0-9A-Z.]/gi)
+            //Regex for non word file name
+            let nonWordRegex = new RegExp(/[^a-z0-9A-Z.]/gi)
 
-        //Get url to download
-        let url = item.url
-        //get file name removing the http(s)://
-        let name = url.substr(url.indexOf("://") + 3)
-        //If still containing a /, start the string after that
-        if (name.indexOf("/") >= 0)
-            name = name.substr(name.indexOf("/") + 1)
-        //Replace any remaining / with double _ then replace all non alphanumeric characters with single _
-        name = name.replace("/", "__").replace(nonWordRegex, '_')
-        //If the name is empty, assume you're downloading the home page
-        if (!name || name.length == 0)
-            name = "index.html"
-        //If there is no extension, add .html
-        if (name.indexOf(".") < 0)
-            name += ".html"
+            //get file name removing the http(s)://
+            let name = url.substr(url.indexOf("://") + 3)
 
-        //Suggest the name of the file
-        suggest({ filename: name })
-    } else
+            //If still containing a /, start the string after that
+            if (name.indexOf("/") >= 0)
+                name = name.substr(name.indexOf("/") + 1)
+
+            //Replace any remaining / with double _ then replace all non alphanumeric characters with single _
+            name = name.replace("/", "__").replace(nonWordRegex, '_')
+
+            //If the name is empty, assume you're downloading the home page
+            if (!name || name.length == 0)
+                name = "index.html"
+
+            //If there is no extension, add .html
+            if (name.indexOf(".") < 0)
+                name += ".html"
+
+            //Suggest the name of the file
+            console.log(name)
+            suggest({ filename: name })
+        })
+        return true;
+    }else
         suggest()
 });
+
+/**
+ * Function to set the value of a key in the storage
+ * @param {any} key - the key to set the value to
+ * @param {*} value  - the value to set
+ */
+function storageSet(key, value) {
+    chrome.storage.local.set({ [key]: value });
+}
+/**
+ * Function to get the value of a key from the storage
+ * @param {any} key - the key to get the value from
+ * @returns {Promise} - a promise that resolves to the value
+ */
+function storageGet(key) {
+    if (!(key instanceof Array))
+        key = [key];
+
+    return new Promise((resolve, reject) => {
+        chrome.storage.local.get(key, result => {
+            let value = result ? Object.keys(result).length > 1 ? result : result[key] : null
+            resolve(value)
+        })
+    })
+}

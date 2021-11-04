@@ -883,6 +883,7 @@ hr {
   z-index: 5;
   transition: none;
   max-height: 1px;
+  word-break: break-all;
 }
 
 /* Full Popups */

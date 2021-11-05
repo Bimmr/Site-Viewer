@@ -26,7 +26,7 @@ function openPopup() {
         popupWindow = window.open(
             chrome.extension.getURL("viewer.html"),
             "SiteViewer - "+ Math.floor(Math.random() * 100),
-            "width=1200,height=500"
+            "width=1300,height=580"
         )
     }
     else {

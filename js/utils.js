@@ -6,7 +6,7 @@ const isUrlProtocolMailto = url => url.indexOf('mailto:') >= 0
 const isUrlProtocolTel = url => url.indexOf('tel:') >= 0
 const isUrlLocal = url => (url.toLowerCase().indexOf(hostURL.toLowerCase()) == 0 || !url.match(httpRegex)) && !isUrlProtocol(url)
 const isUrlAnchor = url => url.indexOf("#") >= 0
-const isUrlImage = url => url.indexOf(".png") >= 0 || url.indexOf(".gif") >= 0 || url.indexOf(".svg") >= 0 || url.indexOf(".jpg") >= 0 || url.indexOf(".jpeg") >= 0 || url.indexOf(".bmp") >= 0 || url.indexOf(".ico") >= 0 || url.indexOf("data:image/svg") >= 0
+const isUrlImage = url => url.indexOf(".png") >= 0 || url.indexOf(".gif") >= 0 || url.indexOf(".svg") >= 0 || url.indexOf(".jpg") >= 0 || url.indexOf(".jpeg") >= 0 || url.indexOf(".bmp") >= 0 || url.indexOf(".webp") >= 0 || url.indexOf("data:image/svg") >= 0
 const isUrlVideo = url => url.indexOf(".mp4") >= 0 || url.indexOf(".webm") >= 0 || url.indexOf(".ogg") >= 0 
 const isUrlAudio = url => url.indexOf(".mp3") >= 0 || url.indexOf(".wav") >= 0 || url.indexOf(".ogg") >= 0 
 const isUrlStyleSheet = url => url.indexOf(".css") >= 0 || url.indexOf("fonts.googleapis.com/css") >= 0
@@ -76,8 +76,6 @@ function sortLinks(a, b) {
     * @returns {number} index of the file type
     */
     function getFileIndex(url) {
-        console.log(url)
-        console.log(new URL(url))
         if (isUrlPDFFile(url))
             return 1
         if (isUrlImage(url))

@@ -15,7 +15,7 @@
 body {
   margin: 0;
   box-sizing: border-box;
-  font-family: 'Roboto Condensed', sans-serif;
+  font-family: 'Roboto', sans-serif;
   overflow: hidden;
 }
 
@@ -39,6 +39,7 @@ hr {
 .sidebar {
   width: var(--sidebarWidth);
   height: 100vh;
+  font-family: 'Roboto Condensed', sans-serif;
   background-color: #333;
   background: linear-gradient(#333, #2a2a2a);
   color: #fff;
@@ -113,14 +114,38 @@ hr {
 }
 
 .sidebar-item .newContent {
+  counter-increment: newContentDelay;
+  animation: 0.65s linear 0.2s infinite alternate newContentFlashing;
   color: #00a72a;
   padding-left: 5px;
   display: none;
-  font-size: .8em;
+  font-size: .7em;
   position: absolute;
-  right: 0;
-  top: 7px;
-  animation: 0.75s linear 0.2s infinite alternate loadingCrawl;
+  left: -7px;
+  top: -1px;
+  opacity: 0.25;
+}
+
+/* .sidebar-item:nth-child(2) .newContent {
+  animation-delay: 0.6s;
+}
+.sidebar-item:nth-child(3) .newContent {
+  animation-delay: 0.1s;
+}
+.sidebar-item:nth-child(4) .newContent {
+  animation-delay: 0.4s;
+}
+.sidebar-item:nth-child(5) .newContent {
+  animation-delay: 0.7s;
+} */
+
+@keyframes newContentFlashing {
+  0% {
+    opacity: 0.25;
+  }
+  100% {
+    opacity: 1;
+  }
 }
 
 .sidebar-item .newContent.active {
@@ -356,7 +381,7 @@ hr {
   margin: 10px;
 }
 
-#overview .card-title, #overview .title h1 {
+#overview .card-title, #overview .title h1, #settings .card-title {
   color: #00a72a;
 }
 
@@ -501,8 +526,7 @@ hr {
   object-fit: contain;
 }
 
-#media .view-row .image,
-#popup-view-media .view-row .image {
+#media .view-row .image, #popup-view-media .view-row .image {
   font-size: 3em;
 }
 
@@ -561,12 +585,21 @@ hr {
   border-left: 1px solid #888;
   padding-left: 10px;
 }
+.combine-settings{
+  max-height: 0px;
+  transition: max-height 0.3s;
+  overflow: hidden;
+}
+.combine-settings.active{
+  max-height: 75px;
+}
 
 /* Form Styles */
 
 .form-item {
   position: relative;
   margin-bottom: 15px;
+  margin-top: 5px;
 }
 
 .form-item label {
@@ -599,6 +632,10 @@ hr {
   position: relative;
 }
 
+.form-item.split>div {
+  position: relative;
+}
+
 @media(max-width: 820px) {
   .form-item.split {
     flex-flow: row wrap;
@@ -614,15 +651,18 @@ hr {
   }
 }
 
-.form-item.split>*:first-child {
+.form-item.split>* {
   flex-grow: 1;
   position: relative;
 }
 
 .form-item.split.even>* {
-  flex-grow: 1;
-  flex-basis: 50%;
+  flex-grow: 6;
   position: relative;
+}
+
+.form-item.split>*.bigger {
+  flex-grow: 10;
 }
 
 @media(min-width: 820px) {
@@ -832,6 +872,9 @@ hr {
   position: relative;
   font-weight: lighter;
   margin-bottom: 20px;
+}
+
+#popup .card-title {
   text-align: center;
 }
 
@@ -942,6 +985,7 @@ hr {
 
 .popup .popup-wrapper .card-title {
   color: #fff;
+  padding: 5px 20px;
 }
 
 .popup .popup-outerWrapper {

@@ -1,10 +1,16 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Language" content="en_US">
+
   <title>Site Viewer</title>
 
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta2/css/all.min.css" integrity="sha512-YWzhKL2whUzgiheMoBFwW8CKV4qpHQAEuvilg9FAn5VJUDwKZZxkJNuGM4XkWuk94WCrrwslk8yWNGmY1EduTA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto|Roboto+Condensed&amp;display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta2/css/all.min.css"
+    integrity="sha512-YWzhKL2whUzgiheMoBFwW8CKV4qpHQAEuvilg9FAn5VJUDwKZZxkJNuGM4XkWuk94WCrrwslk8yWNGmY1EduTA=="
+    crossorigin="anonymous" referrerpolicy="no-referrer" />
 
   <link rel="stylesheet" href="css/viewer.css">
 
@@ -26,17 +32,17 @@
       <ul class="sidebar-menu">
         <li class="sidebar-item">
           &nbsp;<i class="fa fa-book-atlas fa-2x"></i>
-          <p>Pages</p>
+          &nbsp;<p>Pages</p>
           <span class="newContent"><i class="fas fa-star-of-life"></i></span>
         </li>
         <li class="sidebar-item">
           <i class="fa-solid fa-file-import fa-2x"></i>
-          <p>Assets</p>
+          &nbsp;&nbsp;<p>Assets</p>
           <span class="newContent"><i class="fas fa-star-of-life"></i></span>
         </li>
         <li class="sidebar-item">
           <i class="fa fa-link fa-2x"></i>
-          <p>Links</p>
+          &nbsp;&nbsp;<p>Links</p>
           <span class="newContent"><i class="fas fa-star-of-life"></i></span>
         </li>
         <li class="sidebar-item">
@@ -46,19 +52,21 @@
         </li>
         <li class="sidebar-item">
           <i class="fas fa-photo-video fa-2x"></i>
-          <p>Media</p>
+          &nbsp;<p>Media</p>
           <span class="newContent"><i class="fas fa-star-of-life"></i></span>
         </li>
       </ul>
-      <!-- <span class="sidebar-split"></span>
+      <span class="sidebar-split"></span>
       <ul class="sidebar-menu">
         <li class="sidebar-item">
-          <i class="fa fa-cog fa-2x"></i>
+          <i class="fa-solid fa-screwdriver-wrench fa-2x"></i>
           <p>Settings</p>
         </li>
-      </ul> -->
+      </ul>
     </aside>
     <main id="main">
+
+      <!-- Crawling Overlay -->
       <div id="crawling" class="view active">
         <div class="view-wrapper">
           <h1>Crawling:</h1>
@@ -68,6 +76,9 @@
           </span>
         </div>
       </div>
+
+
+      <!-- Overview View -->
       <div id="overview" class="view active">
         <div class="view-wrapper">
           <div class="card">
@@ -111,6 +122,7 @@
         </div>
       </div>
 
+      <!-- Pages View -->
       <div id="pages" class="view view-withTitle">
         <div class="view-wrapper">
           <div class="view-title">
@@ -143,6 +155,9 @@
         </div>
       </div>
 
+
+
+      <!-- Links View -->
       <div id="links" class="view view-withTitle">
         <div class="view-wrapper">
           <div class="view-title">
@@ -170,6 +185,9 @@
           </div>
         </div>
       </div>
+
+
+      <!-- Assets View -->
       <div id="assets" class="view view-withTitle">
         <div class="view-wrapper">
           <div class="view-title">
@@ -205,6 +223,7 @@
           </div>
         </div>
       </div>
+      <!-- Files View -->
       <div id="files" class="view view-withTitle">
         <div class="view-wrapper">
           <div class="view-title">
@@ -238,7 +257,7 @@
           </div>
         </div>
       </div>
-
+      <!-- Media View -->
       <div id="media" class="view view-withTitle">
         <div class="view-wrapper">
           <div class="view-title">
@@ -274,12 +293,81 @@
           </div>
         </div>
       </div>
+
+      <!-- Settings View -->
+      <div id="settings" class="view">
+        <div class="view-wrapper">
+          <div class="card">
+            <h3 class="card-title">Crawl the On Page Assets</h3>
+            <p>Do you want to crawl the on page assets. These would be anything in <i>&lt;script&gt;</i> or
+              <i>&lt;style&gt;</i> tags.</p>
+            <p><i class="fas fa-warning" style="color: orangered"></i> You will need to recrawl after changing these for
+              them to take affect <i class="fas fa-warning" style="color: orangered"></i> </p><br>
+            <div class="form-item split even">
+              <div>
+                <input type="checkbox" id="crawl-onPageScripts">
+                <label for="crawl-onPageScripts">Crawl &lt;script&gt; tags</label>
+              </div>
+              <div>
+                <input type="checkbox" id="crawl-onPageStyles" checked>
+                <label for="crawl-onPageStyles">Crawl &lt;style&gt; tags</label>
+              </div>
+              <div></div>
+              <div></div>
+            </div>
+          </div>
+          <div class="card">
+            <h3 class="card-title">Combine Into HTML File</h3>
+            <p>When downloading a HTML File do you want to combine all the images and assets into the HTML file?</p><br>
+            <div class="form-item">
+              <input type="checkbox" id="combine-enabled">
+              <label for="combine-enabled">Combine items into a single html page</label>
+            </div>
+            <div class="combine-settings">
+              <div class="form-item split even">
+                <div>
+                  <input type="checkbox" id="combine-assets">
+                  <label for="combine-assets">Assets (.js/.css)</label>
+                </div>
+                <div class="bigger">
+                  <input type="checkbox" id="combine-imagesInAssets">
+                  <label for="combine-imagesInAssets">Images on page in <i>&lt;style&gt;</i> tags</label>
+                </div>
+                <div>
+                  <input type="checkbox" id="combine-images" checked>
+                  <label for="combine-images">Images on page</label>
+                </div>
+                <div>
+                  <input type="checkbox" id="combine-onlyLocal" checked>
+                  <label for="combine-onlyLocal">Combine only the local items</label>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <h3 class="card-title">Recrawl the Base URL</h3>
+            <p>Want to clear up all your currently crawled pages and go back to only the first page being crawled?</p>
+            <br>
+            <div class="form-item">
+              <button id="recrawlBtn"><i class="fas fa-sync-alt"></i> Recrawl</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+
+      <!-- Popup -->
       <div id="popup" class="popup ">
         <div class="popup-outerWrapper">
           <div class="card popup-wrapper">
             <span class="card-title">
               <h2>Title</h2>
               <h3>https://www.Sub-title.com</h3>
+              <p>Lorem ipsum dolor sit amet consectetur adipisicing elit. Eius, modi, earum illo, voluptatum neque
+                quibusdam eveniet quisquam beatae recusandae ducimus libero soluta commodi impedit aliquam rem harum!
+                Exercitationem maiores, debitis odio accusantium delectus ipsum magnam mollitia nisi, aspernatur et
+                autem molestiae reprehenderit recusandae voluptatum. Mollitia perspiciatis reprehenderit animi vero est!
+              </p>
             </span><span title="Close Popup" class="card-title-icon popup-close"><i
                 class="far fa-window-close tool-icon"></i></span>
             <div class="popup-nav">
@@ -340,11 +428,6 @@
                     <div class="view-row">
                       <div class="empty-row">There are no items here.</div>
                     </div>
-                  </div>
-                </div>
-                <div class="multi-wrapper">
-                  <div class="form-item">
-                    <button class="downloadSelected">Download Selected</button>
                   </div>
                 </div>
               </div>

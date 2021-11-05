@@ -6,7 +6,7 @@ let hostURL = 'https://bimmr.com'
 //Track whats being crawled
 let crawling = []
 //Track lastHTML to show what has changed
-let lastCounts = { pages: 0, assets: 0, links: 0, files: 0, media: 0 }
+let lastCounts = { pages: 1, assets: 1, links: 1, files: 1, media: 1 }
 
 //Settings
 let settings = {
@@ -15,9 +15,10 @@ let settings = {
     onPageStyles: true
   },
   combine: {
-    onlyLocal: false,
+    enabled: false,
+    onlyLocal: true,
     assets: false,
-    media: false,
+    images: true,
     imagesInAssets: false
   }
 }
@@ -72,6 +73,30 @@ document.addEventListener("DOMContentLoaded", function () {
     document.querySelector(".view#" + view)?.classList.add("active")
   }))
 
+  //Settings Controls
+  document.querySelectorAll("#settings.view input").forEach(item => item.addEventListener("change", event => {
+    let settingGroup = item.id.split("-")[0]
+    let setting = item.id.split("-")[1]
+    settings[settingGroup][setting] = item.checked
+  }))
+  document.querySelector("#settings #combine-enabled").addEventListener("change", event => {
+    document.querySelector(".combine-settings").classList.toggle("active")
+  })
+  document.querySelector("#settings #recrawlBtn").addEventListener("click", event => {
+    //Reset
+    crawl = { all: { media: [], links: [], assets: [] } }
+    lastCounts = { pages: 1, assets: 1, links: 1, files: 1, media: 1 }
+    document.querySelector("#crawledSiteCount").innerHTML = ''
+
+    //Recrawl
+    crawlURL(baseUrl)
+    let link = createLinkObject(baseUrl, createElementFromHTML(`<a href="${baseUrl}"></a>`))
+    link.isCrawled = true
+    link.tags.isBaseUrl = true
+    crawl.all.links.push(link)
+
+  })
+
   //Popup Controls
   document.querySelector(".popup .popup-close i").addEventListener("click", event => {
     event.target.parentNode.parentNode.parentNode.parentNode.classList.remove("active")
@@ -88,8 +113,8 @@ document.addEventListener("DOMContentLoaded", function () {
   }))
 
   //Select All controls
-  document.querySelectorAll(".view-title .select").forEach(item => item.addEventListener("click", event => {
-    let view = item.parentNode.parentNode
+  document.querySelectorAll(".view-title .select input").forEach(item => item.addEventListener("click", event => {
+    let view = item.parentNode.parentNode.parentNode
     view.querySelectorAll(".view-items .select input").forEach(item => item.click())
   }))
 
@@ -136,7 +161,7 @@ document.addEventListener("DOMContentLoaded", function () {
   let observer = new MutationObserver(function (mutations) {
     mutations.forEach(function (mutation) {
       let view = mutation.target.parentNode.parentNode.id
-      if (mutation.target.children.length != lastCounts[view]) {
+      if (mutation.target.children.length != lastCounts[view] && mutation.target.children.length > lastCounts[view]) {
         lastCounts[view] = mutation.target.children.length
         let sidebarItem = Array.from(document.querySelectorAll(".sidebar-item p")).find(i => i.innerHTML.toLocaleLowerCase() == view)
         if (!document.querySelector(".view#" + view).classList.contains("active"))
@@ -160,10 +185,16 @@ document.addEventListener("DOMContentLoaded", function () {
 async function crawlURL(url, addToAll = true) {
   return new Promise(async (resolve, reject) => {
 
-    //Update Overview with crawling info, and show loading
+    //Update crawling view with crawling info
     if (crawling.length == 0)
       document.querySelector("#crawlingSiteText").innerHTML = url
     document.querySelector("#crawling").classList.add("active")
+    
+    //Remove any old filter and search stuff
+    document.querySelectorAll(".filter-icon").forEach(item => item.classList.remove("active"))
+    document.querySelectorAll(".searchbar").forEach(item => item.classList.remove("active"))
+    document.querySelectorAll(".searchbar .form-item input").forEach(item => item.value = "")
+    document.querySelectorAll(".view-items .view-row").forEach(item => item.classList.remove("hidden"))
 
     crawling.push(url)
 
@@ -231,55 +262,65 @@ async function crawlURL(url, addToAll = true) {
         //Basic img tag - get image and add to crawl all list, but if already found add as an instance
         doc.querySelectorAll("img").forEach(element => {
           let image = createImageObject(url, element)
+
+
           let found
-          if (!(found = media.find(i => i.src == image.src)))
-            media.push(image)
-          else
-            found.instances.push({
-              foundOn: url,
-              alt: image.instances[0].alt,
-              tags: { isNewTab: image.instances[0].tags.isNewTab }
-            })
+          if (isUrlImage(image.src))
+            if (!(found = media.find(i => i.src == image.src)))
+              media.push(image)
+            else
+              found.instances.push({
+                foundOn: url,
+                alt: image.instances[0].alt,
+                tags: { isNewTab: image.instances[0].tags.isNewTab }
+              })
         })
 
         //Basic video tag - get video and add to crawl all list, but if already found add as an instance
         doc.querySelectorAll("video").forEach(element => {
 
-          let image = createImageObject(url, null, element.poster)
-          let foundImage
-          if (!(foundImage = media.find(i => i.src == image.src)))
-            media.push(image)
-          else
-            foundImage.instances.push({
-              foundOn: url,
-              alt: image.instances[0].alt,
-              tags: { isNewTab: image.instances[0].tags.isNewTab }
-            })
+          if (element.poster && element.poster.length > 0) {
+            let image = createImageObject(url, null, element.poster)
+            let foundImage
+            if (!(foundImage = media.find(i => i.src == image.src)))
+              media.push(image)
+            else
+              foundImage.instances.push({
+                foundOn: url,
+                alt: image.instances[0].alt,
+                tags: { isNewTab: image.instances[0].tags.isNewTab }
+              })
+          }
 
-          let video = createImageObject(url, null, element.querySelector("source").src)
-          let foundVideo
-          if (!(foundVideo = media.find(i => i.src == video.src)))
-            media.push(video)
-          else
-            foundVideo.instances.push({
-              foundOn: url,
-              alt: video.instances[0].alt,
-              tags: { isNewTab: video.instances[0].tags.isNewTab }
-            })
+          if (element.querySelector("source")) {
+            let video = createImageObject(url, null, element.querySelector("source").src)
+            let foundVideo
+            if (!(foundVideo = media.find(i => i.src == video.src)))
+              media.push(video)
+            else
+              foundVideo.instances.push({
+                foundOn: url,
+                alt: video.instances[0].alt,
+                tags: { isNewTab: video.instances[0].tags.isNewTab }
+              })
+          }
         })
+
 
         //Basic audio tag - get audio and add to crawl all list, but if already found add as an instance
         doc.querySelectorAll("audio").forEach(element => {
-          let audio = createImageObject(url, null, element.querySelector("source").src)
-          let foundAudio
-          if (!(foundAudio = media.find(i => i.src == audio.src)))
-            media.push(audio)
-          else
-            foundAudio.instances.push({
-              foundOn: url,
-              alt: audio.instances[0].alt,
-              tags: { isNewTab: audio.instances[0].tags.isNewTab }
-            })
+          if (element.querySelector("source")) {
+            let audio = createImageObject(url, null, element.querySelector("source").src)
+            let foundAudio
+            if (!(foundAudio = media.find(i => i.src == audio.src)))
+              media.push(audio)
+            else
+              foundAudio.instances.push({
+                foundOn: url,
+                alt: audio.instances[0].alt,
+                tags: { isNewTab: audio.instances[0].tags.isNewTab }
+              })
+          }
         })
 
 
@@ -401,7 +442,6 @@ async function crawlURL(url, addToAll = true) {
         let page = {
           title: doc.querySelector("title")?.innerHTML,
           description: doc.querySelector("meta[name='description']")?.content,
-          keywords: doc.querySelector("meta[name='keywords']")?.content,
           links: links.sort(sortLinks),
           media,
           assets,
@@ -501,23 +541,27 @@ function updateAll() {
     element.onclick = event => {
       event.preventDefault()
 
+      console.log("Downloading")
       //Get url to download
       let url = event.target.parentNode.href
+      console.log(url)
 
       //If combining images and assets into one file
-      if (isUrlHTMLFile(url) && (settings.combine.assets || settings.combine.imagesInAssets || settings.combine.media)) {
+      if (isUrlHTMLFile(url) && settings.combine.enabled) {
+        console.log("Is Html and is combine")
 
         crawlIfNeeded(url).then(page => {
 
           convertAll(page);
 
           async function convertAll(page) {
+            console.log("Converting all assets to HTML File")
             let pageDoc = page.doc.cloneNode(true)
             if (settings.combine.assets)
               pageDoc = await convertAllAssets(pageDoc)
             if (settings.combine.imagesInAssets)
               pageDoc = await convertAllStyleImages(pageDoc)
-            if (settings.combine.media)
+            if (settings.combine.images)
               pageDoc = await convertAllImages(pageDoc)
 
             //Create blob
@@ -541,11 +585,11 @@ function updateAll() {
 
               let count = 0
               pageDoc.querySelectorAll('link[rel="stylesheet"], script[src]').forEach((element, i) => {
-                let isLink = element.tagName == "LINK" ? true : false
+                let isStyleSheet = element.tagName == "LINK" ? true : false
 
-                if (isLink) {
+                let linkSheet = createAssetObject(url, element.href)
+                if ((!settings.combine.onlyLocal || (settings.combine.onlyLocal && linkSheet.tags.isLocal)) && isStyleSheet) {
                   count++
-                  let linkSheet = createAssetObject(url, element.href)
                   crawlIfNeeded(linkSheet.link).then(page => {
                     let elm = createElementFromHTML(page.data)
                     pageDoc.querySelector("body").appendChild(elm)
@@ -560,7 +604,8 @@ function updateAll() {
                       return
                   })
                 }
-                else if (!isLink && element.src) {
+                let script = createAssetObject(url, element.src)
+                if ((!settings.combine.onlyLocal || (settings.combine.onlyLocal && script.tags.isLocal)) && !isStyleSheet && element.src) {
                   count++
                   let script = createAssetObject(url, element.src)
                   crawlIfNeeded(script.link).then(page => {
@@ -593,20 +638,22 @@ function updateAll() {
                     let src = urlRegex.exec(style).groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
                     urlRegex.lastIndex = 0
                     let img = createImageObject(url, null, src)
-                    count++
-                    toDataURL(img.src).then(dataUrl => {
-                      let srcToReplace = img._src || img.src
-                      element.innerHTML = element.innerHTML.replace(new RegExp(srcToReplace, "g"), dataUrl)
-                      count--
-                      if (count == 0)
-                        resolve(pageDoc)
-                    }).catch(() => {
-                      count--
-                      if (count == 0)
-                        resolve(pageDoc)
-                      else
-                        return
-                    })
+                    if (!settings.combine.onlyLocal || (settings.combine.onlyLocal && img.tags.isLocal)) {
+                      count++
+                      toDataURL(img.src).then(dataUrl => {
+                        let srcToReplace = img._src || img.src
+                        element.innerHTML = element.innerHTML.replace(new RegExp(srcToReplace, "g"), dataUrl)
+                        count--
+                        if (count == 0)
+                          resolve(pageDoc)
+                      }).catch(() => {
+                        count--
+                        if (count == 0)
+                          resolve(pageDoc)
+                        else
+                          return
+                      })
+                    }
                   })
               })
             })
@@ -620,6 +667,7 @@ function updateAll() {
               let count = 0
 
               pageDoc.querySelectorAll('img[src], *[style*="background"]').forEach(element => {
+                console.log(element)
 
                 let isBackground = element.tagName == "IMG" ? false : true
                 let src
@@ -632,24 +680,29 @@ function updateAll() {
                 } else
                   return
 
-                count++
+                  console.log(src)
                 let img = createImageObject(url, isBackground ? element.src : null, src)
-                toDataURL(img.src).then(dataUrl => {
-                  let srcToReplace = img._src || img.src
-                  if (isBackground)
-                    element.style.cssText = element.style.cssText.replace(new RegExp(srcToReplace, "g"), dataUrl)
-                  else
-                    element.src = dataUrl
-                  count--
-                  if (count == 0)
-                    resolve(pageDoc)
-                }).catch(() => {
-                  count--
-                  if (count == 0)
-                    resolve(pageDoc)
-                  else
-                    return
-                })
+                console.log(img)
+                if (!settings.combine.onlyLocal || (settings.combine.onlyLocal && img.tags.isLocal)) {
+                  console.log("Combining")
+                  count++
+                  toDataURL(img.src).then(dataUrl => {
+                    let srcToReplace = img._src || img.src
+                    if (isBackground)
+                      element.style.cssText = element.style.cssText.replace(new RegExp(srcToReplace, "g"), dataUrl)
+                    else
+                      element.src = dataUrl
+                    count--
+                    if (count == 0)
+                      resolve(pageDoc)
+                  }).catch(() => {
+                    count--
+                    if (count == 0)
+                      resolve(pageDoc)
+                    else
+                      return
+                  })
+                }
               })
             })
           }
@@ -758,7 +811,7 @@ function updatePages() {
   let html = ''
   crawl.all.links.forEach(link => {
     //Pages should only contain local HTML links but not anchors
-    if (isUrlLocal(link.href) && isUrlHTMLFile(link.href) && !isUrlAnchor(link.href)) {
+    if (isUrlLocal(link.href) && isUrlHTMLFile(link.href) && !isUrlAnchor(link.href) && !isUrlScript(link.href) && !isUrlStyleSheet(link.href)) {
 
       //Create string of tags and instances
       let linkTagsText = ''
@@ -843,7 +896,7 @@ function setupPopup(url) {
   let page = crawl[url]
 
   //Add popup content
-  popup.querySelector(".card-title").innerHTML = '<h2>' + page.title + '</h2>' + '<h3>' + url + '<br><br></h3>'
+  popup.querySelector(".card-title").innerHTML = '<h2>' + page.title + '</h2>' + '<h3>' + url + '<br><br></h3><p>' + page.description + '</p>'
 
   let html = { links: '', files: '', assets: '', media: '' }
   let htmlIndex = ''
@@ -1420,19 +1473,25 @@ function createImageObject(url, element, src) {
         if (url.endsWith('/'))
           url = url.substr(0, url.length - 1)
         url = url.substr(0, url.lastIndexOf('/'))
+
       }
       if (!image.src.match(httpRegex)) {
+
+        // If the image is in the root of the site
         if (image.src.startsWith('/')) {
-          image.src = hostURL + image.src
-        } else if (!url.endsWith('/')) {
+          let urlObject = new URL(url)
+          let path = urlObject.pathname.substr(0, urlObject.pathname.lastIndexOf('/'))
+
+          image.src = hostURL + path + image.src
+        }
+        //If the image is relative to current path
+        else {
+          if (url.endsWith('/'))
+            url = url.substr(0, url.length - 1)
           image.src = url + '/' + image.src
         }
-        else
-          image.src = hostURL + '/' + image.src
       }
-
     }
-
   }
   return image
 }

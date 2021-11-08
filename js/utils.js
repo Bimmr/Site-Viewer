@@ -7,8 +7,8 @@ const isUrlProtocolTel = url => url.indexOf('tel:') >= 0
 const isUrlLocal = url => (url.toLowerCase().indexOf(hostURL.toLowerCase()) == 0 || !url.match(httpRegex)) && !isUrlProtocol(url)
 const isUrlAnchor = url => url.indexOf("#") >= 0
 const isUrlImage = url => url.indexOf(".png") >= 0 || url.indexOf(".gif") >= 0 || url.indexOf(".svg") >= 0 || url.indexOf(".jpg") >= 0 || url.indexOf(".jpeg") >= 0 || url.indexOf(".bmp") >= 0 || url.indexOf(".webp") >= 0 || url.indexOf("data:image/svg") >= 0
-const isUrlVideo = url => url.indexOf(".mp4") >= 0 || url.indexOf(".webm") >= 0 || url.indexOf(".ogg") >= 0 
-const isUrlAudio = url => url.indexOf(".mp3") >= 0 || url.indexOf(".wav") >= 0 || url.indexOf(".ogg") >= 0 
+const isUrlVideo = url => url.indexOf(".mp4") >= 0 || url.indexOf(".webm") >= 0 || url.indexOf(".ogg") >= 0
+const isUrlAudio = url => url.indexOf(".mp3") >= 0 || url.indexOf(".wav") >= 0 || url.indexOf(".ogg") >= 0
 const isUrlStyleSheet = url => url.indexOf(".css") >= 0 || url.indexOf("fonts.googleapis.com/css") >= 0
 const isUrlScript = url => url.indexOf(".js") >= 0 || url.indexOf(".jsx") >= 0 || url.indexOf(".ts") >= 0 || url.indexOf(".tsx") >= 0 || url.indexOf("googletagmanager.com/gtag/js") >= 0
 const isUrlFont = url => url.indexOf(".ttf") >= 0 || url.indexOf("fonts.googleapis.com") >= 0
@@ -26,34 +26,75 @@ function createElementFromHTML(htmlString) {
 }
 
 /**
-* Function to get the icon for a link
-* @param {string} url - url of the link
-* @returns {string} - font awesome icon code
-*/
-function getURLIcon(url) {
-    if (isUrlPDFFile(url))
-        return '<i class="fas fa-file-pdf"></i>'
-    if (isUrlImage(url))
-        return '<i class="fas fa-image"></i>'
-    if (isUrlVideo(url))
-        return '<i class="fas fa-file-video"></i>'
-    if (isUrlAudio(url))
-        return '<i class="fas fa-file-audio"></i>'
-    if (isUrlFont(url))
-        return '<i class="fas fa-pen-fancy"></i>'
-    if (isUrlStyleSheet(url))
-        return '<i class="fab fa-css3-alt"></i>'
-    if (isUrlScript(url))
-        return '<i class="fab fa-js-square"></i>'
-    if (isUrlProtocolTel(url))
-        return '<i class="fas fa-phone fa-flip-horizontal"></i>'
-    if (isUrlProtocolMailto(url))
-        return '<i class="fas fa-envelope"></i>'
-    if (isUrlAnchor(url))
-        return '<i class="fas fa-anchor"></i>'
-    if (isUrlHTMLFile(url))
-        return '<i class="fas fa-link"></i>'
-    return '<i class="fas fa-file-alt"></i>'
+ * Function to get the icon based of either a URL or a tag
+ * @param {string} tag - either a tag or a URL
+ */
+function getFAIcon(value, getIndex = false) {
+    let icon
+    try {
+        //Urls
+        new URL(value)
+
+        if (isUrlAnchor(value))
+            icon = ['<i class="fas fa-anchor"></i>', 1]
+        else if (isUrlProtocolTel(value))
+            icon = ['<i class="fas fa-phone"></i>', 11]
+        else if (isUrlProtocolMailto(value))
+            icon = ['<i class="fas fa-envelope"></i>', 12]
+        else if (isUrlProtocol(value))
+            icon = ['<i class="fas fa-globe"></i>', 10]
+        else if (isUrlPDFFile(value))
+            icon = ['<i class="fas fa-file-pdf"></i>', 20]
+        else if (isUrlImage(value))
+            icon = ['<i class="fas fa-image"></i>', 21]
+        else if (isUrlVideo(value))
+            icon = ['<i class="fas fa-file-video"></i>', 22]
+        else if (isUrlAudio(value))
+            icon = ['<i class="fas fa-file-audio"></i>', 23]
+        else if (isUrlStyleSheet(value))
+            icon = ['<i class="fab fa-css3-alt"></i>', 30]
+        else if (isUrlScript(value))
+            icon = ['<i class="fab fa-js-square"></i>', 31]
+        else if (isUrlFont(value))
+            icon = ['<i class="fas fa-font"></i>', 32]
+        else if (isUrlHTMLFile(value))
+            icon = ['<i class="fas fa-link"></i>', 90]
+
+
+    } catch (e) { }
+    //Tags
+    switch (value) {
+        case 'iframe':
+            icon = ['<i class="fas fa-window-restore"></i>', 20]
+            break;
+        case 'img':
+            icon = ['<i class="fas fa-image"></i>', 21]
+            break;
+        case 'video':
+            icon = ['<i class="fas fa-file-video"></i>', 22]
+            break;
+        case 'audio':
+            icon = ['<i class="fas fa-file-audio"></i>', 23]
+            break;
+        case 'link':
+            icon = ['<i class="fab fa-css3-alt"></i>', 30]
+            break;
+        case 'style':
+            icon = ['<i class="fab fa-css3-alt"></i>', 30]
+            break;
+        case 'script':
+            icon = ['<i class="fab fa-js-square"></i>', 31]
+            break;
+    }
+
+    if (!icon)
+        icon = ['<i class="fas fa-file-alt"></i>', 100]
+
+
+    if (getIndex)
+        return icon[1]
+    else
+        return icon[0]
 }
 /**
 * Function to sort links depending on file type, and than alphabetically
@@ -62,40 +103,22 @@ function getURLIcon(url) {
 * @returns {number} -1 if a is before b, 1 if a is after b, alphabetically if they are equal
 */
 function sortLinks(a, b) {
-    let aIndex = getFileIndex(a.href)
-    let bIndex = getFileIndex(b.href)
+    let aIndex,
+        bIndex
+
+    //A Index
+    if (a.tags.tag == 'a' && b.tags.tag == 'a') {
+        aIndex = getFAIcon(a.href, true)
+        bIndex = getFAIcon(b.href, true)
+    } else {
+        aIndex = getFAIcon(a.tags.tag, true)
+        bIndex = getFAIcon(b.tags.tag, true)
+    }
 
     if (aIndex == bIndex)
         return a.href.localeCompare(b.href)
     else
         return aIndex - bIndex
-
-    /**
-    * Function to get the index of the file type
-    * @param {string} url - url of the link
-    * @returns {number} index of the file type
-    */
-    function getFileIndex(url) {
-        if (isUrlPDFFile(url))
-            return 1
-        if (isUrlImage(url))
-            return 2
-        if (isUrlStyleSheet(url))
-            return 3
-        if (isUrlScript(url))
-            return 4
-        if (isUrlFont(url))
-            return 5
-        if (isUrlAnchor(url))
-            return 50
-        if (isUrlProtocolTel(url))
-            return 98
-        if (isUrlProtocolMailto(url))
-            return 99
-        if (isUrlHTMLFile(url))
-            return 30
-        return 0
-    }
 }
 /**
 * Function to create a delay before performing a task, to avoid multiple calls
@@ -145,3 +168,9 @@ const toDataURL = url => fetch(url)
         reader.onerror = reject
         reader.readAsDataURL(blob)
     }))
+
+const getLocation = function (href) {
+    var l = document.createElement("a");
+    l.href = href;
+    return l;
+};

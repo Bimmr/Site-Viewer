@@ -24,13 +24,13 @@ let settings = {
 }
 
 //Regex for Chrome Extension
-let chromeExtensionRegex = new RegExp(/(chrome-extension:\/\/)\w*\//g)
+let chromeExtensionRegex = new RegExp(/(chrome-extension:\/\/\w*\/(viewer\.html)?)|(chrome-extension:\/)/g)
 //Regex for viewer.html
 let viewerRegex = new RegExp(/(viewer.html)/g)
 //Regex for background or background-image style
 let urlRegex = new RegExp(/background(-image)?\s*:(.*?)(url)\(\s*(\'|")?((?!['"]?data:).*?)(?<image>.*?)\3?(\'|")?\s*\)/g)
 //let urlRegex = new RegExp(/background(-image)?\s*:(.*?)(url)\(\s*(\'|")?(?<image>.*?)\3?(\'|")?\s*\)/g) - Ignoring if it contains 'data:'
-let httpRegex = new RegExp(/^(http|https):\/\//g)
+let httpRegex = new RegExp(/^((http|https):)?\/\//g)
 //Regex for a tag link
 let aTagRegex = new RegExp(/(<a)(?:(?!<\/a>).)*/g)
 //Regex for quotes
@@ -73,15 +73,31 @@ document.addEventListener("DOMContentLoaded", function () {
     document.querySelector(".view#" + view)?.classList.add("active")
   }))
 
+  document.querySelector(".crawlAllBtn").addEventListener("click", event => {
+    crawl.all.links.forEach(link => {
+      document.querySelectorAll("#pages .crawl i").forEach(pageCrawl => pageCrawl.click())
+    })
+    let moreToCrawlInterval = setInterval(() => {
+      if (crawling.length == 0 && document.querySelectorAll("#pages .crawl i").length == 0) {
+        if(crawl.all.links.some(link => !link.isCrawled))
+        document.querySelector(".crawlAllBtn").classList.add("hidden")
+        clearInterval(moreToCrawlInterval)
+      }
+    }, 500)
+    
+  })
+
   //Settings Controls
   document.querySelectorAll("#settings.view input").forEach(item => item.addEventListener("change", event => {
     let settingGroup = item.id.split("-")[0]
     let setting = item.id.split("-")[1]
     settings[settingGroup][setting] = item.checked
   }))
+
   document.querySelector("#settings #combine-enabled").addEventListener("change", event => {
     document.querySelector(".combine-settings").classList.toggle("active")
   })
+
   document.querySelector("#settings #recrawlBtn").addEventListener("click", event => {
     //Reset
     crawl = { all: { media: [], links: [], assets: [] } }
@@ -189,7 +205,7 @@ async function crawlURL(url, addToAll = true) {
     if (crawling.length == 0)
       document.querySelector("#crawlingSiteText").innerHTML = url
     document.querySelector("#crawling").classList.add("active")
-    
+
     //Remove any old filter and search stuff
     document.querySelectorAll(".filter-icon").forEach(item => item.classList.remove("active"))
     document.querySelectorAll(".searchbar").forEach(item => item.classList.remove("active"))
@@ -218,6 +234,7 @@ async function crawlURL(url, addToAll = true) {
           data = "<script>" + data + "</script>"
           type = "js"
         }
+        console.log("Crawled: " + url + " (" + type + ")")
 
         // Get doc from fetched page data
         let doc = (new DOMParser()).parseFromString(data, "text/html")
@@ -244,7 +261,7 @@ async function crawlURL(url, addToAll = true) {
         })
         //Basic iframe tag - get link and add to crawl all list, but if already found add as an instance
         doc.querySelectorAll("iframe").forEach(element => {
-          let link = createLinkObject(url, createElementFromHTML(`<a href="${element.src}"></a>`))
+          let link = createLinkObject(url, element)
           if ((link._href && (link._href.startsWith("?")))) return
           let found
           if (!(found = links.find(i => i.href == link.href || i.href == link._href))) {
@@ -480,7 +497,7 @@ async function crawlURL(url, addToAll = true) {
           crawl[url] = page
 
           //Sort links
-          crawl.all.links.sort(sortLinks)
+          crawl.all.links = crawl.all.links.sort(sortLinks)
 
 
           //Perform updates
@@ -680,7 +697,7 @@ function updateAll() {
                 } else
                   return
 
-                  console.log(src)
+                console.log(src)
                 let img = createImageObject(url, isBackground ? element.src : null, src)
                 console.log(img)
                 if (!settings.combine.onlyLocal || (settings.combine.onlyLocal && img.tags.isLocal)) {
@@ -950,7 +967,7 @@ function setupPopup(url) {
     html[htmlIndex] +=
       '<div class="view-row">' +
       '<div class="type">' +
-      (isLocalPage && !isAsset ? '<i class="far fa-file"></i>' : getURLIcon(href)) +
+      (isLocalPage && !isAsset ? '<i class="far fa-file"></i>' : getFAIcon(href)) +
       `</div>
             <div class="link">`+
       '<p>' + href + '</p>' +
@@ -1008,7 +1025,7 @@ function setupPopup(url) {
           <div class="image">`
     if (isImage)
       html.media += '<img src="' + file.src + '">'
-    else html.media += getURLIcon(file.src)
+    else html.media += getFAIcon(file.src)
     html.media += `</div>
           <div class="link">`+
       '<p>' + file.src + '</p>' +
@@ -1094,7 +1111,7 @@ function updateAssets() {
             <input type="checkbox">
           </div>
           <div class="type">`+
-      getURLIcon(link.link) +
+      getFAIcon(link.link) +
       `</div>
           <div class="link">
             <p>` + link.link + `</p>
@@ -1169,9 +1186,12 @@ function updateLinks() {
           <!--<div class="select">
             <input type="checkbox">
           </div>-->
-          <div class="type">`+
-        getURLIcon(link.href) +
-        `</div>
+          <div class="type">`
+      if (link.tags.tag == 'a')
+        html += getFAIcon(link.href)
+      else
+        html += getFAIcon(link.tags.tag)
+      html += `</div>
             <div class="link">`+
         '<p>' + link.href + '</p>' +
         `</div>
@@ -1245,7 +1265,7 @@ function updateFiles() {
             <input type="checkbox">
           </div>
           <div class="type">`+
-        getURLIcon(link.href) +
+        getFAIcon(link.href) +
         `</div>
             <div class="link">`+
         '<p>' + link.href + '</p>' +
@@ -1320,7 +1340,7 @@ function updateMedia() {
           <div class="image">`
     if (isImage)
       html += '<img src="' + file.src + '">'
-    else html += getURLIcon(file.src)
+    else html += getFAIcon(file.src)
     html += `</div>
           <div class="link">`+
       '<p>' + file.src + '</p>' +
@@ -1360,9 +1380,10 @@ function updateMedia() {
 */
 function createLinkObject(url, element) {
 
+
   //Create the link object
-  let link = { tags: {} }
-  link.href = element.href
+  let link = { tags: { tag: element.tagName.toLowerCase() } }
+  link.href = element.href || element.src
   link.instances = [{
     title: element.title,
     text: element.text,
@@ -1370,30 +1391,20 @@ function createLinkObject(url, element) {
     foundOn: url
   }]
 
-  if (link.href)
-    link.href = link.href.replace(chromeExtensionRegex, '/').replace(viewerRegex, '')
-  else
-    link.href = ''
-
   //Check if the element is opening a new tab
   if (element.target == "_blank")
     link.instances[0].tags.isNewTab = true
 
-  //Check if link is local
-  if (isUrlLocal(link.href)) {
-    link.tags.isLocal = true
-    link._href = link.href;
-
-    //Clean up link by adding the url to the beginning if needed
-    if (!link.href.match(httpRegex)) {
-      if (link.href.startsWith('/')) {
-        link.href = hostURL + link.href
-      } else if (!url.endsWith('/')) {
-        link.href = url + '/' + link.href
-      } else
-        link.href = hostURL + '/' + link.href
+    let linkLocation = getLocation(link.href)
+    if(linkLocation.href.match(chromeExtensionRegex)){
+      link.tags.isLocal = true
+      let replacedLocation = linkLocation.href.replace(chromeExtensionRegex, '/')
+      link._href = linkLocation.pathname
+      link.href = new URL(url).origin + replacedLocation
     }
-  }
+    else
+      link.href = element.href
+
   return link;
 }
 
@@ -1405,7 +1416,6 @@ function createLinkObject(url, element) {
 function createAssetObject(url, link) {
   //Create the asset object
   let asset = { tags: {} }
-  asset.link = link.replace(chromeExtensionRegex, '/').replace(viewerRegex, '')
   asset.instances = [{
     alt: link.title,
     tags: {},
@@ -1413,27 +1423,21 @@ function createAssetObject(url, link) {
   }]
 
   //If it's script or css
-  if (isUrlScript(asset.link))
+  if (isUrlScript(link))
     asset.tags.isScript = true
-  if (isUrlStyleSheet(asset.link))
+  if (isUrlStyleSheet(link))
     asset.tags.isStyleSheet = true
 
-  //Check if the asset link is local
-  if (isUrlLocal(asset.link)) {
-    asset.tags.isLocal = true
-    asset._link = asset.link;
-
-    //Clean up link by adding the url to the beginning if needed
-    if (!asset.link.match(httpRegex)) {
-      if (asset.link.startsWith('/')) {
-        asset.link = hostURL + asset.link
-      } else if (!url.endsWith('/')) {
-        asset.link = url + '/' + asset.link
-      }
-      else
-        asset.link = hostURL + '/' + asset.link
+    let assetLocation = getLocation(link)
+    if(assetLocation.href.match(chromeExtensionRegex)){
+      asset.tags.isLocal = true
+      let replacedLocation = assetLocation.href.replace(chromeExtensionRegex, '/')
+      asset._link = assetLocation.pathname
+      asset.link = new URL(url).origin + replacedLocation
     }
-  }
+    else
+      asset.link = link
+
   return asset;
 }
 
@@ -1451,47 +1455,18 @@ function createImageObject(url, element, src) {
     tags: {},
     foundOn: url
   }]
-  //If the object is being made from an image tag
-  if (element) {
-    image.src = element.src.replace(chromeExtensionRegex, '/').replace(viewerRegex, '')
-    image.instances[0].alt = element.alt
-  }
-  //If the object is being made from a background style tag 
-  else {
-    image.src = src.replace(chromeExtensionRegex, '/').replace(viewerRegex, '')
-  }
 
-  //Check if the image src is local
-  if (isUrlLocal(image.src)) {
+  let imageLocation = getLocation(element?.src || src)
+  if(imageLocation.href.match(chromeExtensionRegex)){
     image.tags.isLocal = true
-    image._src = image.src;
-
-    //Clean up src by adding the url to the beginning if needed
-    if (!image.src.match(httpRegex) && !image.src.startsWith('data:image/svg')) {
-      if (!isUrlHTMLFile(url)) {
-        //Deal with any images in assets by removing the asset from the url
-        if (url.endsWith('/'))
-          url = url.substr(0, url.length - 1)
-        url = url.substr(0, url.lastIndexOf('/'))
-
-      }
-      if (!image.src.match(httpRegex)) {
-
-        // If the image is in the root of the site
-        if (image.src.startsWith('/')) {
-          let urlObject = new URL(url)
-          let path = urlObject.pathname.substr(0, urlObject.pathname.lastIndexOf('/'))
-
-          image.src = hostURL + path + image.src
-        }
-        //If the image is relative to current path
-        else {
-          if (url.endsWith('/'))
-            url = url.substr(0, url.length - 1)
-          image.src = url + '/' + image.src
-        }
-      }
-    }
+    let replacedLocation = imageLocation.href.replace(chromeExtensionRegex, '/')
+    image._src = imageLocation.pathname
+    image.src = new URL(url).origin + replacedLocation
   }
+  else
+    image.src = element?.src || src
+  
+    console.log(image)
+    console.log("")
   return image
 }

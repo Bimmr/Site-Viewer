@@ -918,7 +918,7 @@ hr {
   position: absolute;
   opacity: 0;
   top: -10%;
-  right: -200px;
+  right: -500px;
   width: 1px;
   background: #fff;
   box-shadow: 0 1px 4px 1px rgba(0, 0, 0, .14);

@@ -1139,7 +1139,7 @@ function updateLinks() {
   let html = ''
   crawl.all.links.forEach(link => {
     //Links are only if not local or is an anchor link
-    if (!link.tags.isLocal || isUrlAnchor(link.href)) {
+    if ((isUrlHTMLFile(link.href) && !link.tags.isLocal) || isUrlAnchor(link.href) || isUrlProtocol(link.href)) {
 
       //Create string of tags and instances
       let linkTagsText = ''

@@ -245,6 +245,7 @@ async function crawlURL(url, addToAll = true) {
         let assets = []
 
         //Basic a tag - get link and add to crawl all list, but if already found add as an instance
+        
         doc.querySelectorAll("a").forEach(element => {
           let link = createLinkObject(url, element)
           if ((link._href && (link._href.startsWith("?")))) return
@@ -273,13 +274,11 @@ async function crawlURL(url, addToAll = true) {
               title: link.instances[0].title,
               tags: { isNewTab: link.instances[0].tags.isNewTab }
             })
-
         })
 
         //Basic img tag - get image and add to crawl all list, but if already found add as an instance
         doc.querySelectorAll("img").forEach(element => {
           let image = createImageObject(url, element)
-
 
           let found
           if (isUrlImage(image.src))
@@ -1380,10 +1379,11 @@ function updateMedia() {
 */
 function createLinkObject(url, element) {
 
-
   //Create the link object
-  let link = { tags: { tag: element.tagName.toLowerCase() } }
-  link.href = element.href || element.src
+  let link = { 
+    href: element.href || element.src,
+    tags: { tag: element.tagName.toLowerCase() } 
+  }
   link.instances = [{
     title: element.title,
     text: element.text,
@@ -1402,9 +1402,7 @@ function createLinkObject(url, element) {
       link._href = linkLocation.pathname
       link.href = new URL(url).origin + replacedLocation
     }
-    else
-      link.href = element.href
-
+    
   return link;
 }
 
@@ -1415,7 +1413,10 @@ function createLinkObject(url, element) {
 */
 function createAssetObject(url, link) {
   //Create the asset object
-  let asset = { tags: {} }
+  let asset = { 
+    link,
+    tags: {} 
+  }
   asset.instances = [{
     alt: link.title,
     tags: {},
@@ -1428,15 +1429,13 @@ function createAssetObject(url, link) {
   if (isUrlStyleSheet(link))
     asset.tags.isStyleSheet = true
 
-    let assetLocation = getLocation(link)
+    let assetLocation = getLocation(asset.link)
     if(assetLocation.href.match(chromeExtensionRegex)){
       asset.tags.isLocal = true
       let replacedLocation = assetLocation.href.replace(chromeExtensionRegex, '/')
       asset._link = assetLocation.pathname
       asset.link = new URL(url).origin + replacedLocation
     }
-    else
-      asset.link = link
 
   return asset;
 }
@@ -1450,21 +1449,23 @@ function createAssetObject(url, link) {
 function createImageObject(url, element, src) {
 
   //Create the image object
-  let image = { tags: {} }
+  let image = { 
+    src: element?.src || src,
+    tags: {} 
+  }
   image.instances = [{
     tags: {},
     foundOn: url
   }]
 
-  let imageLocation = getLocation(element?.src || src)
+  let imageLocation = getLocation(image.src)
   if(imageLocation.href.match(chromeExtensionRegex)){
     image.tags.isLocal = true
     let replacedLocation = imageLocation.href.replace(chromeExtensionRegex, '/')
     image._src = imageLocation.pathname
     image.src = new URL(url).origin + replacedLocation
   }
-  else
-    image.src = element?.src || src
+    
   
   return image
 }

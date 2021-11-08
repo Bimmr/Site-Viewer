@@ -1466,7 +1466,5 @@ function createImageObject(url, element, src) {
   else
     image.src = element?.src || src
   
-    console.log(image)
-    console.log("")
   return image
 }

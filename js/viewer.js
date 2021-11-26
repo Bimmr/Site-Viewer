@@ -46,6 +46,13 @@ let nonWordRegex = new RegExp(/[^a-z0-9A-Z.]/gi)
 //When DOM is loaded set up the listeners and events
 document.addEventListener("DOMContentLoaded", function () {
 
+  //Prevent Refreshing the popup as that breaks things
+  window.onunload = refreshParent;
+  function refreshParent() {
+    console.log("Refreshing parent window")
+    window.close()
+  }
+
   //Crawl base url
   if (window.tabURL)
     baseUrl = window.tabURL
@@ -74,18 +81,32 @@ document.addEventListener("DOMContentLoaded", function () {
   }))
 
   document.querySelector(".crawlAllBtn").addEventListener("click", event => {
-    crawl.all.links.forEach(link => {
-      document.querySelectorAll("#pages .crawl i").forEach(pageCrawl => pageCrawl.click())
-    })
+    clickAllCrawlIcons()
+
+    function clickAllCrawlIcons() {
+      crawl.all.links.forEach(link => {
+        document.querySelectorAll("#pages .crawl i").forEach(pageCrawl => pageCrawl.click())
+      })
+    }
+
     let moreToCrawlInterval = setInterval(() => {
-      if (crawling.length == 0 && document.querySelectorAll("#pages .crawl i").length == 0) {
-        if(crawl.all.links.some(link => !link.isCrawled))
-        document.querySelector(".crawlAllBtn").classList.add("hidden")
-        clearInterval(moreToCrawlInterval)
+      console.log("Checking crawl status")
+
+      if (crawling.length == 0) {
+        if (!getPages().some(link => !link.isCrawled)) {
+          document.querySelector(".crawlAllBtn").classList.add("hidden")
+          console.log("All links crawled")
+          console.log("Clearing Interval")
+          clearInterval(moreToCrawlInterval)
+        }
+        else {
+          console.log("Crawling more links")
+          clickAllCrawlIcons()
+        }
       }
     }, 500)
-    
   })
+
 
   //Settings Controls
   document.querySelectorAll("#settings.view input").forEach(item => item.addEventListener("change", event => {
@@ -217,9 +238,9 @@ async function crawlURL(url, addToAll = true) {
     fetch(url)
       .then(res => {
         if (res.ok) return res.text()
-        else{
+        else {
           throw new Error(res.error)
-        } 
+        }
       })
       .then(data => {
 
@@ -247,7 +268,7 @@ async function crawlURL(url, addToAll = true) {
         let assets = []
 
         //Basic a tag - get link and add to crawl all list, but if already found add as an instance
-        
+
         doc.querySelectorAll("a").forEach(element => {
           let link = createLinkObject(url, element)
           if ((link._href && (link._href.startsWith("?")))) return
@@ -521,7 +542,7 @@ async function crawlURL(url, addToAll = true) {
           document.querySelector("#crawling").classList.remove("active")
         else
           document.querySelector("#crawlingSiteText").innerHTML = crawling[0]
-        
+
         resolve(page)
 
       }).catch(error => {
@@ -533,19 +554,19 @@ async function crawlURL(url, addToAll = true) {
         //Remove crawling overlay if not crawling anything else
         if (crawling.length == 0)
           document.querySelector("#crawling").classList.remove("active")
-  
+
         crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].isError = true
 
-          //Perform updates
-          updatePages()
-          updateAssets()
-          updateLinks()
-          updateFiles()
-          updateMedia()
-          updateOverview()
+        //Perform updates
+        updatePages()
+        updateAssets()
+        updateLinks()
+        updateFiles()
+        updateMedia()
+        updateOverview()
 
-          //Update Listeners
-          updateAll()
+        //Update Listeners
+        updateAll()
 
         reject(error)
       })
@@ -748,8 +769,10 @@ function updateAll() {
           })
         }
 
-      } else
+      } else{
+        console.log("Simple Download")
         chrome.downloads.download({ url })
+      }
     }
   })
 
@@ -838,34 +861,35 @@ function updatePages() {
 
   //Iterate all links in the crawl object adding to the HTML string
   let html = ''
-  crawl.all.links.forEach(link => {
+
+  getPages().forEach(link => {
     //Pages should only contain local HTML links but not anchors
-    if (isUrlLocal(link.href) && isUrlHTMLFile(link.href) && !isUrlAnchor(link.href) && !isUrlScript(link.href) && !isUrlStyleSheet(link.href)) {
 
-      //Create string of tags and instances
-      let linkTagsText = ''
-      let instancesText = '<strong>Instances:</strong>(' + link.instances.length + ')<ul>'
-      linkTagsText += "Original URL: <strong>" + link._href + '</strong><br>'
 
-      //No need to display isLocal if it's a page
-      Object.keys(link.tags).forEach(i => linkTagsText += i != "isLocal" ? "" + i + ": <strong>" + link.tags[i] + "</strong><br>" : '')
-      if (linkTagsText.length > 0)
-        linkTagsText = linkTagsText.substr(0, linkTagsText.length - 4) + '<hr>'
+    //Create string of tags and instances
+    let linkTagsText = ''
+    let instancesText = '<strong>Instances:</strong>(' + link.instances.length + ')<ul>'
+    linkTagsText += "Original URL: <strong>" + link._href + '</strong><br>'
 
-      //Add all instances to the instance string
-      link.instances.forEach(i => {
-        instancesText += '<li><a href="'+i.foundOn+'" target="_blank">' + i.foundOn + '</a><ul>'
-        if (i.title)
-          instancesText += '<li>Title: <strong>' + i.title + '</strong></li>'
-        if (i.text)
-          instancesText += '<li>Text: <strong>' + i.text + '</strong></li>'
-        Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "<li>" + i1 + ": <strong>" + i.tags[i1] + "</strong></li>" : '')
-        instancesText += '</ul></li>'
-      })
-      instancesText += '</ul>'
+    //No need to display isLocal if it's a page
+    Object.keys(link.tags).forEach(i => linkTagsText += i != "isLocal" ? "" + i + ": <strong>" + link.tags[i] + "</strong><br>" : '')
+    if (linkTagsText.length > 0)
+      linkTagsText = linkTagsText.substr(0, linkTagsText.length - 4) + '<hr>'
 
-      //Add to HTML to html string for the item
-      html += `
+    //Add all instances to the instance string
+    link.instances.forEach(i => {
+      instancesText += '<li><a href="' + i.foundOn + '" target="_blank">' + i.foundOn + '</a><ul>'
+      if (i.title)
+        instancesText += '<li>Title: <strong>' + i.title + '</strong></li>'
+      if (i.text)
+        instancesText += '<li>Text: <strong>' + i.text + '</strong></li>'
+      Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "<li>" + i1 + ": <strong>" + i.tags[i1] + "</strong></li>" : '')
+      instancesText += '</ul></li>'
+    })
+    instancesText += '</ul>'
+
+    //Add to HTML to html string for the item
+    html += `
         <div class="view-row">
           <div class="select">
             <input type="checkbox">
@@ -875,15 +899,15 @@ function updatePages() {
           </div>
           <div class="tools">
             <a class="download" href="`+ link.href + `" title="Download Page"><i class="fas fa-file-download"></i></a>` +
-        '<a class="goto" target="_blank" href="' + link.href + '" title="Go to page"><i class="fas fa-external-link-alt"></i></a>'
-        if (link.isError)
-          html += '<a class="error" target="_blank" href="#" title="Failed to crawl"><i class="fa-solid fa-triangle-exclamation"></i></a>'
-        else if (link.isCrawled)
-          html += '<a class="inspect" title="Inspect Page" href="' + link.href + '"><i class="fas fa-search"></i></a>'
-        else
-          html += '<a class="crawl" target="_blank" href="' + link.href + '" title="Crawl page"><i class="fas fa-sitemap"></i></a>'
-      html +=
-        `</div>
+      '<a class="goto" target="_blank" href="' + link.href + '" title="Go to page"><i class="fas fa-external-link-alt"></i></a>'
+    if (link.isError)
+      html += '<a class="error" target="_blank" href="#" title="Failed to crawl"><i class="fa-solid fa-triangle-exclamation"></i></a>'
+    else if (link.isCrawled)
+      html += '<a class="inspect" title="Inspect Page" href="' + link.href + '"><i class="fas fa-search"></i></a>'
+    else
+      html += '<a class="crawl" target="_blank" href="' + link.href + '" title="Crawl page"><i class="fas fa-sitemap"></i></a>'
+    html +=
+      `</div>
           <div class="info">
             <div class="hover-popup-icon">
             <span class="fa-stack fa-1x">
@@ -891,14 +915,13 @@ function updatePages() {
             <i class="fas fa-info fa-stack-1x fa-inverse"></i>
           </span>
               <div class="hover-popup">`+
-        linkTagsText +
-        instancesText +
-        `</div>
+      linkTagsText +
+      instancesText +
+      `</div>
             </div>
           </div>
         </div>
       `
-    }
   })
   //Add html to page
   if (html.length > 0)
@@ -967,7 +990,7 @@ function setupPopup(url) {
 
     //Add all instances to the instance string
     link.instances.forEach(i => {
-      instancesText += '<li>' + i.foundOn + '<ul>'
+      instancesText += '<li><a href="' + i.foundOn + '" target="_blank">' + i.foundOn + '</a><ul>'
       if (i.title)
         instancesText += '<li>Title: <strong>' + i.title + '</strong></li>'
       if (i.text)
@@ -1023,7 +1046,7 @@ function setupPopup(url) {
       fileTagsText = fileTagsText.substr(0, fileTagsText.length - 4) + '<hr>'
 
     file.instances.forEach(i => {
-      instancesText += '<li>' + i.foundOn + '<ul>'
+      instancesText += '<li><a href="' + i.foundOn + '" target="_blank">' + i.foundOn + '</a><ul>'
       if (i.alt)
         instancesText += '<li>Alt: <strong>' + i.alt + '</strong></li>'
       Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "<li>" + i1 + ": <strong>" + i.tags[i1] + "</strong></li>" : '')
@@ -1111,7 +1134,7 @@ function updateAssets() {
 
     //Add all instances to the instance string
     link.instances.forEach(i => {
-      instancesText += '<li>' + i.foundOn + '<ul>'
+      instancesText += '<li><a href="' + i.foundOn + '" target="_blank">' + i.foundOn + '</a><ul>'
       Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "<li>" + i1 + ": <strong>" + i.tags[i1] + "</strong></li>" : '')
       instancesText += '</ul></li>'
     })
@@ -1167,47 +1190,46 @@ function updateLinks() {
 
   //Iterate all links in the crawl object adding to the HTML string
   let html = ''
-  crawl.all.links.forEach(link => {
-    //Links are only if not local or is an anchor link
-    if ((isUrlHTMLFile(link.href) && !link.tags.isLocal) || isUrlAnchor(link.href) || isUrlProtocol(link.href)) {
+  getLinks().forEach(link => {
 
-      //Create string of tags and instances
-      let linkTagsText = ''
-      let instancesText = '<strong>Instances:</strong>(' + link.instances.length + ')<ul>'
 
-      if (link.tags.isLocal)
-        linkTagsText += "Original URL: <strong>" + link._href + '</strong><br>'
-      Object.keys(link.tags).forEach(i => linkTagsText += "" + i + ": <strong>" + link.tags[i] + "</strong><br>")
-      if (linkTagsText.length > 0)
-        linkTagsText = linkTagsText.substr(0, linkTagsText.length - 4) + '<hr>'
+    //Create string of tags and instances
+    let linkTagsText = ''
+    let instancesText = '<strong>Instances:</strong>(' + link.instances.length + ')<ul>'
 
-      //Add all instances to the instance string
-      link.instances.forEach(i => {
-        instancesText += '<li>' + i.foundOn + '<ul>'
-        if (i.title)
-          instancesText += '<li>Title: <strong>' + i.title + '</strong></li>'
-        if (i.text)
-          instancesText += '<li>Text: <strong>' + i.text + '</strong></li>'
-        Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "<li>" + i1 + ": <strong>" + i.tags[i1] + "</strong></li>" : '')
-        instancesText += '</ul></li>'
-      })
-      instancesText += '</ul>'
+    if (link.tags.isLocal)
+      linkTagsText += "Original URL: <strong>" + link._href + '</strong><br>'
+    Object.keys(link.tags).forEach(i => linkTagsText += "" + i + ": <strong>" + link.tags[i] + "</strong><br>")
+    if (linkTagsText.length > 0)
+      linkTagsText = linkTagsText.substr(0, linkTagsText.length - 4) + '<hr>'
 
-      //Add to HTML to html string for the item
-      html += `
+    //Add all instances to the instance string
+    link.instances.forEach(i => {
+      instancesText += '<li><a href="' + i.foundOn + '" target="_blank">' + i.foundOn + '</a><ul>'
+      if (i.title)
+        instancesText += '<li>Title: <strong>' + i.title + '</strong></li>'
+      if (i.text)
+        instancesText += '<li>Text: <strong>' + i.text + '</strong></li>'
+      Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "<li>" + i1 + ": <strong>" + i.tags[i1] + "</strong></li>" : '')
+      instancesText += '</ul></li>'
+    })
+    instancesText += '</ul>'
+
+    //Add to HTML to html string for the item
+    html += `
         <div class="view-row">
           <!--<div class="select">
             <input type="checkbox">
           </div>-->
           <div class="type">`
-      if (link.tags.tag == 'a')
-        html += getFAIcon(link.href)
-      else
-        html += getFAIcon(link.tags.tag)
-      html += `</div>
+    if (link.tags.tag == 'a')
+      html += getFAIcon(link.href)
+    else
+      html += getFAIcon(link.tags.tag)
+    html += `</div>
             <div class="link">`+
-        '<p>' + link.href + '</p>' +
-        `</div>
+      '<p>' + link.href + '</p>' +
+      `</div>
         <div class="tools">
           <a class="goto" target="_blank" href="`+ link.href + `" title="Go to link"><i class="fas fa-external-link-alt"></i></a>
           </div>
@@ -1218,15 +1240,15 @@ function updateLinks() {
               <i class="fas fa-info fa-stack-1x fa-inverse"></i>
             </span>
             <div class="hover-popup">`+
-        linkTagsText +
-        instancesText +
-        `</div>
+      linkTagsText +
+      instancesText +
+      `</div>
             </div>
           </div>
         </div>
       </div>
       `
-    }
+
   })
   //Add html to page
   if (html.length > 0)
@@ -1245,44 +1267,42 @@ function updateFiles() {
   //Iterate all links in the crawl object adding to the HTML string
   let wrapper = document.querySelector("#files .view-items")
   let html = ''
-  crawl.all.links.forEach(link => {
-    //Files are only if the link isn't a HTML page or a protocol link
-    if (!isUrlHTMLFile(link.href) && !isUrlProtocol(link.href)) {
+  getFiles().forEach(link => {
 
-      //Create string of tags and instances
-      let linkTagsText = ''
-      let instancesText = '<strong>Instances:</strong>(' + link.instances.length + ')<ul>'
+    //Create string of tags and instances
+    let linkTagsText = ''
+    let instancesText = '<strong>Instances:</strong>(' + link.instances.length + ')<ul>'
 
-      if (link.tags.isLocal)
-        linkTagsText += "Original URL: <strong>" + link._href + '</strong><br>'
-      Object.keys(link.tags).forEach(i => linkTagsText += "" + i + ": <strong>" + link.tags[i] + "</strong><br>")
-      if (linkTagsText.length > 0)
-        linkTagsText = linkTagsText.substr(0, linkTagsText.length - 4) + '<hr>'
+    if (link.tags.isLocal)
+      linkTagsText += "Original URL: <strong>" + link._href + '</strong><br>'
+    Object.keys(link.tags).forEach(i => linkTagsText += "" + i + ": <strong>" + link.tags[i] + "</strong><br>")
+    if (linkTagsText.length > 0)
+      linkTagsText = linkTagsText.substr(0, linkTagsText.length - 4) + '<hr>'
 
-      //Add all instances to the instance string
-      link.instances.forEach(i => {
-        instancesText += '<li>' + i.foundOn + '<ul>'
-        if (i.title)
-          instancesText += '<li>Title: <strong>' + i.title + '</strong></li>'
-        if (i.text)
-          instancesText += '<li>Text: <strong>' + i.text + '</strong></li>'
-        Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "<li>" + i1 + ": <strong>" + i.tags[i1] + "</strong></li>" : '')
-        instancesText += '</ul></li>'
-      })
-      instancesText += '</ul>'
+    //Add all instances to the instance string
+    link.instances.forEach(i => {
+      instancesText += '<li><a href="' + i.foundOn + '" target="_blank">' + i.foundOn + '</a><ul>'
+      if (i.title)
+        instancesText += '<li>Title: <strong>' + i.title + '</strong></li>'
+      if (i.text)
+        instancesText += '<li>Text: <strong>' + i.text + '</strong></li>'
+      Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "<li>" + i1 + ": <strong>" + i.tags[i1] + "</strong></li>" : '')
+      instancesText += '</ul></li>'
+    })
+    instancesText += '</ul>'
 
-      //Add to HTML to html string for the item
-      html += `
+    //Add to HTML to html string for the item
+    html += `
         <div class="view-row">
           <div class="select">
             <input type="checkbox">
           </div>
           <div class="type">`+
-        getFAIcon(link.href) +
-        `</div>
+      getFAIcon(link.href) +
+      `</div>
             <div class="link">`+
-        '<p>' + link.href + '</p>' +
-        `</div>
+      '<p>' + link.href + '</p>' +
+      `</div>
         <div class="tools">
           <a class="download" href="`+ link.href + `" title="Download File"><i class="fas fa-file-download"></i></a>
           <a class="goto" target="_blank" href="`+ link.href + `" title="Go to link"><i class="fas fa-external-link-alt"></i></a>
@@ -1293,15 +1313,14 @@ function updateFiles() {
           <i class="fas fa-info fa-stack-1x fa-inverse"></i>
         </span>
               <div class="hover-popup">`+
-        linkTagsText +
-        instancesText +
-        `</div>
+      linkTagsText +
+      instancesText +
+      `</div>
         </div>
           </div>
         </div>
       </div>
       `
-    }
   })
   //Add html to page
   if (html.length > 0)
@@ -1336,7 +1355,7 @@ function updateMedia() {
       imageTagsText = imageTagsText.substr(0, imageTagsText.length - 4) + '<hr>'
 
     file.instances.forEach(i => {
-      instancesText += '<li>' + i.foundOn + '<ul>'
+      instancesText += '<li><a href="' + i.foundOn + '" target="_blank">' + i.foundOn + '</a><ul>'
       if (i.alt)
         instancesText += '<li>Alt: <strong>' + i.alt + '</strong></li>'
       Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "<li>" + i1 + ": <strong>" + i.tags[i1] + "</strong></li>" : '')
@@ -1394,9 +1413,9 @@ function updateMedia() {
 function createLinkObject(url, element) {
 
   //Create the link object
-  let link = { 
+  let link = {
     href: element.href || element.src,
-    tags: { tag: element.tagName.toLowerCase() } 
+    tags: { tag: element.tagName.toLowerCase() }
   }
   link.instances = [{
     title: element.title,
@@ -1408,18 +1427,16 @@ function createLinkObject(url, element) {
   //Check if the element is opening a new tab
   if (element.target == "_blank")
     link.instances[0].tags.isNewTab = true
-    
-  if(link.href.match(chromeExtensionRegex) != null && !link.href.match(/(chrome-extension:\/\/\w*\/(viewer\.html)?)/g))
-    link.href = getLocation(url).protocol + link.href.replace(chromeExtensionRegex, '')
-  
-  let linkLocation = getLocation(link.href)
-  if(linkLocation.href.match(chromeExtensionRegex)){
+
+  if (link.href.indexOf("#") >= 0)
+    link.tags.isAnchor = true
+
+  link._href = link.href.replace(chromeExtensionRegex, '/')
+  link.href = formatLink(url, link.href)
+
+  if (isUrlLocal(link.href))
     link.tags.isLocal = true
-    let replacedLocation = linkLocation.href.replace(chromeExtensionRegex, '/')
-    link._href = linkLocation.pathname
-    link.href = new URL(url).origin + replacedLocation
-  }
-    
+
   return link;
 }
 
@@ -1430,9 +1447,9 @@ function createLinkObject(url, element) {
 */
 function createAssetObject(url, link) {
   //Create the asset object
-  let asset = { 
+  let asset = {
     link,
-    tags: {} 
+    tags: {}
   }
   asset.instances = [{
     alt: link.title,
@@ -1445,17 +1462,12 @@ function createAssetObject(url, link) {
     asset.tags.isScript = true
   if (isUrlStyleSheet(link))
     asset.tags.isStyleSheet = true
-  
-  if(asset.link.match(chromeExtensionRegex) != null && !asset.link.match(/(chrome-extension:\/\/\w*\/(viewer\.html)?)/g))
-    asset.link = getLocation(url).protocol + asset.link.replace(chromeExtensionRegex, '')
-  
-  let assetLocation = getLocation(asset.link)
-  if(assetLocation.href.match(chromeExtensionRegex)){
+
+  asset._link = asset.link.replace(chromeExtensionRegex, '/')
+  asset.link = formatLink(url, asset.link)
+
+  if (isUrlLocal(asset.link))
     asset.tags.isLocal = true
-    let replacedLocation = assetLocation.href.replace(chromeExtensionRegex, '/')
-    asset._link = assetLocation.pathname
-    asset.link = new URL(url).origin + replacedLocation
-  }
 
   return asset;
 }
@@ -1469,26 +1481,24 @@ function createAssetObject(url, link) {
 function createImageObject(url, element, src) {
 
   //Create the image object
-  let image = { 
+  let image = {
     src: element?.src || src,
-    tags: {} 
+    tags: {}
   }
   image.instances = [{
     tags: {},
     foundOn: url
   }]
 
-  if(image.src.match(chromeExtensionRegex) != null && !image.src.match(/(chrome-extension:\/\/\w*\/(viewer\.html)?)/g))
-    image.src = getLocation(url).protocol + image.src.replace(chromeExtensionRegex, '')
+  image._src = image.src.replace(chromeExtensionRegex, '/')
+  image.src = formatLink(url, image.src)
 
-  let imageLocation = getLocation(image.src)
-  if(imageLocation.href.match(chromeExtensionRegex)){
+  if (isUrlLocal(image.src))
     image.tags.isLocal = true
-    let replacedLocation = imageLocation.href.replace(chromeExtensionRegex, '/')
-    image._src = imageLocation.pathname
-    image.src = new URL(url).origin + replacedLocation
-  }
-    
-  
+
   return image
 }
+
+const getPages = () => crawl.all.links.filter(link => isUrlLocal(link.href) && isUrlHTMLFile(link.href) && !isUrlAnchor(link.href) && !isUrlScript(link.href) && !isUrlStyleSheet(link.href))
+const getLinks = () => crawl.all.links.filter(link => (isUrlHTMLFile(link.href) && !isUrlLocal(link.href)) || isUrlAnchor(link.href) || isUrlProtocol(link.href))
+const getFiles = () => crawl.all.links.filter(link => !isUrlHTMLFile(link.href) && !isUrlProtocol(link.href))

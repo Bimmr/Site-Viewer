@@ -115,18 +115,18 @@ function sortLinks(a, b) {
         bIndex = getFAIcon(b.tags.tag, true)
     }
 
-    if (aIndex == bIndex){
-        if(a.isError && !b.isError)
+    if (aIndex == bIndex) {
+        if (a.isError && !b.isError)
             return -1
-        else if(!a.isError && b.isError)
+        else if (!a.isError && b.isError)
             return 1
-        if(a.isCrawled && !b.isCrawled)
+        if (a.isCrawled && !b.isCrawled)
             return -1
-        else if(!a.isCrawled && b.isCrawled)
+        else if (!a.isCrawled && b.isCrawled)
             return 1
         else
             return a.href.localeCompare(b.href)
-    }else
+    } else
         return aIndex - bIndex
 }
 /**
@@ -182,4 +182,27 @@ const getLocation = function (href) {
     var l = document.createElement("a");
     l.href = href;
     return l;
-};
+}
+
+const formatLink = (url, link) => {
+    let chromeExtensionProtocol = 'chrome-extension:'
+    let chromeExtensionId = window.extensionId
+
+    let urlLocation = new URL(url)
+    let urlOrigin = urlLocation.origin
+
+    let linkLocation = new URL(getLocation(link))
+
+    //If it's not a local link or a // link
+    if (linkLocation.protocol != chromeExtensionProtocol)
+        return link
+
+    // If it's a // link
+    if (linkLocation.host != chromeExtensionId)
+        return urlLocation.protocol + "//" + linkLocation.host + linkLocation.pathname + linkLocation.hash + linkLocation.search
+
+    // If it's a local link 
+    if (linkLocation.pathname == "/viewer.html")
+        return urlLocation.protocol + "//" + urlLocation.host + "/" + linkLocation.hash + linkLocation.search
+    return urlLocation.protocol + "//" + urlLocation.host + linkLocation.pathname + linkLocation.hash + linkLocation.search
+}

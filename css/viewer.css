@@ -282,6 +282,12 @@ hr {
 .view-row .tools i:hover {
   color: #005a17;
 }
+.view-row .tools .inspect i {
+  color: #005a17;
+}
+.view-row .tools .error i {
+  color: orangered;
+}
 
 .view-items .empty-row {
   padding: 5em 0;
@@ -872,6 +878,7 @@ hr {
   position: relative;
   font-weight: lighter;
   margin-bottom: 20px;
+  text-align: center;
 }
 
 #popup .card-title {

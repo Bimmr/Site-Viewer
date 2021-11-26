@@ -217,7 +217,9 @@ async function crawlURL(url, addToAll = true) {
     fetch(url)
       .then(res => {
         if (res.ok) return res.text()
-        else throw new Error(res.error)
+        else{
+          throw new Error(res.error)
+        } 
       })
       .then(data => {
 
@@ -498,7 +500,6 @@ async function crawlURL(url, addToAll = true) {
           //Sort links
           crawl.all.links = crawl.all.links.sort(sortLinks)
 
-
           //Perform updates
           updatePages()
           updateAssets()
@@ -520,7 +521,7 @@ async function crawlURL(url, addToAll = true) {
           document.querySelector("#crawling").classList.remove("active")
         else
           document.querySelector("#crawlingSiteText").innerHTML = crawling[0]
-
+        
         resolve(page)
 
       }).catch(error => {
@@ -532,6 +533,19 @@ async function crawlURL(url, addToAll = true) {
         //Remove crawling overlay if not crawling anything else
         if (crawling.length == 0)
           document.querySelector("#crawling").classList.remove("active")
+  
+        crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].isError = true
+
+          //Perform updates
+          updatePages()
+          updateAssets()
+          updateLinks()
+          updateFiles()
+          updateMedia()
+          updateOverview()
+
+          //Update Listeners
+          updateAll()
 
         reject(error)
       })
@@ -552,7 +566,6 @@ function updateAll() {
   })
 
   //Add download event to all view-items that have a download icon
-  //TODO: Add option in settings to enable if localizing (fetching and adding to HTML File) of assets is wanted
   document.querySelectorAll(".view-items .download").forEach(element => {
     element.onclick = event => {
       event.preventDefault()
@@ -841,7 +854,7 @@ function updatePages() {
 
       //Add all instances to the instance string
       link.instances.forEach(i => {
-        instancesText += '<li>' + i.foundOn + '<ul>'
+        instancesText += '<li><a href="'+i.foundOn+'" target="_blank">' + i.foundOn + '</a><ul>'
         if (i.title)
           instancesText += '<li>Title: <strong>' + i.title + '</strong></li>'
         if (i.text)
@@ -863,11 +876,12 @@ function updatePages() {
           <div class="tools">
             <a class="download" href="`+ link.href + `" title="Download Page"><i class="fas fa-file-download"></i></a>` +
         '<a class="goto" target="_blank" href="' + link.href + '" title="Go to page"><i class="fas fa-external-link-alt"></i></a>'
-      if (!link.isCrawled)
-        html += '<a class="crawl" target="_blank" href="' + link.href + '" title="Crawl page"><i class="fas fa-sitemap"></i></a>'
-      else {
-        html += '<a class="inspect" title="Inspect Page" href="' + link.href + '"><i class="fas fa-search"></i></a>'
-      }
+        if (link.isError)
+          html += '<a class="error" target="_blank" href="#" title="Failed to crawl"><i class="fa-solid fa-triangle-exclamation"></i></a>'
+        else if (link.isCrawled)
+          html += '<a class="inspect" title="Inspect Page" href="' + link.href + '"><i class="fas fa-search"></i></a>'
+        else
+          html += '<a class="crawl" target="_blank" href="' + link.href + '" title="Crawl page"><i class="fas fa-sitemap"></i></a>'
       html +=
         `</div>
           <div class="info">
@@ -1394,14 +1408,17 @@ function createLinkObject(url, element) {
   //Check if the element is opening a new tab
   if (element.target == "_blank")
     link.instances[0].tags.isNewTab = true
-
-    let linkLocation = getLocation(link.href)
-    if(linkLocation.href.match(chromeExtensionRegex)){
-      link.tags.isLocal = true
-      let replacedLocation = linkLocation.href.replace(chromeExtensionRegex, '/')
-      link._href = linkLocation.pathname
-      link.href = new URL(url).origin + replacedLocation
-    }
+    
+  if(link.href.match(chromeExtensionRegex) != null && !link.href.match(/(chrome-extension:\/\/\w*\/(viewer\.html)?)/g))
+    link.href = getLocation(url).protocol + link.href.replace(chromeExtensionRegex, '')
+  
+  let linkLocation = getLocation(link.href)
+  if(linkLocation.href.match(chromeExtensionRegex)){
+    link.tags.isLocal = true
+    let replacedLocation = linkLocation.href.replace(chromeExtensionRegex, '/')
+    link._href = linkLocation.pathname
+    link.href = new URL(url).origin + replacedLocation
+  }
     
   return link;
 }
@@ -1428,14 +1445,17 @@ function createAssetObject(url, link) {
     asset.tags.isScript = true
   if (isUrlStyleSheet(link))
     asset.tags.isStyleSheet = true
-
-    let assetLocation = getLocation(asset.link)
-    if(assetLocation.href.match(chromeExtensionRegex)){
-      asset.tags.isLocal = true
-      let replacedLocation = assetLocation.href.replace(chromeExtensionRegex, '/')
-      asset._link = assetLocation.pathname
-      asset.link = new URL(url).origin + replacedLocation
-    }
+  
+  if(asset.link.match(chromeExtensionRegex) != null && !asset.link.match(/(chrome-extension:\/\/\w*\/(viewer\.html)?)/g))
+    asset.link = getLocation(url).protocol + asset.link.replace(chromeExtensionRegex, '')
+  
+  let assetLocation = getLocation(asset.link)
+  if(assetLocation.href.match(chromeExtensionRegex)){
+    asset.tags.isLocal = true
+    let replacedLocation = assetLocation.href.replace(chromeExtensionRegex, '/')
+    asset._link = assetLocation.pathname
+    asset.link = new URL(url).origin + replacedLocation
+  }
 
   return asset;
 }
@@ -1457,6 +1477,9 @@ function createImageObject(url, element, src) {
     tags: {},
     foundOn: url
   }]
+
+  if(image.src.match(chromeExtensionRegex) != null && !image.src.match(/(chrome-extension:\/\/\w*\/(viewer\.html)?)/g))
+    image.src = getLocation(url).protocol + image.src.replace(chromeExtensionRegex, '')
 
   let imageLocation = getLocation(image.src)
   if(imageLocation.href.match(chromeExtensionRegex)){

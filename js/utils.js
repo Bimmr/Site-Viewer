@@ -115,9 +115,18 @@ function sortLinks(a, b) {
         bIndex = getFAIcon(b.tags.tag, true)
     }
 
-    if (aIndex == bIndex)
-        return a.href.localeCompare(b.href)
-    else
+    if (aIndex == bIndex){
+        if(a.isError && !b.isError)
+            return -1
+        else if(!a.isError && b.isError)
+            return 1
+        if(a.isCrawled && !b.isCrawled)
+            return -1
+        else if(!a.isCrawled && b.isCrawled)
+            return 1
+        else
+            return a.href.localeCompare(b.href)
+    }else
         return aIndex - bIndex
 }
 /**

@@ -20,7 +20,7 @@ chrome.runtime.onInstalled.addListener(function () {
 */
 chrome.downloads.onDeterminingFilename.addListener(function (item, suggest) {
     //If item download is from this extension
-    if (item.byExtensionName == "Site Viewer") {
+    if (item.byExtensionId == chrome.runtime.id) {
         storageGet(item.url).then(url => {
             
             if (url)

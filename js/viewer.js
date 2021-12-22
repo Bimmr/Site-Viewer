@@ -269,9 +269,13 @@ async function crawlURL(url, addToAll = true) {
 
         //Basic a tag - get link and add to crawl all list, but if already found add as an instance
 
-        doc.querySelectorAll("a").forEach(element => {
+        Array.from(doc.querySelectorAll("a")).filter(
+          element => element.getAttribute("href") != null && 
+          element.getAttribute("href").indexOf("javascript:void(0);") == -1 &&
+          !element.getAttribute("href").startsWith("?")
+        ).forEach(element => {
+                    
           let link = createLinkObject(url, element)
-          if ((link._href && (link._href.startsWith("?")))) return
           let found
           if (!(found = links.find(i => i.href == link.href || i.href == link._href))) {
             links.push(link)
@@ -1428,6 +1432,9 @@ function createLinkObject(url, element) {
   if (element.target == "_blank")
     link.instances[0].tags.isNewTab = true
 
+    console.log(element)
+    console.log(link)
+    console.log(link.href)
   if (link.href.indexOf("#") >= 0)
     link.tags.isAnchor = true
 

@@ -1,5 +1,5 @@
 // Functions to check if the url is a specific type
-const isUrlHTMLFile = url => new URL(url).pathname.split('/').pop().indexOf('.') <= 0 || url.indexOf(".html") >= 0 || url.indexOf(".htm") >= 0 || url.indexOf(".aspx") >= 0 || url.indexOf(".php") >= 0
+const isUrlHTMLFile = url => new URL(url).pathname.split('/').pop().indexOf('.') <= 0 || url.indexOf(".html") >= 0 || url.indexOf(".shtml") >= 0 || url.indexOf(".htm") >= 0 || url.indexOf(".aspx") >= 0 || url.indexOf(".asp") >= 0 || url.indexOf(".jsp") >= 0 || url.indexOf(".php") >= 0
 const isUrlPDFFile = url => url.indexOf('.pdf') >= 0
 const isUrlProtocol = url => isUrlProtocolMailto(url) || isUrlProtocolTel(url)
 const isUrlProtocolMailto = url => url.indexOf('mailto:') >= 0

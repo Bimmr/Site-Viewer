@@ -20,6 +20,9 @@ let settings = {
     assets: false,
     images: true,
     imagesInAssets: false
+  },
+  download: {
+    directory: ''
   }
 }
 
@@ -112,7 +115,18 @@ document.addEventListener("DOMContentLoaded", function () {
   document.querySelectorAll("#settings.view input").forEach(item => item.addEventListener("change", event => {
     let settingGroup = item.id.split("-")[0]
     let setting = item.id.split("-")[1]
-    settings[settingGroup][setting] = item.checked
+
+    if (item.type == "checkbox")
+      settings[settingGroup][setting] = item.checked
+    else if (item.type == "text")
+      settings[settingGroup][setting] = item.value
+
+    if (settingGroup == "download") {
+      let downloadDirectory = settings.download.directory
+      if (downloadDirectory[downloadDirectory.length - 1] != "/")
+        downloadDirectory += "/"
+      storageSet('downloadDirectory', downloadDirectory)
+    }
   }))
 
   document.querySelector("#settings #combine-enabled").addEventListener("change", event => {
@@ -235,14 +249,13 @@ async function crawlURL(url, addToAll = true) {
 
     crawling.push(url)
 
-    fetch(url)
+    fetch('https://api.allorigins.win/get?url=' + encodeURIComponent(url))
       .then(res => {
-        if (res.ok) return res.text()
-        else {
-          throw new Error(res.error)
-        }
+        if (res.ok) return res.json()
+        else throw new Error(res.error)
       })
       .then(data => {
+        data = data.contents
 
         let type = "html"
 
@@ -270,11 +283,11 @@ async function crawlURL(url, addToAll = true) {
         //Basic a tag - get link and add to crawl all list, but if already found add as an instance
 
         Array.from(doc.querySelectorAll("a")).filter(
-          element => element.getAttribute("href") != null && 
-          element.getAttribute("href").indexOf("javascript:void(0);") == -1 &&
-          !element.getAttribute("href").startsWith("?")
+          element => element.getAttribute("href") != null &&
+            element.getAttribute("href").indexOf("javascript:void(0);") == -1 &&
+            !element.getAttribute("href").startsWith("?")
         ).forEach(element => {
-                    
+
           let link = createLinkObject(url, element)
           let found
           if (!(found = links.find(i => i.href == link.href || i.href == link._href))) {
@@ -558,8 +571,8 @@ async function crawlURL(url, addToAll = true) {
         //Remove crawling overlay if not crawling anything else
         if (crawling.length == 0)
           document.querySelector("#crawling").classList.remove("active")
-
-        crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].isError = true
+        if (crawl.all.links.findIndex(i => i.href == url) > -1)
+          crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].isError = true
 
         //Perform updates
         updatePages()
@@ -609,14 +622,26 @@ function updateAll() {
           convertAll(page);
 
           async function convertAll(page) {
-            console.log("Converting all assets to HTML File")
+            console.log("Converting all")
             let pageDoc = page.doc.cloneNode(true)
-            if (settings.combine.assets)
-              pageDoc = await convertAllAssets(pageDoc)
-            if (settings.combine.imagesInAssets)
+            if (settings.combine.assets) {
+              console.log("Converting all styles to HTML File")
+              pageDoc = await convertAllStyles(pageDoc)
+              console.log("Converted all styles to HTML File")
+              console.log("Converting all scripts to HTML File")
+              pageDoc = await convertAllScripts(pageDoc)
+              console.log("Converted all scripts to HTML File")
+            }
+            if (settings.combine.imagesInAssets) {
+              console.log("Converting all Style images in assets to HTML File")
               pageDoc = await convertAllStyleImages(pageDoc)
-            if (settings.combine.images)
+              console.log("Convertied all Style images to HTML File")
+            }
+            if (settings.combine.images) {
+              console.log("Converting all images to HTML File")
               pageDoc = await convertAllImages(pageDoc)
+              console.log("Convertied all images to HTML File")
+            }
 
             //Create blob
             let fileBlob = new Blob([pageDoc.querySelector("html").outerHTML], { type: "plain/text" });
@@ -628,55 +653,89 @@ function updateAll() {
             //Update url to blobUrl
             url = blobUrl
 
+            console.log("Sending to download")
             chrome.downloads.download({ url })
 
           }
 
           //Convert all assets
-          async function convertAllAssets(pageDoc) {
+          async function convertAllStyles(pageDoc) {
             return new Promise(resolve => {
-              if (pageDoc.querySelectorAll('link[rel="stylesheet"], script[src]').length == 0) resolve(pageDoc)
+              //Get count of assets
+              let expectedStyleSheetCount = pageDoc.querySelectorAll("link[rel='stylesheet']").length,
+                currentStyleSheetCrawl = []
 
-              let count = 0
-              pageDoc.querySelectorAll('link[rel="stylesheet"], script[src]').forEach((element, i) => {
-                let isStyleSheet = element.tagName == "LINK" ? true : false
+              //If none, then resolve
+              if (expectedStyleSheetCount == 0) resolve(pageDoc)
 
-                let linkSheet = createAssetObject(url, element.href)
-                if ((!settings.combine.onlyLocal || (settings.combine.onlyLocal && linkSheet.tags.isLocal)) && isStyleSheet) {
-                  count++
+              //Loop through all stylesheets
+              pageDoc.querySelectorAll("link[rel='stylesheet']").forEach((styleSheet, i) => {
+                let linkSheet = createAssetObject(url, styleSheet.href)
+                //Make sure it fits the criteria
+                if ((!settings.combine.onlyLocal || (settings.combine.onlyLocal && linkSheet.tags.isLocal))) {
+                  // Add to crawl list
+                  currentStyleSheetCrawl.push(linkSheet.link)
                   crawlIfNeeded(linkSheet.link).then(page => {
                     let elm = createElementFromHTML(page.data)
                     pageDoc.querySelector("body").appendChild(elm)
-                    count--
-                    if (count == 0)
-                      resolve(pageDoc)
-                  }).catch(() => {
-                    count--
-                    if (count == 0)
-                      resolve(pageDoc)
-                    else
-                      return
+
+                    //find and remove element from array
+                    let index = currentStyleSheetCrawl.indexOf(linkSheet.link)
+                    if (index > -1) currentStyleSheetCrawl.splice(index, 1)
+
+                    if (currentStyleSheetCrawl.length == 0) resolve(pageDoc)
+                  }).catch(error => {
+
+                    //find and remove element from array
+                    let index = currentStyleSheetCrawl.indexOf(linkSheet.link)
+                    if (index > -1) currentStyleSheetCrawl.splice(index, 1)
+
+                    if (currentStyleSheetCrawl.length == 0) resolve(pageDoc)
                   })
                 }
-                let script = createAssetObject(url, element.src)
-                if ((!settings.combine.onlyLocal || (settings.combine.onlyLocal && script.tags.isLocal)) && !isStyleSheet && element.src) {
-                  count++
-                  let script = createAssetObject(url, element.src)
-                  crawlIfNeeded(script.link).then(page => {
+                else if (i == expectedStyleSheetCount - 1 && currentStyleSheetCrawl.length == 0) resolve(pageDoc)
+              })
+            })
+          }
+
+          //Convert all Scripts
+          async function convertAllScripts(pageDoc) {
+            return new Promise(resolve => {
+              //Get count of assets
+              let expectedScriptCount = pageDoc.querySelectorAll("script[src]").length,
+                currentScriptCrawl = []
+
+              //If none, then resolve
+              if (expectedScriptCount == 0) resolve(pageDoc)
+
+              //Loop through all scripts
+              pageDoc.querySelectorAll("script[src]").forEach((styleSheet, i) => {
+                let scriptFile = createAssetObject(url, styleSheet.src)
+                //Make sure it fits the criteria
+                if ((!settings.combine.onlyLocal || (settings.combine.onlyLocal && scriptFile.tags.isLocal))) {
+                  // Add to crawl list
+                  currentScriptCrawl.push(scriptFile.link)
+                  crawlIfNeeded(scriptFile.link).then(page => {
                     let elm = createElementFromHTML(page.data)
                     pageDoc.querySelector("body").appendChild(elm)
-                    count--
-                    if (count == 0)
-                      resolve(pageDoc)
-                  }).catch(() => {
-                    count--
-                    if (count == 0)
-                      resolve(pageDoc)
-                    else
-                      return
+
+                    //find and remove element from array
+                    let index = currentScriptCrawl.indexOf(scriptFile.link)
+                    if (index > -1) currentScriptCrawl.splice(index, 1)
+
+                    if (currentScriptCrawl.length == 0) resolve(pageDoc)
+                  }).catch(error => {
+
+                    //find and remove element from array
+                    let index = currentScriptCrawl.indexOf(scriptFile.link)
+                    if (index > -1) currentScriptCrawl.splice(index, 1)
+
+                    if (currentScriptCrawl.length == 0) resolve(pageDoc)
                   })
                 }
+                else if (i == expectedScriptCount - 1 && currentScriptCrawl.length == 0) resolve(pageDoc)
               })
+
             })
           }
           //Convert all style images
@@ -720,8 +779,7 @@ function updateAll() {
 
               let count = 0
 
-              pageDoc.querySelectorAll('img[src], *[style*="background"]').forEach(element => {
-                console.log(element)
+              pageDoc.querySelectorAll('img[src], *[style*="background"], img[data-src]').forEach(element => {
 
                 let isBackground = element.tagName == "IMG" ? false : true
                 let src
@@ -730,15 +788,13 @@ function updateAll() {
                   urlRegex.lastIndex = 0;
                 }
                 else if (!isBackground) {
-                  src = element.src
+                  src = element.src || element.getAttribute("data-src")
                 } else
                   return
-
                 console.log(src)
+
                 let img = createImageObject(url, isBackground ? element.src : null, src)
-                console.log(img)
                 if (!settings.combine.onlyLocal || (settings.combine.onlyLocal && img.tags.isLocal)) {
-                  console.log("Combining")
                   count++
                   toDataURL(img.src).then(dataUrl => {
                     let srcToReplace = img._src || img.src
@@ -773,7 +829,7 @@ function updateAll() {
           })
         }
 
-      } else{
+      } else {
         console.log("Simple Download")
         chrome.downloads.download({ url })
       }
@@ -1432,9 +1488,6 @@ function createLinkObject(url, element) {
   if (element.target == "_blank")
     link.instances[0].tags.isNewTab = true
 
-    console.log(element)
-    console.log(link)
-    console.log(link.href)
   if (link.href.indexOf("#") >= 0)
     link.tags.isAnchor = true
 
@@ -1459,7 +1512,7 @@ function createAssetObject(url, link) {
     tags: {}
   }
   asset.instances = [{
-    alt: link.title,
+    alt: link?.title,
     tags: {},
     foundOn: url
   }]
@@ -1489,7 +1542,7 @@ function createImageObject(url, element, src) {
 
   //Create the image object
   let image = {
-    src: element?.src || src,
+    src: element?.src || element?.getAttribute("data-src") || src,
     tags: {}
   }
   image.instances = [{

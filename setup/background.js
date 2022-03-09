@@ -22,7 +22,7 @@ chrome.downloads.onDeterminingFilename.addListener(function (item, suggest) {
     //If item download is from this extension
     if (item.byExtensionId == chrome.runtime.id) {
         storageGet(item.url).then(url => {
-            
+
             if (url)
                 storageSet(item.url, null)
             else
@@ -34,12 +34,12 @@ chrome.downloads.onDeterminingFilename.addListener(function (item, suggest) {
             let urlObject = new URL(url)
             console.log(urlObject)
             let name = urlObject.pathname
-            if(name.startsWith("/"))
+            if (name.startsWith("/"))
                 name = name.substr(1)
             name = name.replace("/", "__").replace(nonWordRegex, '_')
 
             //If the name is empty, assume you're downloading the home page
-            if (name=="__" || name=="")
+            if (name == "__" || name == "")
                 name = "index.html"
 
             //If there is no extension, add .html
@@ -48,10 +48,17 @@ chrome.downloads.onDeterminingFilename.addListener(function (item, suggest) {
 
             //Suggest the name of the file
             console.log(name)
-            suggest({ filename: name })
+
+            storageGet('downloadDirectory').then(directory => {
+                if (directory)
+                    name = directory + name
+        
+                    console.log("Suggesting: " + name)
+                suggest({ filename: name })
+            })
         })
         return true;
-    }else
+    } else
         suggest()
 });
 

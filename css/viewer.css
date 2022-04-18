@@ -285,8 +285,14 @@ hr {
 .view-row .tools .inspect i {
   color: #005a17;
 }
+.view-row .tools .success i{
+  color: #00a72a;
+}
 .view-row .tools .error i {
   color: orangered;
+}
+.view-row .tools .warning i{
+  color: #ffb400;
 }
 
 .view-items .empty-row {
@@ -444,7 +450,7 @@ hr {
 
 #pages .link {
   display: flex;
-  flex-basis: 70%;
+  flex-basis: 75%;
   padding-left: 15px;
   align-items: center;
   justify-content: start;
@@ -452,17 +458,19 @@ hr {
 }
 
 #pages .view-title .tools {
-  flex-basis: 25%;
+  flex-basis: 20%;
 }
 
 #pages .view-items .tools {
-  flex-basis: 20%;
+  flex-basis: 15%;
 }
 
 /* Links, Files & Files View */
 
-#links .type, #popup-view-links .type, #assets .type, #popup-view-assets .type, #files .type, #popup-view-files .type {
-  width: 10%;
+#links .type, #popup-view-links .type, 
+#assets .type, #popup-view-assets .type, 
+#files .type, #popup-view-files .type {
+  flex-basis: 10%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -470,11 +478,17 @@ hr {
   position: relative;
 }
 
-#links .view-row .type, #popup-view-links .view-row .type, #assets .view-row .type, #popup-view-assets .view-row .type, #files .view-row .type, #popup-view-files .view-row .type {
+/* Icon Size */
+#links .view-items .type, #popup-view-links .view-items .type, 
+#assets .view-items .type, #popup-view-assets .view-items .type, 
+#files .view-items .type, #popup-view-files .view-items .type {
   font-size: 1.75em;
 }
 
-#links .link, #popup-view-links .link, #assets .link, #popup-view-assets .link, #files .link, #popup-view-files .link {
+#links .link, #popup-view-links .link, 
+#assets .link, #popup-view-assets .link, 
+#files .link, #popup-view-files .link {
+  flex-basis: 70%;
   display: flex;
   justify-content: start;
   padding-left: 15px;
@@ -482,38 +496,10 @@ hr {
   overflow: auto;
 }
 
-/* Links View */
-
-#links .select, #popup-view-links .select {
-  flex-basis: 0;
-}
-
-#links .link, #popup-view-links .link {
-  flex-basis: 80%;
-}
-
-#links .view-items .tools, #popup-view-links .view-items .tools {
-  flex-basis: 5%;
-}
-
-/* Assets View */
-
-#assets .link, #popup-view-assets .link {
-  flex-basis: 70%
-}
-
-#assets .view-title .tools, #popup-view-assets .view-title .tools {
-  flex-basis: 15%;
-}
-
-/* Files View */
-
+#links .view-title .tools, #popup-view-links .view-title .tools,
+#assets .view-title .tools, #popup-view-assets .view-title .tools,
 #files .view-title .tools, #popup-view-files .view-title .tools {
   flex-basis: 15%;
-}
-
-#files .link, #popup-view-files .link {
-  flex-basis: 70%
 }
 
 /* Media View */

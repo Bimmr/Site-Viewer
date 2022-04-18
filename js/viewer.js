@@ -25,13 +25,15 @@ let settings = {
     directory: ''
   }
 }
+let CORS_BYPASS_URL = 'https://api.allorigins.win/get?url='
+let CORS_BYPASS_URL_RAW = 'https://api.allorigins.win/raw?url='
 
 //Regex for Chrome Extension
 let chromeExtensionRegex = new RegExp(/(chrome-extension:\/\/\w*\/(viewer\.html)?)|(chrome-extension:\/)/g)
 //Regex for viewer.html
 let viewerRegex = new RegExp(/(viewer.html)/g)
 //Regex for background or background-image style
-let urlRegex = new RegExp(/background(-image)?\s*:(.*?)(url)\(\s*(\'|")?((?!['"]?data:).*?)(?<image>.*?)\3?(\'|")?\s*\)/g)
+let imageUrlRegex = new RegExp(/background(-image)?\s*:(.*?)(url)\(\s*(\'|")?((?!['"]?data:).*?)(?<image>.*?)\3?(\'|")?\s*\)/g)
 //let urlRegex = new RegExp(/background(-image)?\s*:(.*?)(url)\(\s*(\'|")?(?<image>.*?)\3?(\'|")?\s*\)/g) - Ignoring if it contains 'data:'
 let httpRegex = new RegExp(/^((http|https):)?\/\//g)
 //Regex for a tag link
@@ -172,7 +174,13 @@ document.addEventListener("DOMContentLoaded", function () {
   //Download all button
   document.querySelectorAll(".downloadSelected").forEach(item => item.addEventListener("click", event => {
     let items = document.querySelectorAll(".view.active .view-items .select input:checked")
-    items.forEach(item => item.parentNode.parentNode.querySelector("a.download i").click())
+    items.forEach(item => item.parentNode.parentNode.querySelector("a.download i")?.click())
+  }))
+
+  //Test all button
+  document.querySelectorAll(".testSelected").forEach(item => item.addEventListener("click", event => {
+    let items = document.querySelectorAll(".view.active .view-items .select input:checked")
+    items.forEach(item => item.parentNode.parentNode.querySelector("a.test i")?.click())
   }))
 
   //Crawl all button
@@ -249,12 +257,16 @@ async function crawlURL(url, addToAll = true) {
 
     crawling.push(url)
 
-    fetch('https://api.allorigins.win/get?url=' + encodeURIComponent(url))
+    fetch(CORS_BYPASS_URL + encodeURIComponent(url))
       .then(res => {
         if (res.ok) return res.json()
         else throw new Error(res.error)
       })
       .then(data => {
+        if (data.status && data.status.http_code != 200) {
+          throw new Error(["Invalid status code", data.status.http_code])
+        }
+
         data = data.contents
 
         let type = "html"
@@ -281,13 +293,11 @@ async function crawlURL(url, addToAll = true) {
         let assets = []
 
         //Basic a tag - get link and add to crawl all list, but if already found add as an instance
-
         Array.from(doc.querySelectorAll("a")).filter(
           element => element.getAttribute("href") != null &&
             element.getAttribute("href").indexOf("javascript:void(0);") == -1 &&
             !element.getAttribute("href").startsWith("?")
         ).forEach(element => {
-
           let link = createLinkObject(url, element)
           let found
           if (!(found = links.find(i => i.href == link.href || i.href == link._href))) {
@@ -382,9 +392,9 @@ async function crawlURL(url, addToAll = true) {
 
         //Background Image styles - get image and add to crawl all list, but if already found add as an instance
         doc.querySelectorAll('*[style*="background"]').forEach(element => {
-          if (element.style.cssText.match(urlRegex)) {
-            let src = urlRegex.exec(element.style.cssText).groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
-            urlRegex.lastIndex = 0;
+          if (element.style.cssText.match(imageUrlRegex)) {
+            let src = imageUrlRegex.exec(element.style.cssText).groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
+            imageUrlRegex.lastIndex = 0;
             let image = createImageObject(url, null, src)
             let found
             if (isUrlImage(image.src))
@@ -406,10 +416,10 @@ async function crawlURL(url, addToAll = true) {
         //Find Background Images hidden in style tags - get image and add to crawl all list, but if already found add as an instance
         if (!isUrlHTMLFile(url) || (isUrlHTMLFile(url) && settings.crawl.onPageStyles))
           doc.querySelectorAll('style').forEach(element => {
-            if (element.innerHTML.match(urlRegex))
-              element.innerHTML.match(urlRegex).forEach(style => {
-                let src = urlRegex.exec(style).groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
-                urlRegex.lastIndex = 0
+            if (element.innerHTML.match(imageUrlRegex))
+              element.innerHTML.match(imageUrlRegex).forEach(style => {
+                let src = imageUrlRegex.exec(style).groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
+                imageUrlRegex.lastIndex = 0
                 let found
                 let image = createImageObject(url, null, src)
                 if (isUrlImage(image.src))
@@ -434,10 +444,10 @@ async function crawlURL(url, addToAll = true) {
           doc.querySelectorAll('script').forEach(element => {
 
             //Look for BackgroundImages
-            if (element.innerHTML.match(urlRegex))
-              element.innerHTML.match(urlRegex).forEach(style => {
-                let src = urlRegex.exec(style).groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
-                urlRegex.lastIndex = 0
+            if (element.innerHTML.match(imageUrlRegex))
+              element.innerHTML.match(imageUrlRegex).forEach(style => {
+                let src = imageUrlRegex.exec(style).groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
+                imageUrlRegex.lastIndex = 0
                 let image = createImageObject(url, null, src)
                 let found
                 if (isUrlImage(image.src))
@@ -571,8 +581,14 @@ async function crawlURL(url, addToAll = true) {
         //Remove crawling overlay if not crawling anything else
         if (crawling.length == 0)
           document.querySelector("#crawling").classList.remove("active")
-        if (crawl.all.links.findIndex(i => i.href == url) > -1)
-          crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].isError = true
+        if (crawl.all.links.findIndex(i => i.href == url) > -1) {
+          if (statusCode) {
+            crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].isWarning = true
+            crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].statusCode = error[1]
+          }
+          else
+            crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].isError = true
+        }
 
         //Perform updates
         updatePages()
@@ -585,7 +601,7 @@ async function crawlURL(url, addToAll = true) {
         //Update Listeners
         updateAll()
 
-        reject(error)
+        reject(error[0] ?? error)
       })
   })
 }
@@ -601,6 +617,45 @@ function updateAll() {
       document.querySelector(".view.active .multi-wrapper").classList.add("active")
     else
       document.querySelector(".view.active .multi-wrapper").classList.remove("active")
+  })
+
+  // Prevent clicking on warnings and errors
+  document.querySelectorAll(".view .view-items .warning, .view .view-items .error").forEach(element => element.addEventListener("click", event => {
+    event.preventDefault()
+  }))
+
+  //Add click event for the inspect icon
+  document.querySelectorAll(".view .view-items .inspect").forEach(element => element.addEventListener("click", event => {
+    event.preventDefault()
+    let url = event.target.parentNode.href
+    setupPopup(url)
+    document.querySelector(".popup").classList.add("active")
+  }))
+
+  //Add click event for the inspect icon
+  document.querySelectorAll(".view .view-items .test").forEach(element => element.addEventListener("click", event => {
+    event.preventDefault()
+    let url = event.target.parentNode.href
+    console.log("testing", url)
+    testURL(url, element)
+  }))
+
+  //Add crawl event to all view-items that have a crawl icon
+  document.querySelectorAll(".view .view-items .crawl").forEach(element => {
+    element.onclick = event => {
+      event.preventDefault()
+      let url = event.target.parentNode.href
+
+      //Check if the item being crawled is an HTML page or an asset
+      if (isUrlHTMLFile(url))
+        crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].isCrawled = true
+      else
+        crawl.all.assets[crawl.all.assets.findIndex(i => i.link == url)].isCrawled = true
+
+      //Remove Crawl Icon
+      event.target.parentNode.remove()
+      crawlURL(url)
+    }
   })
 
   //Add download event to all view-items that have a download icon
@@ -625,22 +680,18 @@ function updateAll() {
             console.log("Converting all")
             let pageDoc = page.doc.cloneNode(true)
             if (settings.combine.assets) {
-              console.log("Converting all styles to HTML File")
-              pageDoc = await convertAllStyles(pageDoc)
-              console.log("Converted all styles to HTML File")
               console.log("Converting all scripts to HTML File")
               pageDoc = await convertAllScripts(pageDoc)
-              console.log("Converted all scripts to HTML File")
+              console.log("Converting all styles to HTML File")
+              pageDoc = await convertAllStyles(pageDoc)
             }
             if (settings.combine.imagesInAssets) {
               console.log("Converting all Style images in assets to HTML File")
               pageDoc = await convertAllStyleImages(pageDoc)
-              console.log("Convertied all Style images to HTML File")
             }
             if (settings.combine.images) {
               console.log("Converting all images to HTML File")
               pageDoc = await convertAllImages(pageDoc)
-              console.log("Convertied all images to HTML File")
             }
 
             //Create blob
@@ -658,116 +709,115 @@ function updateAll() {
 
           }
 
-          //Convert all assets
+          //Convert all style sheets
           async function convertAllStyles(pageDoc) {
-            return new Promise(resolve => {
-              //Get count of assets
-              let expectedStyleSheetCount = pageDoc.querySelectorAll("link[rel='stylesheet']").length,
-                currentStyleSheetCrawl = []
+            return new Promise(done => {
+              let styleSheets = pageDoc.querySelectorAll("link[rel='stylesheet']")
+              let styleSheetPromises = []
 
-              //If none, then resolve
-              if (expectedStyleSheetCount == 0) resolve(pageDoc)
+              styleSheets.forEach(styleSheet => {
+                styleSheetPromises.push(new Promise(resolveStyle => {
+                  let styleSheetUrl = formatLink(baseUrl, styleSheet.href)
+                  crawlIfNeeded(styleSheetUrl).then(page => resolveStyle([styleSheetUrl, page.data]))
+                }))
+              })
+              styleSheets.forEach(styleSheet => styleSheet.remove())
+              Promise.allSettled(styleSheetPromises).then(data => {
 
-              //Loop through all stylesheets
-              pageDoc.querySelectorAll("link[rel='stylesheet']").forEach((styleSheet, i) => {
-                let linkSheet = createAssetObject(url, styleSheet.href)
-                //Make sure it fits the criteria
-                if ((!settings.combine.onlyLocal || (settings.combine.onlyLocal && linkSheet.tags.isLocal))) {
-                  // Add to crawl list
-                  currentStyleSheetCrawl.push(linkSheet.link)
-                  crawlIfNeeded(linkSheet.link).then(page => {
-                    let elm = createElementFromHTML(page.data)
+                data.forEach((styleSheet) => {
+                  if (styleSheet.value) {
+                    let url = styleSheet.value[0]
+                    let page = styleSheet.value[1]
+                    let elm = createElementFromHTML(page)
+                    elm.setAttribute("data-link", url)
                     pageDoc.querySelector("body").appendChild(elm)
-
-                    //find and remove element from array
-                    let index = currentStyleSheetCrawl.indexOf(linkSheet.link)
-                    if (index > -1) currentStyleSheetCrawl.splice(index, 1)
-
-                    if (currentStyleSheetCrawl.length == 0) resolve(pageDoc)
-                  }).catch(error => {
-
-                    //find and remove element from array
-                    let index = currentStyleSheetCrawl.indexOf(linkSheet.link)
-                    if (index > -1) currentStyleSheetCrawl.splice(index, 1)
-
-                    if (currentStyleSheetCrawl.length == 0) resolve(pageDoc)
-                  })
-                }
-                else if (i == expectedStyleSheetCount - 1 && currentStyleSheetCrawl.length == 0) resolve(pageDoc)
+                  }
+                })
+                console.log("Moving older Styles to bottom")
+                pageDoc.querySelectorAll("style:not([data-link])").forEach(style => pageDoc.querySelector("body").appendChild(style))
+                done(pageDoc)
               })
             })
           }
 
-          //Convert all Scripts
+          //Convert all scripts
           async function convertAllScripts(pageDoc) {
-            return new Promise(resolve => {
-              //Get count of assets
-              let expectedScriptCount = pageDoc.querySelectorAll("script[src]").length,
-                currentScriptCrawl = []
+            return new Promise(done => {
+              let scripts = pageDoc.querySelectorAll("script[src]")
+              let scriptPromises = []
 
-              //If none, then resolve
-              if (expectedScriptCount == 0) resolve(pageDoc)
-
-              //Loop through all scripts
-              pageDoc.querySelectorAll("script[src]").forEach((styleSheet, i) => {
-                let scriptFile = createAssetObject(url, styleSheet.src)
-                //Make sure it fits the criteria
-                if ((!settings.combine.onlyLocal || (settings.combine.onlyLocal && scriptFile.tags.isLocal))) {
-                  // Add to crawl list
-                  currentScriptCrawl.push(scriptFile.link)
-                  crawlIfNeeded(scriptFile.link).then(page => {
-                    let elm = createElementFromHTML(page.data)
-                    pageDoc.querySelector("body").appendChild(elm)
-
-                    //find and remove element from array
-                    let index = currentScriptCrawl.indexOf(scriptFile.link)
-                    if (index > -1) currentScriptCrawl.splice(index, 1)
-
-                    if (currentScriptCrawl.length == 0) resolve(pageDoc)
-                  }).catch(error => {
-
-                    //find and remove element from array
-                    let index = currentScriptCrawl.indexOf(scriptFile.link)
-                    if (index > -1) currentScriptCrawl.splice(index, 1)
-
-                    if (currentScriptCrawl.length == 0) resolve(pageDoc)
-                  })
-                }
-                else if (i == expectedScriptCount - 1 && currentScriptCrawl.length == 0) resolve(pageDoc)
+              scripts.forEach(script => {
+                scriptPromises.push(new Promise((resolveScript, reject) => {
+                  let scriptUrl = formatLink(baseUrl, script.src)
+                  crawlIfNeeded(scriptUrl).then(page => resolveScript([scriptUrl, page.data]))
+                }))
               })
-
+              scripts.forEach(script => script.remove())
+              Promise.allSettled(scriptPromises).then(data => {
+                data.forEach((script) => {
+                  if (script.value) {
+                    let url = script.value[0]
+                    let page = script.value[1]
+                    let elm = createElementFromHTML(page)
+                    elm.setAttribute("data-link", url)
+                    pageDoc.querySelector("body").appendChild(elm)
+                  }
+                })
+                done(pageDoc)
+              })
             })
           }
-          //Convert all style images
+          //Convert all images in style tags
           async function convertAllStyleImages(pageDoc) {
-            return new Promise(resolve => {
-              if (pageDoc.querySelectorAll('style').length == 0) resolve(pageDoc)
+            return new Promise(done => {
+              let styles = pageDoc.querySelectorAll("style")
 
-              let count = 0
-              pageDoc.querySelectorAll('style').forEach(element => {
-                if (element.innerHTML.match(urlRegex))
-                  element.innerHTML.match(urlRegex).forEach(style => {
+              let stylePromises = []
+              let matchedStyles = []
 
-                    let src = urlRegex.exec(style).groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
-                    urlRegex.lastIndex = 0
-                    let img = createImageObject(url, null, src)
-                    if (!settings.combine.onlyLocal || (settings.combine.onlyLocal && img.tags.isLocal)) {
-                      count++
-                      toDataURL(img.src).then(dataUrl => {
-                        let srcToReplace = img._src || img.src
-                        element.innerHTML = element.innerHTML.replace(new RegExp(srcToReplace, "g"), dataUrl)
-                        count--
-                        if (count == 0)
-                          resolve(pageDoc)
-                      }).catch(() => {
-                        count--
-                        if (count == 0)
-                          resolve(pageDoc)
-                        else
-                          return
+              styles.forEach(style => {
+                stylePromises.push(new Promise(resolveStyle => {
+                  if (style.innerHTML.match(imageUrlRegex)) {
+                    let imagePromises = []
+                    style.innerHTML.match(imageUrlRegex).forEach(image => {
+                      matchedStyles.push(style)
+                      let src = imageUrlRegex.exec(image).groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
+                      imagePromises.push(new Promise(resolveImage => {
+                        let img = createImageObject(baseUrl, null, src)
+                        imageUrlRegex.lastIndex = 0
+                        toDataURL(img.src).then(dataUrl => {
+                          let srcToReplace = img._src || img.src
+                          console.log("Wants to replace", srcToReplace, "with", "...")
+                          resolveImage([srcToReplace, dataUrl])
+                        }).catch(err => console.log(err))
+                      }))
+                    })
+                    Promise.allSettled(imagePromises).then(data => {
+                      let toReplace = []
+                      data.forEach(image => {
+                        console.log(image)
+                        if (image.value) {
+                          console.log("Passing along", image.value[0], "with", "...")
+                          toReplace.push(image.value)
+                        }
                       })
-                    }
-                  })
+                      resolveStyle(toReplace)
+                    })
+                  }
+                  else
+                    resolveStyle([])
+                }))
+              })
+              Promise.all(stylePromises).then(styleList => {
+                styleList.forEach(style => {
+                  if (style.length > 0) {
+                    style.forEach(image => {
+                      console.log("Replacing", image[0], "with", image[1])
+                      matchedStyles.forEach(styleTag => styleTag.innerHTML = styleTag.innerHTML.replace(new RegExp(image[0], "g"), image[1]))
+                    })
+                  }
+                })
+                done(pageDoc)
               })
             })
           }
@@ -783,9 +833,9 @@ function updateAll() {
 
                 let isBackground = element.tagName == "IMG" ? false : true
                 let src
-                if (isBackground && element.style.cssText.match(urlRegex)) {
-                  src = urlRegex.exec(element.style.cssText).groups.image
-                  urlRegex.lastIndex = 0;
+                if (isBackground && element.style.cssText.match(imageUrlRegex)) {
+                  src = imageUrlRegex.exec(element.style.cssText).groups.image
+                  imageUrlRegex.lastIndex = 0;
                 }
                 else if (!isBackground) {
                   src = element.src || element.getAttribute("data-src")
@@ -836,23 +886,41 @@ function updateAll() {
     }
   })
 
-  //Add crawl event to all view-items that have a crawl icon
-  document.querySelectorAll(".view-items .crawl").forEach(element => {
-    element.onclick = event => {
-      event.preventDefault()
-      let url = event.target.parentNode.href
+}
+function testURL(url, element) {
+  element.classList.remove("test")
+  element.classList.add("testing")
+  element.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'
 
-      //Check if the item being crawled is an HTML page or an asset
-      if (isUrlHTMLFile(url))
-        crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].isCrawled = true
-      else
-        crawl.all.assets[crawl.all.assets.findIndex(i => i.link == url)].isCrawled = true
-
-      //Remove Crawl Icon
-      event.target.parentNode.remove()
-      crawlURL(url)
-    }
-  })
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 5000)
+  fetch(CORS_BYPASS_URL + encodeURIComponent(url), { signal: controller.signal })
+    .then(res => {
+      if (res.ok) return res.json()
+      else throw new Error(res.error)
+    })
+    .then(data => {
+      if (data.status.http_code == 200) {
+        element.classList.add("success")
+        element.innerHTML = '<i class="fas fa-check"></i>'
+      }
+      else if (data.error) {
+        element.classList.add("error")
+        element.title = "Returned a status code of " + data.status.http_code
+        element.innerHTML = '<i class="fas fa-times"></i>'
+      }
+      else {
+        element.classList.add("warning")
+        element.title = "Link doesn't exist or took to long to respond"
+        element.innerHTML = '<i class="fas fa-exclamation-triangle"></i>'
+      }
+    })
+    .catch(() => {
+      element.classList.add("error")
+      element.title = "Link doesn't exist or took to long to respond"
+      element.innerHTML = '<i class="fas fa-times"></i>'
+    })
+    .finally(() => { element.classList.remove("testing") })
 }
 
 /**
@@ -961,7 +1029,9 @@ function updatePages() {
             <a class="download" href="`+ link.href + `" title="Download Page"><i class="fas fa-file-download"></i></a>` +
       '<a class="goto" target="_blank" href="' + link.href + '" title="Go to page"><i class="fas fa-external-link-alt"></i></a>'
     if (link.isError)
-      html += '<a class="error" target="_blank" href="#" title="Failed to crawl"><i class="fa-solid fa-triangle-exclamation"></i></a>'
+      html += '<a class="error" target="_blank" href="#" title="Page doesn\'t exist or took to long to respond"><i class="fa-solid fa-triangle-exclamation"></i></a>'
+    else if (link.isWarning)
+      html += '<a class="warning" target="_blank" href="#" title="Returned a status code of ' + link.statusCode + '"><i class="fa-solid fa-triangle-exclamation"></i></a>'
     else if (link.isCrawled)
       html += '<a class="inspect" title="Inspect Page" href="' + link.href + '"><i class="fas fa-search"></i></a>'
     else
@@ -989,13 +1059,6 @@ function updatePages() {
   else
     wrapper.innerHTML = `<div class="empty-row">There are no items here.</div>`
 
-  //Add click event for the inspect icon
-  document.querySelectorAll(".view .view-items .inspect").forEach(element => element.addEventListener("click", event => {
-    event.preventDefault()
-    let url = event.target.parentNode.href
-    setupPopup(url)
-    document.querySelector(".popup").classList.add("active")
-  }))
 }
 
 /** 
@@ -1070,6 +1133,7 @@ function setupPopup(url) {
       `</div>
         <div class="tools">`+
       '<a class="goto" target="_blank" href="' + href + '" title="Go to link"><i class="fas fa-external-link-alt"></i></a>'
+
     if (htmlIndex != 'links')
       html[htmlIndex] += '<a class="download" href="' + href + '" title="Download Page"><i class="fas fa-file-download"></i></a>'
     html[htmlIndex] += `</div>
@@ -1278,10 +1342,11 @@ function updateLinks() {
     //Add to HTML to html string for the item
     html += `
         <div class="view-row">
-          <!--<div class="select">
-            <input type="checkbox">
-          </div>-->
-          <div class="type">`
+          <div class="select">`
+    if (!isUrlProtocol(link.href) && !isUrlAnchor(link.href))
+      html += `<input type="checkbox">`
+    html += `</div>
+        <div class="type">`
     if (link.tags.tag == 'a')
       html += getFAIcon(link.href)
     else
@@ -1290,9 +1355,18 @@ function updateLinks() {
             <div class="link">`+
       '<p>' + link.href + '</p>' +
       `</div>
-        <div class="tools">
-          <a class="goto" target="_blank" href="`+ link.href + `" title="Go to link"><i class="fas fa-external-link-alt"></i></a>
-          </div>
+        <div class="tools">`
+    if (!isUrlProtocol(link.href))
+      html += `<a class="goto" target="_blank" href="` + link.href + `" title="Go to link"><i class="fas fa-external-link-alt"></i></a>`
+    if (!isUrlProtocol(link.href) && !isUrlAnchor(link.href)) {
+      if (link.test == null)
+        html += '<a class="test" target="_blank" href="' + link.href + '" title="Test the link"><i class="fas fa-question-circle"></i></a>'
+      if (link.test == true)
+        html += '<a class="success" target="_blank" href="' + link.href + '" title="Test the link"><i class="fas fa-check-circle"></i></a>'
+      else if (link.test == false)
+        html += '<a class="error" target="_blank" href="' + link.href + '" title="Test the link"><i class="fas fa-exclamation-circle"></i></a>'
+    }
+    html += `</div>
           <div class="info">
           <div class="hover-popup-icon">
             <span class="fa-stack fa-1x">
@@ -1474,7 +1548,7 @@ function createLinkObject(url, element) {
 
   //Create the link object
   let link = {
-    href: element.href || element.src,
+    href: element.href || element.src || '',
     tags: { tag: element.tagName.toLowerCase() }
   }
   link.instances = [{

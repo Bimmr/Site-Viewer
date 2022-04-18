@@ -35,14 +35,15 @@ function getFAIcon(value, getIndex = false) {
         //Urls
         new URL(value)
 
-        if (isUrlAnchor(value))
-            icon = ['<i class="fas fa-anchor"></i>', 1]
-        else if (isUrlProtocolTel(value))
+
+        if (isUrlProtocolTel(value))
             icon = ['<i class="fas fa-phone"></i>', 11]
         else if (isUrlProtocolMailto(value))
             icon = ['<i class="fas fa-envelope"></i>', 12]
         else if (isUrlProtocol(value))
             icon = ['<i class="fas fa-globe"></i>', 10]
+        else if (isUrlAnchor(value))
+            icon = ['<i class="fas fa-anchor"></i>', 1]
         else if (isUrlPDFFile(value))
             icon = ['<i class="fas fa-file-pdf"></i>', 20]
         else if (isUrlImage(value))
@@ -169,14 +170,25 @@ function storageSet(key, value) {
     chrome.storage.local.set({ [key]: value });
 }
 
-const toDataURL = url => fetch(url)
-    .then(response => response.blob())
-    .then(blob => new Promise((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onloadend = () => resolve(reader.result)
-        reader.onerror = reject
-        reader.readAsDataURL(blob)
-    }))
+function toDataURL(url) {
+    return new Promise((resolve, reject) => {
+        fetch(CORS_BYPASS_URL_RAW + encodeURIComponent(url))
+            .then(res => {
+                if (res.ok) return res.blob()
+                else throw new Error(res.error)
+            })
+            .then(data => {
+
+                const reader = new FileReader()
+                reader.onloadend = () => resolve(reader.result)
+                reader.onerror = reject
+                reader.readAsDataURL(data)
+            })
+            .catch(err => {
+                reject(err)
+            })
+    })
+}
 
 const getLocation = function (href) {
     var l = document.createElement("a");

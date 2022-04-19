@@ -1,21 +1,4 @@
 /**
- * I'm assuming this means it can run on http and https pages? - copied from another extention of mine to make this one work...
- */
-chrome.runtime.onInstalled.addListener(function () {
-
-    chrome.declarativeContent.onPageChanged.removeRules(undefined, function () {
-        chrome.declarativeContent.onPageChanged.addRules([{
-            conditions: [new chrome.declarativeContent.PageStateMatcher({
-                pageUrl: { schemes: ['https', 'http'] },
-            })
-            ],
-            actions: [new chrome.declarativeContent.ShowPageAction()]
-        }]);
-    });
-});
-
-
-/**
 * Listen to files being downloaded and suggest the name if the file is being downloaded from Site Viewer
 */
 chrome.downloads.onDeterminingFilename.addListener(function (item, suggest) {

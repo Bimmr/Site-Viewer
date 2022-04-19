@@ -1,16 +1,21 @@
 {
 
   "name": "Site Viewer",
+  "short_name": "Site Viewer",
   "version": "0.0.3",
-
   "description": "Crawl/View a website for Pages, Links, Files and Media.",
-  "icons": {
-    "64": "icons/icon-64.png",
-    "32": "icons/icon-32.png",
-    "16": "icons/icon-16.png"
-  },
 
-  "page_action": {
+  "manifest_version": 3,
+  "background": {
+    "service_worker": "setup/background.js"
+  },
+  "permissions": [
+    "activeTab",
+    "declarativeContent",
+    "storage",
+    "downloads"
+  ],
+  "action": {
     "default_popup": "setup/popup.html",
     "default_icon": {
       "64": "icons/icon-64.png",
@@ -19,17 +24,11 @@
     }
   },
 
-  "permissions": [
-    "activeTab",
-    "declarativeContent",
-    "storage",
-    "downloads"
-  ],
-  "background": {
-    "scripts": ["setup/background.js"],
-    "persistent": false
-  },
-  "short_name": "Site Viewer",
+  
+  "icons": {
+    "64": "icons/icon-64.png",
+    "32": "icons/icon-32.png",
+    "16": "icons/icon-16.png"
+  }
 
-  "manifest_version": 2
 }

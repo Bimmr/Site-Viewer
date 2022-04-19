@@ -1,3 +1,4 @@
+// A JavaScript, CSS, or Font File
 class Asset extends Base {
     instances;
     title;

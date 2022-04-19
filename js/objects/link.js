@@ -1,3 +1,4 @@
+// A Link that isn't an Asset or Media
 class Link extends Base {
     title;
     instances;

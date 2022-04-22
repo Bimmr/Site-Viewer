@@ -11,6 +11,7 @@ chrome.tabs.query(
         popupWindow.tabURL = currentTab[0].url
         popupWindow.extensionId = chrome.runtime.id
         popupWindow.tab = JSON.stringify(currentTab)
+        popupWindow.version = chrome.runtime.getManifest().version
     }
 )
 

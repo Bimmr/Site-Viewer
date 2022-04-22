@@ -63,6 +63,7 @@
           <p>Settings</p>
         </li>
       </ul>
+      <span class="sidebar-footer">SiteViewer<br>Version: <span class="version"></span></span>
     </aside>
     <main id="main">
 
@@ -92,8 +93,8 @@
                 </div>
               </div>
               <div class="form-item" style="margin-top: 12px;">
-              <button class="crawlAllBtn">Crawl All Pages</button>
-            </div>
+                <button class="crawlAllBtn">Crawl All Pages</button>
+              </div>
             </div>
           </div>
           <div class="row center-even">
@@ -312,7 +313,8 @@
           <div class="card">
             <h3 class="card-title">Crawl the On Page Assets</h3>
             <p>Do you want to crawl the on page assets. These would be anything in <i>&lt;script&gt;</i> or
-              <i>&lt;style&gt;</i> tags.</p>
+              <i>&lt;style&gt;</i> tags.
+            </p>
             <p><i class="fas fa-warning" style="color: orangered"></i> You will need to recrawl after changing these for
               them to take affect <i class="fas fa-warning" style="color: orangered"></i> </p><br>
             <div class="form-item split even">
@@ -331,7 +333,8 @@
           <div class="card">
             <h3 class="card-title">Combine Into HTML File</h3>
             <p>When downloading a HTML File do you want to combine all the images and assets into the HTML file?</p>
-            <p style="margin-top: 5px;"><strong>This feature is still in testing and may not work as intended.</strong></p><br>
+            <p style="margin-top: 5px;"><strong>This feature is still in testing and may not work as intended.</strong>
+            </p><br>
             <div class="form-item">
               <input type="checkbox" id="combine-enabled">
               <label for="combine-enabled">Combine items into a single html page</label>
@@ -363,10 +366,10 @@
             <br>
             <div class="form-item split">
               <div class="border">
-              <input id="download-directory" type="text" name="download-directory" required>
-              <label for="download-directory">Download Directory</label>
-            </div>
-            <div></div>
+                <input id="download-directory" type="text" name="download-directory" required>
+                <label for="download-directory">Download Directory</label>
+              </div>
+              <div></div>
             </div>
           </div>
           <div class="card">
@@ -382,7 +385,7 @@
 
 
       <!-- Popup -->
-      <div id="popup" class="popup ">
+      <div id="inspecter" class="popup ">
         <div class="popup-outerWrapper">
           <div class="card popup-wrapper">
             <span class="card-title">
@@ -456,6 +459,20 @@
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Image expander -->
+      <div id="expander" class="popup ">
+        <div class="popup-outerWrapper">
+          <div class="popup-wrapper">
+            <span title="Close Popup" class="card-title-icon popup-close"><i
+                class="far fa-window-close tool-icon"></i></span>
+
+            <div class="popup-imageWrapper">
+              <img class="expanded-image" src="https://bimmr.com/imgs/projects/Signs.png" alt="">
             </div>
           </div>
         </div>

@@ -75,6 +75,8 @@ document.addEventListener("DOMContentLoaded", function () {
   link.tags.isBaseUrl = true
   crawl.all.links.push(link)
 
+  document.querySelector(".sidebar .sidebar-footer .version").innerHTML = window.version
+
 
   //Sidebar controls
   document.querySelectorAll(".sidebar-item").forEach(item => item.addEventListener("click", event => {
@@ -151,18 +153,20 @@ document.addEventListener("DOMContentLoaded", function () {
   })
 
   //Popup Controls
-  document.querySelector(".popup .popup-close i").addEventListener("click", event => {
-    event.target.parentNode.parentNode.parentNode.parentNode.classList.remove("active")
-  })
-  document.querySelector(".popup .popup-outerWrapper").addEventListener("click", event => {
-    if (document.querySelector(".popup .popup-outerWrapper") == event.target)
+  document.querySelectorAll(".popup .popup-close i").forEach(element => element.addEventListener("click", event => {
+    document.querySelector(".popup.active").classList.remove("active")
+  }))
+  document.querySelectorAll(".popup .popup-outerWrapper").forEach(element => element.addEventListener("click", event => {
+    if (Array.from(document.querySelectorAll(".popup .popup-outerWrapper")).some(element1 => element1 == event.target))
       document.querySelector(".popup.active").classList.remove("active")
-  })
-  document.querySelectorAll(".popup .popup-nav-item").forEach(item => item.addEventListener("click", event => {
-    document.querySelectorAll(".popup .popup-nav-item.active, .popup .popup-view.active").forEach(activeItem => activeItem.classList.remove("active"))
+  }))
+
+  document.querySelectorAll("#inspecter .popup-nav-item").forEach(item => item.addEventListener("click", event => {
+    document.querySelectorAll("#inspecter .popup-nav-item.active, #inspecter .popup-view.active").forEach(activeItem => activeItem.classList.remove("active"))
     item.classList.add("active")
     let view = item.querySelector("p").innerHTML.toLowerCase()
-    document.querySelector(".popup .popup-view#popup-view-" + view)?.classList.add("active")
+    console.log(view)
+    document.querySelector("#inspecter .popup-view#popup-view-" + view)?.classList.add("active")
   }))
 
   //Select All controls
@@ -629,7 +633,13 @@ function updateAll() {
     event.preventDefault()
     let url = event.target.parentNode.href
     setupPopup(url)
-    document.querySelector(".popup").classList.add("active")
+    document.querySelector("#inspecter ").classList.add("active")
+  }))
+
+  document.querySelectorAll(".expand-image").forEach(element => element.addEventListener("click", event => {
+    document.querySelector(".expanded-image").src = event.target.src
+    document.querySelector("#expander").classList.add("active")
+
   }))
 
   //Add click event for the inspect icon
@@ -835,7 +845,7 @@ function updateAll() {
                   let isImageTag = image.tagName.toLowerCase() === "img"
                   let src = image.src || image.getAttribute("data-src")
                   console.log(!isImageTag, image.style.cssText.match(imageUrlRegex))
-                  if(!isImageTag && image.style.cssText.match(imageUrlRegex)) {
+                  if (!isImageTag && image.style.cssText.match(imageUrlRegex)) {
                     src = imageUrlRegex.exec(element.style.cssText).groups.image
                     imageUrlRegex.lastIndex = 0;
                   }
@@ -843,7 +853,7 @@ function updateAll() {
                   let img = createImageObject(baseUrl, null, src)
                   toDataURL(img.src).then(dataUrl => {
                     console.log("Wants to replace", src, "with", "...")
-                    if(isImageTag)
+                    if (isImageTag)
                       image.src = dataUrl
                     else
                       image.style = image.style.cssText.replace(new RegExp(src, "g"), dataUrl)
@@ -1107,7 +1117,7 @@ function updatePages() {
 function setupPopup(url) {
 
   // Get the popup and the crawled object to inspect
-  let popup = document.querySelector("#popup")
+  let popup = document.querySelector("#inspecter")
   let page = crawl[url]
 
   //Add popup content
@@ -1553,7 +1563,7 @@ function updateMedia() {
           </div>
           <div class="image">`
     if (isImage)
-      html += '<img src="' + file.src + '">'
+      html += '<img class="expand-image"  src="' + file.src + '">'
     else html += getFAIcon(file.src)
     html += `</div>
           <div class="link">`+

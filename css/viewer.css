@@ -157,7 +157,7 @@ hr {
   text-align: center;
   position: absolute;
   bottom: 2px;
-  width: 100%;
+  width: calc(100% - 10px);
   opacity: 0.2;
   user-select: none;
   background: #181818;

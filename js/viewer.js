@@ -75,6 +75,8 @@ document.addEventListener("DOMContentLoaded", function () {
   link.tags.isBaseUrl = true
   crawl.all.links.push(link)
 
+  document.querySelector(".sidebar .sidebar-footer .version").innerHTML = window.version
+
 
   //Sidebar controls
   document.querySelectorAll(".sidebar-item").forEach(item => item.addEventListener("click", event => {
@@ -151,18 +153,20 @@ document.addEventListener("DOMContentLoaded", function () {
   })
 
   //Popup Controls
-  document.querySelector(".popup .popup-close i").addEventListener("click", event => {
-    event.target.parentNode.parentNode.parentNode.parentNode.classList.remove("active")
-  })
-  document.querySelector(".popup .popup-outerWrapper").addEventListener("click", event => {
-    if (document.querySelector(".popup .popup-outerWrapper") == event.target)
+  document.querySelectorAll(".popup .popup-close i").forEach(element => element.addEventListener("click", event => {
+    document.querySelector(".popup.active").classList.remove("active")
+  }))
+  document.querySelectorAll(".popup .popup-outerWrapper").forEach(element => element.addEventListener("click", event => {
+    if (Array.from(document.querySelectorAll(".popup .popup-outerWrapper")).some(element1 => element1 == event.target))
       document.querySelector(".popup.active").classList.remove("active")
-  })
-  document.querySelectorAll(".popup .popup-nav-item").forEach(item => item.addEventListener("click", event => {
-    document.querySelectorAll(".popup .popup-nav-item.active, .popup .popup-view.active").forEach(activeItem => activeItem.classList.remove("active"))
+  }))
+
+  document.querySelectorAll("#inspecter .popup-nav-item").forEach(item => item.addEventListener("click", event => {
+    document.querySelectorAll("#inspecter .popup-nav-item.active, #inspecter .popup-view.active").forEach(activeItem => activeItem.classList.remove("active"))
     item.classList.add("active")
     let view = item.querySelector("p").innerHTML.toLowerCase()
-    document.querySelector(".popup .popup-view#popup-view-" + view)?.classList.add("active")
+    console.log(view)
+    document.querySelector("#inspecter .popup-view#popup-view-" + view)?.classList.add("active")
   }))
 
   //Select All controls
@@ -264,7 +268,7 @@ async function crawlURL(url, addToAll = true) {
       })
       .then(data => {
         if (data.status && data.status.http_code != 200) {
-          throw new Error(["Invalid status code", data.status.http_code])
+          throw new Error(data.status.http_code)
         }
 
         data = data.contents
@@ -582,9 +586,9 @@ async function crawlURL(url, addToAll = true) {
         if (crawling.length == 0)
           document.querySelector("#crawling").classList.remove("active")
         if (crawl.all.links.findIndex(i => i.href == url) > -1) {
-          if (statusCode) {
+          if (!isNaN(error.message)) {
             crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].isWarning = true
-            crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].statusCode = error[1]
+            crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].statusCode = error.message
           }
           else
             crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].isError = true
@@ -620,7 +624,7 @@ function updateAll() {
   })
 
   // Prevent clicking on warnings and errors
-  document.querySelectorAll(".view .view-items .warning, .view .view-items .error").forEach(element => element.addEventListener("click", event => {
+  document.querySelectorAll(".view-items .warning, .view-items .error").forEach(element => element.addEventListener("click", event => {
     event.preventDefault()
   }))
 
@@ -629,11 +633,17 @@ function updateAll() {
     event.preventDefault()
     let url = event.target.parentNode.href
     setupPopup(url)
-    document.querySelector(".popup").classList.add("active")
+    document.querySelector("#inspecter ").classList.add("active")
+  }))
+
+  document.querySelectorAll(".expand-image").forEach(element => element.addEventListener("click", event => {
+    document.querySelector(".expanded-image").src = event.target.src
+    document.querySelector("#expander").classList.add("active")
+
   }))
 
   //Add click event for the inspect icon
-  document.querySelectorAll(".view .view-items .test").forEach(element => element.addEventListener("click", event => {
+  document.querySelectorAll(".view-items .test").forEach(element => element.addEventListener("click", event => {
     event.preventDefault()
     let url = event.target.parentNode.href
     console.log("testing", url)
@@ -716,9 +726,9 @@ function updateAll() {
               let styleSheetPromises = []
 
               styleSheets.forEach(styleSheet => {
-                styleSheetPromises.push(new Promise(resolveStyle => {
+                styleSheetPromises.push(new Promise((resolveStyle, rejectStyle) => {
                   let styleSheetUrl = formatLink(baseUrl, styleSheet.href)
-                  crawlIfNeeded(styleSheetUrl).then(page => resolveStyle([styleSheetUrl, page.data]))
+                  crawlIfNeeded(styleSheetUrl).then(page => resolveStyle([styleSheetUrl, page.data])).catch(rejectStyle)
                 }))
               })
               styleSheets.forEach(styleSheet => styleSheet.remove())
@@ -747,9 +757,9 @@ function updateAll() {
               let scriptPromises = []
 
               scripts.forEach(script => {
-                scriptPromises.push(new Promise((resolveScript, reject) => {
+                scriptPromises.push(new Promise((resolveScript, rejectScript) => {
                   let scriptUrl = formatLink(baseUrl, script.src)
-                  crawlIfNeeded(scriptUrl).then(page => resolveScript([scriptUrl, page.data]))
+                  crawlIfNeeded(scriptUrl).then(page => resolveScript([scriptUrl, page.data])).catch(rejectScript)
                 }))
               })
               scripts.forEach(script => script.remove())
@@ -763,6 +773,8 @@ function updateAll() {
                     pageDoc.querySelector("body").appendChild(elm)
                   }
                 })
+                console.log("Moving older Scripts to bottom")
+                pageDoc.querySelectorAll("script:not([data-link])").forEach(script => pageDoc.querySelector("body").appendChild(script))
                 done(pageDoc)
               })
             })
@@ -782,15 +794,16 @@ function updateAll() {
                     style.innerHTML.match(imageUrlRegex).forEach(image => {
                       matchedStyles.push(style)
                       let src = imageUrlRegex.exec(image).groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
-                      imagePromises.push(new Promise(resolveImage => {
+                      imagePromises.push(new Promise((resolveImage, rejectImage) => {
                         let img = createImageObject(baseUrl, null, src)
                         imageUrlRegex.lastIndex = 0
                         toDataURL(img.src).then(dataUrl => {
                           let srcToReplace = img._src || img.src
                           console.log("Wants to replace", srcToReplace, "with", "...")
                           resolveImage([srcToReplace, dataUrl])
-                        }).catch(err => console.log(err))
-                      }))
+                        }).catch(err => rejectImage(err))
+                      })
+                      )
                     })
                     Promise.allSettled(imagePromises).then(data => {
                       let toReplace = []
@@ -824,6 +837,37 @@ function updateAll() {
 
           //Convert all imgs
           async function convertAllImages(pageDoc) {
+            return new Promise(done => {
+              let images = pageDoc.querySelectorAll('img[src]:not([src^=data]), img[data-src], *[style*="background"]')
+              let imagePromises = []
+              images.forEach(image => {
+                imagePromises.push(new Promise((resolveImage, rejectImage) => {
+                  let isImageTag = image.tagName.toLowerCase() === "img"
+                  let src = image.src || image.getAttribute("data-src")
+                  console.log(!isImageTag, image.style.cssText.match(imageUrlRegex))
+                  if (!isImageTag && image.style.cssText.match(imageUrlRegex)) {
+                    src = imageUrlRegex.exec(element.style.cssText).groups.image
+                    imageUrlRegex.lastIndex = 0;
+                  }
+                  console.log(src)
+                  let img = createImageObject(baseUrl, null, src)
+                  toDataURL(img.src).then(dataUrl => {
+                    console.log("Wants to replace", src, "with", "...")
+                    if (isImageTag)
+                      image.src = dataUrl
+                    else
+                      image.style = image.style.cssText.replace(new RegExp(src, "g"), dataUrl)
+                    resolveImage()
+                  }).catch(err => rejectImage(err))
+                })
+                )
+              })
+              Promise.allSettled(imagePromises).then(data => {
+                done(pageDoc)
+              })
+            })
+          }
+          async function convertAllImages1(pageDoc) {
             return new Promise(resolve => {
               if (pageDoc.querySelectorAll('img[src], *[style*="background"]').length == 0) resolve(pageDoc)
 
@@ -893,7 +937,7 @@ function testURL(url, element) {
   element.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'
 
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 5000)
+  const timeoutId = setTimeout(() => controller.abort(), 10000)
   fetch(CORS_BYPASS_URL + encodeURIComponent(url), { signal: controller.signal })
     .then(res => {
       if (res.ok) return res.json()
@@ -902,25 +946,30 @@ function testURL(url, element) {
     .then(data => {
       if (data.status.http_code == 200) {
         element.classList.add("success")
-        element.innerHTML = '<i class="fas fa-check"></i>'
+        element.title = "Link is valid"
+        element.innerHTML = '<i class="fas fa-check-circle"></i>'
+        crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].test = "success"
       }
-      else if (data.error) {
-        element.classList.add("error")
-        element.title = "Returned a status code of " + data.status.http_code
-        element.innerHTML = '<i class="fas fa-times"></i>'
+      else if (data.error || data.status.error) {
+        throw new Error()
       }
       else {
         element.classList.add("warning")
-        element.title = "Link doesn't exist or took to long to respond"
-        element.innerHTML = '<i class="fas fa-exclamation-triangle"></i>'
+        element.title = "Returned a status code of " + data.status.http_code
+        element.innerHTML = '<i class="fas fa-exclamation-circle"></i>'
+        crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].test = "warning"
+        crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].statusCode = data.status.http_code
       }
     })
     .catch(() => {
       element.classList.add("error")
       element.title = "Link doesn't exist or took to long to respond"
-      element.innerHTML = '<i class="fas fa-times"></i>'
+      element.innerHTML = '<i class="fas fa-times-circle"></i>'
+      crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].test = "failed"
     })
-    .finally(() => { element.classList.remove("testing") })
+    .finally(() => {
+      element.classList.remove("testing")
+    })
 }
 
 /**
@@ -1029,9 +1078,9 @@ function updatePages() {
             <a class="download" href="`+ link.href + `" title="Download Page"><i class="fas fa-file-download"></i></a>` +
       '<a class="goto" target="_blank" href="' + link.href + '" title="Go to page"><i class="fas fa-external-link-alt"></i></a>'
     if (link.isError)
-      html += '<a class="error" target="_blank" href="#" title="Page doesn\'t exist or took to long to respond"><i class="fa-solid fa-triangle-exclamation"></i></a>'
+      html += '<a class="error" target="_blank" href="#" title="Page doesn\'t exist or took to long to respond"><i class="fas fa-times-circle"></i></a>'
     else if (link.isWarning)
-      html += '<a class="warning" target="_blank" href="#" title="Returned a status code of ' + link.statusCode + '"><i class="fa-solid fa-triangle-exclamation"></i></a>'
+      html += '<a class="warning" target="_blank" href="#" title="Returned a status code of ' + link.statusCode + '"><i class="fas fa-exclamation-circle"></i></a>'
     else if (link.isCrawled)
       html += '<a class="inspect" title="Inspect Page" href="' + link.href + '"><i class="fas fa-search"></i></a>'
     else
@@ -1068,7 +1117,7 @@ function updatePages() {
 function setupPopup(url) {
 
   // Get the popup and the crawled object to inspect
-  let popup = document.querySelector("#popup")
+  let popup = document.querySelector("#inspecter")
   let page = crawl[url]
 
   //Add popup content
@@ -1132,8 +1181,17 @@ function setupPopup(url) {
       '<p>' + href + '</p>' +
       `</div>
         <div class="tools">`+
-      '<a class="goto" target="_blank" href="' + href + '" title="Go to link"><i class="fas fa-external-link-alt"></i></a>'
-
+      '<a class="goto" target="_blank" href="' + href + '" title="Open the link"><i class="fas fa-external-link-alt"></i></a>'
+    if (!isUrlProtocol(href) && !isUrlAnchor(href) && htmlIndex == 'links') {
+      if (link.test == null)
+        html[htmlIndex] += '<a class="test" target="_blank" href="' + href + '" title="Test the link"><i class="fas fa-question-circle"></i></a>'
+      if (link.test == "success")
+        html[htmlIndex] += '<a class="success" target="_blank" href="' + href + '" title="Link is valid"><i class="fas fa-check-circle"></i></a>'
+      else if (link.test == "warning")
+        html[htmlIndex] += '<a class="warning" target="_blank" href="' + href + '" title="Returned a status code of ' + link.statusCode + '"><i class="fas fa-exclamation-circle"></i></a>'
+      else if (link.test == "error")
+        html[htmlIndex] += '<a class="error" target="_blank" href="' + href + '" title="Link doesn\'t exist or took to long to respond"><i class="fas fa-times-circle"></i></a>'
+    }
     if (htmlIndex != 'links')
       html[htmlIndex] += '<a class="download" href="' + href + '" title="Download Page"><i class="fas fa-file-download"></i></a>'
     html[htmlIndex] += `</div>
@@ -1355,15 +1413,15 @@ function updateLinks() {
             <div class="link">`+
       '<p>' + link.href + '</p>' +
       `</div>
-        <div class="tools">`
-    if (!isUrlProtocol(link.href))
-      html += `<a class="goto" target="_blank" href="` + link.href + `" title="Go to link"><i class="fas fa-external-link-alt"></i></a>`
+        <div class="tools"><a class="goto" target="_blank" href="` + link.href + `" title="Open link"><i class="fas fa-external-link-alt"></i></a>`
     if (!isUrlProtocol(link.href) && !isUrlAnchor(link.href)) {
       if (link.test == null)
         html += '<a class="test" target="_blank" href="' + link.href + '" title="Test the link"><i class="fas fa-question-circle"></i></a>'
-      if (link.test == true)
-        html += '<a class="success" target="_blank" href="' + link.href + '" title="Test the link"><i class="fas fa-check-circle"></i></a>'
-      else if (link.test == false)
+      if (link.test == "success")
+        html += '<a class="success" target="_blank" href="' + link.href + '" title="Link is valid"><i class="fas fa-check-circle"></i></a>'
+      else if (link.test == "warning")
+        html += '<a class="warning" target="_blank" href="' + link.href + '" title="Returned a status code of ' + test.statusCode + '"><i class="fas fa-exclamation-circle"></i></a>'
+      else if (link.test == "failed")
         html += '<a class="error" target="_blank" href="' + link.href + '" title="Test the link"><i class="fas fa-exclamation-circle"></i></a>'
     }
     html += `</div>
@@ -1505,7 +1563,7 @@ function updateMedia() {
           </div>
           <div class="image">`
     if (isImage)
-      html += '<img src="' + file.src + '">'
+      html += '<img class="expand-image"  src="' + file.src + '">'
     else html += getFAIcon(file.src)
     html += `</div>
           <div class="link">`+

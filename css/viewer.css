@@ -47,6 +47,7 @@ hr {
   letter-spacing: unset;
   display: flex;
   flex-flow: column nowrap;
+  position: relative;
 }
 
 /* Sitebar item styles */
@@ -150,6 +151,17 @@ hr {
 
 .sidebar-item .newContent.active {
   display: inline-block
+}
+.sidebar .sidebar-footer{
+  font-size: .7em;
+  text-align: center;
+  position: absolute;
+  bottom: 2px;
+  width: 100%;
+  opacity: 0.2;
+  user-select: none;
+  background: #181818;
+  padding: 5px;
 }
 
 /* View Styles */
@@ -1031,4 +1043,31 @@ hr {
 
 .popup .popup-view.active {
   height: 98%;
+}
+
+.expand-image{
+  cursor: pointer;
+}
+#expander .popup-close{
+  background: hsl(0deg 0% 9% / 57%);
+  padding: 5px;
+  top: 0px;
+  right: 0;
+  border-radius: 0 0 0 50%;
+  z-index: 1;
+}
+#expander .popup-wrapper{
+  padding: 1em;
+}
+#expander .popup-imageWrapper{
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  display: flex;
+  justify-content: center;
+}
+#expander img{
+  max-width: 100%;
+  object-fit: scale-down;
 }

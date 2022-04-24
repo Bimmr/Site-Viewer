@@ -11,6 +11,7 @@ chrome.tabs.query(
         popupWindow.tabURL = currentTab[0].url
         popupWindow.extensionId = chrome.runtime.id
         popupWindow.tab = JSON.stringify(currentTab)
+        popupWindow.version = chrome.runtime.getManifest().version
     }
 )
 
@@ -24,7 +25,7 @@ function openPopup() {
     window.close()
     if (popupWindow == null || popupWindow.closed) {
         popupWindow = window.open(
-            chrome.extension.getURL("viewer.html"),
+            chrome.runtime.getURL("viewer.html"),
             "SiteViewer - "+ Math.floor(Math.random() * 100),
             "width=1300,height=580"
         )

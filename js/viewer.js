@@ -215,6 +215,7 @@ document.addEventListener("DOMContentLoaded", function () {
 * Function to run AFTER each view and popup-view is updated
 */
 function updateAll() {
+  document.querySelectorAll(".view .view-title .select input").forEach(item => item.checked = false)
 
   //If more than one item is selected, show the multi-item wrapper
   document.querySelectorAll(".view .view-items .select input").forEach(i => i.onclick = function () {
@@ -223,11 +224,6 @@ function updateAll() {
     else
       document.querySelector(".view.active .multi-wrapper").classList.remove("active")
   })
-
-  // Prevent clicking on warnings and errors
-  document.querySelectorAll(".view-items .warning, .view-items .error").forEach(element => element.addEventListener("click", event => {
-    event.preventDefault()
-  }))
 
   //Add click event for the inspect icon
   document.querySelectorAll(".view .view-items .inspect").forEach(element => element.addEventListener("click", event => {
@@ -244,7 +240,7 @@ function updateAll() {
   }))
 
   //Add click event for the inspect icon
-  document.querySelectorAll(".view-items .test").forEach(element => element.addEventListener("click", event => {
+  document.querySelectorAll(".view-items .test, view-items .warning, .view-items .error").forEach(element => element.addEventListener("click", event => {
     event.preventDefault()
     let url = event.target.parentNode.href
     console.log("testing", url)
@@ -540,6 +536,9 @@ function updateAll() {
  */
 function testURL(url, element) {
   element.classList.remove("test")
+  element.classList.remove("success")
+  element.classList.remove("warning")
+  element.classList.remove("error")
   element.classList.add("testing")
   element.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'
 
@@ -562,7 +561,7 @@ function testURL(url, element) {
       }
       else {
         element.classList.add("warning")
-        element.title = "Returned a status code of " + data.status.http_code
+        element.title = "Returned a status code of " + data.status.http_code + "\nClick to retry"
         element.innerHTML = '<i class="fas fa-exclamation-circle"></i>'
         crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].test = "warning"
         crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].statusCode = data.status.http_code
@@ -570,7 +569,7 @@ function testURL(url, element) {
     })
     .catch(() => {
       element.classList.add("error")
-      element.title = "Link doesn't exist or took to long to respond"
+      element.title = "Link doesn't exist or took to long to respond\nClick to retry"
       element.innerHTML = '<i class="fas fa-times-circle"></i>'
       crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].test = "failed"
     })
@@ -685,9 +684,9 @@ function updatePages() {
             <a class="download" href="`+ link.href + `" title="Download Page"><i class="fas fa-file-download"></i></a>` +
       '<a class="goto" target="_blank" href="' + link.href + '" title="Go to page"><i class="fas fa-external-link-alt"></i></a>'
     if (link.isError)
-      html += '<a class="error" target="_blank" href="#" title="Page doesn\'t exist or took to long to respond"><i class="fas fa-times-circle"></i></a>'
+      html += '<a class="error" target="_blank" href="#" title="Page doesn\'t exist or took to long to respond\nClick to retry"><i class="fas fa-times-circle"></i></a>'
     else if (link.isWarning)
-      html += '<a class="warning" target="_blank" href="#" title="Returned a status code of ' + link.statusCode + '"><i class="fas fa-exclamation-circle"></i></a>'
+      html += '<a class="warning" target="_blank" href="#" title="Returned a status code of ' + link.statusCode + '\nClick to retry"><i class="fas fa-exclamation-circle"></i></a>'
     else if (link.isCrawled)
       html += '<a class="inspect" title="Inspect Page" href="' + link.href + '"><i class="fas fa-search"></i></a>'
     else
@@ -795,9 +794,9 @@ function setupPopup(url) {
       if (link.test == "success")
         html[htmlIndex] += '<a class="success" target="_blank" href="' + href + '" title="Link is valid"><i class="fas fa-check-circle"></i></a>'
       else if (link.test == "warning")
-        html[htmlIndex] += '<a class="warning" target="_blank" href="' + href + '" title="Returned a status code of ' + link.statusCode + '"><i class="fas fa-exclamation-circle"></i></a>'
+        html[htmlIndex] += '<a class="warning" target="_blank" href="' + href + '" title="Returned a status code of ' + link.statusCode + '\nClick to retry"><i class="fas fa-exclamation-circle"></i></a>'
       else if (link.test == "error")
-        html[htmlIndex] += '<a class="error" target="_blank" href="' + href + '" title="Link doesn\'t exist or took to long to respond"><i class="fas fa-times-circle"></i></a>'
+        html[htmlIndex] += '<a class="error" target="_blank" href="' + href + '" title="Link doesn\'t exist or took to long to respond\nClick to retry"><i class="fas fa-times-circle"></i></a>'
     }
     if (htmlIndex != 'links')
       html[htmlIndex] += '<a class="download" href="' + href + '" title="Download Page"><i class="fas fa-file-download"></i></a>'
@@ -1027,7 +1026,7 @@ function updateLinks() {
       if (link.test == "success")
         html += '<a class="success" target="_blank" href="' + link.href + '" title="Link is valid"><i class="fas fa-check-circle"></i></a>'
       else if (link.test == "warning")
-        html += '<a class="warning" target="_blank" href="' + link.href + '" title="Returned a status code of ' + test.statusCode + '"><i class="fas fa-exclamation-circle"></i></a>'
+        html += '<a class="warning" target="_blank" href="' + link.href + '" title="Returned a status code of ' + link.statusCode + '"><i class="fas fa-exclamation-circle"></i></a>'
       else if (link.test == "failed")
         html += '<a class="error" target="_blank" href="' + link.href + '" title="Test the link"><i class="fas fa-exclamation-circle"></i></a>'
     }

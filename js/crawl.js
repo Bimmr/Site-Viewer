@@ -208,8 +208,7 @@ async function crawlURL(url, addToAll = true) {
             })
   
           //Find Background Images/Links in script tags - get links/images and add to crawl all list, but if already found add as an instance
-  
-          if (!isUrlHTMLFile(url) || (isUrlHTMLFile(url) && settings.crawl.onPageStyles))
+          if (!isUrlHTMLFile(url) || (isUrlHTMLFile(url) && settings.crawl.onPageScripts))
             doc.querySelectorAll('script').forEach(element => {
   
               //Look for BackgroundImages

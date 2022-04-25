@@ -5,7 +5,7 @@ let lastCounts = { pages: 1, assets: 1, links: 1, files: 1, media: 1 }
 //Settings
 let settings = {
   crawl: {
-    onPageScripts: false,
+    onPageScripts: true,
     onPageStyles: true
   },
   combine: {

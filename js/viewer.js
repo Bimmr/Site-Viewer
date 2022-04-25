@@ -242,7 +242,7 @@ function updateAll() {
   //Add click event for the inspect icon
   document.querySelectorAll(".view-items .test, view-items .warning, .view-items .error").forEach(element => element.addEventListener("click", event => {
     event.preventDefault()
-    let url = event.target.parentNode.href
+    let url = event.target.href || event.target.parentNode.href
     console.log("testing", url)
     testURL(url, element)
   }))

@@ -41,7 +41,7 @@ hr {
   height: 100vh;
   font-family: 'Roboto Condensed', sans-serif;
   background-color: #333;
-  background: linear-gradient(#333, #2a2a2a);
+  background: linear-gradient(#333, #424559);
   color: #fff;
   font-size: 16px;
   letter-spacing: unset;
@@ -295,13 +295,13 @@ hr {
   color: #005a17;
 }
 .view-row .tools .inspect i {
-  color: #005a17;
+  color: #89CFF0;
 }
 .view-row .tools .success i{
   color: #00a72a;
 }
 .view-row .tools .error i {
-  color: orangered;
+  color: #ff4500;
 }
 .view-row .tools .warning i{
   color: #ffb400;

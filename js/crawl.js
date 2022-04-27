@@ -451,14 +451,14 @@ function createLinkObject(url, element) {
   
     //Create the image object
     let image = {
-      src: element?.src || element?.getAttribute("data-src") || src,
+      src: element?.src ?? element?.getAttribute("data-src") ?? src ?? '',
       tags: {}
     }
     image.instances = [{
       tags: {},
       foundOn: url
     }]
-  
+    
     image._src = image.src.replace(chromeExtensionRegex, '/')
     image.src = formatLink(url, image.src)
   

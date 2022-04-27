@@ -144,7 +144,8 @@ document.addEventListener("DOMContentLoaded", function () {
   //Select All controls
   document.querySelectorAll(".view-title .select input").forEach(item => item.addEventListener("click", event => {
     let view = item.parentNode.parentNode.parentNode
-    view.querySelectorAll(".view-items .select input").forEach(item => item.click())
+    let state = item.checked
+    view.querySelectorAll(".view-items .select input").forEach(item => item.checked = state)
   }))
 
   //Download all button

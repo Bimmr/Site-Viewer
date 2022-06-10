@@ -30,6 +30,27 @@ document.addEventListener("DOMContentLoaded", function () {
     window.close()
   }
 
+  //Load settings from local storage and update settings
+  storageGet("settings").then(data => {
+    if (data != null) {
+      settings = data
+      //Settings Controls
+      document.querySelectorAll("#settings.view input").forEach(item => {
+
+        let settingGroup = item.id.split("-")[0]
+        let setting = item.id.split("-")[1]
+
+        if (item.type == "checkbox")
+          item.checked = settings[settingGroup][setting]
+        else if (item.type == "text")
+          item.value = settings[settingGroup][setting]
+
+        if (settings.combine.enabled == true)
+          document.querySelector(".combine-settings").classList.toggle("active")
+      })
+    }
+  })
+
   //Crawl base url
   if (window.tabURL)
     baseUrl = window.tabURL
@@ -88,23 +109,38 @@ document.addEventListener("DOMContentLoaded", function () {
 
 
   //Settings Controls
-  document.querySelectorAll("#settings.view input").forEach(item => item.addEventListener("change", event => {
-    let settingGroup = item.id.split("-")[0]
-    let setting = item.id.split("-")[1]
+  document.querySelectorAll("#settings.view input").forEach(item =>
+    item.addEventListener("change", event => {
 
-    if (item.type == "checkbox")
-      settings[settingGroup][setting] = item.checked
-    else if (item.type == "text")
-      settings[settingGroup][setting] = item.value
+      let settingGroup = item.id.split("-")[0]
+      let setting = item.id.split("-")[1]
+      
+      if (item.type == "checkbox")
+        settings[settingGroup][setting] = item.checked
+      else if (item.type == "text")
+        settings[settingGroup][setting] = item.value
 
-    if (settingGroup == "download") {
-      let downloadDirectory = settings.download.directory
-      if (downloadDirectory[downloadDirectory.length - 1] != "/")
-        downloadDirectory += "/"
-      storageSet('downloadDirectory', downloadDirectory)
+      if (settingGroup == "download") {
+        let downloadDirectory = settings.download.directory
+        if (downloadDirectory[downloadDirectory.length - 1] != "/")
+          downloadDirectory += "/"
+        settings.download.directory = downloadDirectory
+      }
+
+      storageSet("settings", settings)
+    })
+  )
+
+  //If managing downloads is disabled we can't combine files
+  storageGet('manageDownloads').then(manageDownloads => {
+    console.log("Manage downloads: " + manageDownloads)
+    if (manageDownloads === false) {
+      settings.combine.enabled = false
+      document.querySelector("#settings").querySelectorAll(".needsManageDownloads").forEach(e => e.classList.add("hidden"))
     }
-  }))
+  })
 
+  //Add event listeners to the combine section
   document.querySelector("#settings #combine-enabled").addEventListener("change", event => {
     document.querySelector(".combine-settings").classList.toggle("active")
   })

@@ -43,8 +43,7 @@ storageGet('manageDownloads').then(manageDownloads => {
                     })
                 })
                 return true;
-            } else
-                return false;
+            }
         })
 })
 

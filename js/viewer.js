@@ -182,6 +182,12 @@ document.addEventListener("DOMContentLoaded", function () {
     let view = item.parentNode.parentNode.parentNode
     let state = item.checked
     view.querySelectorAll(".view-items .select input").forEach(item => item.checked = state)
+    
+    //Check if the mult-wrapper needs to show
+    if (item.checked)
+      document.querySelector(".view.active .multi-wrapper").classList.add("active")
+    else
+      document.querySelector(".view.active .multi-wrapper").classList.remove("active")
   }))
 
   //Download all button
@@ -277,7 +283,7 @@ function updateAll() {
   }))
 
   //Add click event for the inspect icon
-  document.querySelectorAll(".view-items .test, view-items .warning, .view-items .error").forEach(element => element.addEventListener("click", event => {
+  document.querySelectorAll(".view-items .test:not(.crawl), view-items .warning:not(.crawl), .view-items .error:not(.crawl)").forEach(element => element.addEventListener("click", event => {
     event.preventDefault()
     let url = event.target.href || event.target.parentNode.href
     console.log("testing", url)
@@ -721,9 +727,9 @@ function updatePages() {
             <a class="download" href="`+ link.href + `" title="Download Page"><i class="fas fa-file-download"></i></a>` +
       '<a class="goto" target="_blank" href="' + link.href + '" title="Go to page"><i class="fas fa-external-link-alt"></i></a>'
     if (link.isError)
-      html += '<a class="error" target="_blank" href="#" title="Page doesn\'t exist or took to long to respond\nClick to retry"><i class="fas fa-times-circle"></i></a>'
+      html += '<a class="error crawl" target="_blank" href="' + link.href + '" title="Page doesn\'t exist or took to long to respond\nClick to retry"><i class="fas fa-times-circle"></i></a>'
     else if (link.isWarning)
-      html += '<a class="warning" target="_blank" href="#" title="Returned a status code of ' + link.statusCode + '\nClick to retry"><i class="fas fa-exclamation-circle"></i></a>'
+      html += '<a class="warning crawl" target="_blank" href="' + link.href + '" title="Returned a status code of ' + link.statusCode + '\nClick to retry"><i class="fas fa-exclamation-circle"></i></a>'
     else if (link.isCrawled)
       html += '<a class="inspect" title="Inspect Page" href="' + link.href + '"><i class="fas fa-search"></i></a>'
     else

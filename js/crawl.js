@@ -456,8 +456,10 @@ function createLinkObject(url, element) {
     }
     image.instances = [{
       tags: {},
-      foundOn: url
+      foundOn: url,
     }]
+    if(element?.alt)
+      image.instances[0].alt = element.alt
     
     image._src = image.src.replace(chromeExtensionRegex, '/')
     image.src = formatLink(url, image.src)

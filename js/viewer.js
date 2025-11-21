@@ -2,11 +2,28 @@
 //Track lastHTML to show what has changed
 let lastCounts = { pages: 1, assets: 1, links: 1, files: 1, media: 1 }
 
+/**
+ * Helper function to create a URL with text fragment for scroll-to-text functionality
+ * @param {string} baseUrl - The base URL
+ * @param {string} text - The text to create a fragment for (e.g., link text, alt text, title)
+ * @returns {string} URL with text fragment appended
+ */
+function createTextFragmentUrl(baseUrl, text) {
+  if (!text) return baseUrl
+  
+  // Encode the text for URL and limit to first 50 characters for reliability
+  const textForFragment = encodeURIComponent(text.trim().substring(0, 50))
+  return baseUrl + '#:~:text=' + textForFragment
+}
+
 //Settings
 let settings = {
   crawl: {
     onPageScripts: true,
-    onPageStyles: true
+    onPageStyles: true,
+    rateLimitMs: 100,
+    corsProxyUrl: 'https://api.allorigins.win/get?url=',
+    corsProxyRawUrl: 'https://api.allorigins.win/raw?url='
   },
   combine: {
     enabled: false,
@@ -23,6 +40,11 @@ let settings = {
 //When DOM is loaded set up the listeners and events
 document.addEventListener("DOMContentLoaded", function () {
 
+  // Remove preload class after initial render to enable transitions
+  setTimeout(() => {
+    document.body.classList.remove("preload")
+  }, 100)
+
   //Prevent Refreshing the popup as that breaks things
   window.onunload = refreshParent;
   function refreshParent() {
@@ -32,23 +54,45 @@ document.addEventListener("DOMContentLoaded", function () {
 
   //Load settings from local storage and update settings
   storageGet("settings").then(data => {
-    if (data != null) {
-      settings = data
+    if (data !== null) {
+      // Merge with defaults to ensure new fields are present
+      settings = {
+        crawl: {
+          onPageScripts: data.crawl?.onPageScripts !== undefined ? data.crawl.onPageScripts : true,
+          onPageStyles: data.crawl?.onPageStyles !== undefined ? data.crawl.onPageStyles : true,
+          rateLimitMs: data.crawl?.rateLimitMs !== undefined ? data.crawl.rateLimitMs : 100,
+          corsProxyUrl: data.crawl?.corsProxyUrl || 'https://api.allorigins.win/get?url=',
+          corsProxyRawUrl: data.crawl?.corsProxyRawUrl || 'https://api.allorigins.win/raw?url='
+        },
+        combine: data.combine || settings.combine,
+        download: data.download || settings.download
+      }
+      
+      // Apply CORS URLs from settings
+      if (settings.crawl.corsProxyUrl) {
+        CORS_BYPASS_URL = settings.crawl.corsProxyUrl
+      }
+      if (settings.crawl.corsProxyRawUrl) {
+        CORS_BYPASS_URL_RAW = settings.crawl.corsProxyRawUrl
+      }
+      
       //Settings Controls
       document.querySelectorAll("#settings.view input").forEach(item => {
 
         let settingGroup = item.id.split("-")[0]
         let setting = item.id.split("-")[1]
 
-        if (item.type == "checkbox")
+        if (item.type === "checkbox")
           item.checked = settings[settingGroup][setting]
-        else if (item.type == "text")
+        else if (item.type === "text" || item.type === "number")
           item.value = settings[settingGroup][setting]
 
-        if (settings.combine.enabled == true)
+        if (settings.combine.enabled === true)
           document.querySelector(".combine-settings").classList.toggle("active")
       })
     }
+  }).catch(error => {
+    console.error("Failed to load settings:", error)
   })
 
   //Crawl base url
@@ -60,7 +104,7 @@ document.addEventListener("DOMContentLoaded", function () {
   hostURL = url.origin
   baseUrl = hostURL + (url.pathname ? url.pathname : '')
 
-  document.querySelector("#crawledSiteText").innerHTML = baseUrl
+  document.querySelector("#crawledSiteText").textContent = baseUrl
   crawlURL(baseUrl)
 
   let link = createLinkObject(baseUrl, createElementFromHTML(`<a href="${baseUrl}"></a>`))
@@ -73,14 +117,57 @@ document.addEventListener("DOMContentLoaded", function () {
 
   //Sidebar controls
   document.querySelectorAll(".sidebar-item").forEach(item => item.addEventListener("click", event => {
-    document.querySelectorAll(".sidebar-item.active, .view.active").forEach(activeItem => activeItem.classList.remove("active"))
+    const previousActive = document.querySelector(".view.active")
+    const previousSidebarItem = document.querySelector(".sidebar-item.active")
+    
+    const newActiveView = document.querySelector(".view#" + item.querySelector("p").innerHTML.toLowerCase())
+    
+    // Update sidebar active states
+    document.querySelectorAll(".sidebar-item.active").forEach(activeItem => activeItem.classList.remove("active"))
     item.classList.add("active")
     item.querySelector(".newContent")?.classList.remove("active")
-    let view = item.querySelector("p").innerHTML.toLowerCase()
-    document.querySelector(".view#" + view)?.classList.add("active")
+    
+    // Handle view transitions
+    if (previousActive && previousActive !== newActiveView && previousSidebarItem) {
+      const allSidebarItems = Array.from(document.querySelectorAll(".sidebar-item"))
+      const previousIndex = allSidebarItems.indexOf(previousSidebarItem)
+      const newIndex = allSidebarItems.indexOf(item)
+      const isMovingForward = newIndex > previousIndex
+      
+      // Clean up any existing transition classes
+      document.querySelectorAll(".view").forEach(v => {
+        v.classList.remove("slide-in-left", "slide-in-right", "slide-out-left", "slide-out-right")
+      })
+            
+      // Apply transitions
+      requestAnimationFrame(() => {
+        previousActive.classList.remove("active")
+        previousActive.classList.add(isMovingForward ? "slide-out-left" : "slide-out-right")
+        
+        newActiveView.classList.add("active", isMovingForward ? "slide-in-left" : "slide-in-right")
+      })
+      
+      // Cleanup after animation completes
+      setTimeout(() => {
+        document.querySelectorAll(".view").forEach(v => {
+          v.classList.remove("slide-in-left", "slide-in-right", "slide-out-left", "slide-out-right")
+        })
+      }, 500)
+
+    } else {
+      // No transition needed, just switch
+      document.querySelectorAll(".view.active").forEach(activeItem => activeItem.classList.remove("active"))
+      newActiveView?.classList.add("active")
+    }
   }))
 
   document.querySelector(".crawlAllBtn").addEventListener("click", event => {
+    // Prevent multiple intervals from being created
+    if (window.moreToCrawlInterval) {
+      console.log("Crawl already in progress")
+      return
+    }
+
     clickAllCrawlIcons()
 
     function clickAllCrawlIcons() {
@@ -89,20 +176,28 @@ document.addEventListener("DOMContentLoaded", function () {
       })
     }
 
-    let moreToCrawlInterval = setInterval(() => {
+    // Store interval globally for proper cleanup
+    window.moreToCrawlInterval = setInterval(() => {
       console.log("Checking crawl status")
 
-      if (crawling.length == 0) {
-        if (!getPages().some(link => !link.isCrawled)) {
-          document.querySelector(".crawlAllBtn").classList.add("hidden")
-          console.log("All links crawled")
-          console.log("Clearing Interval")
-          clearInterval(moreToCrawlInterval)
+      try {
+        if (crawling.length === 0) {
+          if (!getPages().some(link => !link.isCrawled)) {
+            document.querySelector(".crawlAllBtn").classList.add("hidden")
+            console.log("All links crawled")
+            console.log("Clearing Interval")
+            clearInterval(window.moreToCrawlInterval)
+            window.moreToCrawlInterval = null
+          }
+          else {
+            console.log("Crawling more links")
+            clickAllCrawlIcons()
+          }
         }
-        else {
-          console.log("Crawling more links")
-          clickAllCrawlIcons()
-        }
+      } catch (error) {
+        console.error("Error during crawl check:", error)
+        clearInterval(window.moreToCrawlInterval)
+        window.moreToCrawlInterval = null
       }
     }, 500)
   })
@@ -115,16 +210,28 @@ document.addEventListener("DOMContentLoaded", function () {
       let settingGroup = item.id.split("-")[0]
       let setting = item.id.split("-")[1]
       
-      if (item.type == "checkbox")
+      if (item.type === "checkbox")
         settings[settingGroup][setting] = item.checked
-      else if (item.type == "text")
+      else if (item.type === "text")
         settings[settingGroup][setting] = item.value
+      else if (item.type === "number")
+        settings[settingGroup][setting] = parseInt(item.value, 10) || 0
 
-      if (settingGroup == "download") {
+      if (settingGroup === "download") {
         let downloadDirectory = settings.download.directory
-        if (downloadDirectory[downloadDirectory.length - 1] != "/")
+        if (downloadDirectory[downloadDirectory.length - 1] !== "/")
           downloadDirectory += "/"
         settings.download.directory = downloadDirectory
+      }
+      
+      // Apply CORS URLs immediately when changed
+      if (setting === "corsProxyUrl") {
+        CORS_BYPASS_URL = settings.crawl.corsProxyUrl
+        console.log("Updated CORS Proxy URL:", CORS_BYPASS_URL)
+      }
+      if (setting === "corsProxyRawUrl") {
+        CORS_BYPASS_URL_RAW = settings.crawl.corsProxyRawUrl
+        console.log("Updated CORS Proxy Raw URL:", CORS_BYPASS_URL_RAW)
       }
 
       storageSet("settings", settings)
@@ -138,6 +245,8 @@ document.addEventListener("DOMContentLoaded", function () {
       settings.combine.enabled = false
       document.querySelector("#settings").querySelectorAll(".needsManageDownloads").forEach(e => e.classList.add("hidden"))
     }
+  }).catch(error => {
+    console.error("Failed to check manageDownloads setting:", error)
   })
 
   //Add event listeners to the combine section
@@ -148,16 +257,16 @@ document.addEventListener("DOMContentLoaded", function () {
   document.querySelector("#settings #recrawlBtn").addEventListener("click", event => {
     //Reset
     crawl = { all: { media: [], links: [], assets: [] } }
+    pageHashCache.clear() // Clear hash cache on recrawl
     lastCounts = { pages: 1, assets: 1, links: 1, files: 1, media: 1 }
     document.querySelector("#crawledSiteCount").innerHTML = ''
 
     //Recrawl
     crawlURL(baseUrl)
-    let link = createLinkObject(baseUrl, createElementFromHTML(`<a href="${baseUrl}"></a>`))
+    const link = createLinkObject(baseUrl, createElementFromHTML(`<a href="${baseUrl}"></a>`))
     link.isCrawled = true
     link.tags.isBaseUrl = true
     crawl.all.links.push(link)
-
   })
 
   //Popup Controls
@@ -165,7 +274,7 @@ document.addEventListener("DOMContentLoaded", function () {
     document.querySelector(".popup.active").classList.remove("active")
   }))
   document.querySelectorAll(".popup .popup-outerWrapper").forEach(element => element.addEventListener("click", event => {
-    if (Array.from(document.querySelectorAll(".popup .popup-outerWrapper")).some(element1 => element1 == event.target))
+    if (Array.from(document.querySelectorAll(".popup .popup-outerWrapper")).some(element1 => element1 === event.target))
       document.querySelector(".popup.active").classList.remove("active")
   }))
 
@@ -183,11 +292,13 @@ document.addEventListener("DOMContentLoaded", function () {
     let state = item.checked
     view.querySelectorAll(".view-items .select input").forEach(item => item.checked = state)
     
-    //Check if the mult-wrapper needs to show
-    if (item.checked)
-      document.querySelector(".view.active .multi-wrapper").classList.add("active")
+    //Check if the multi-wrapper needs to show
+    const multiWrapper = document.querySelector(".view.active .multi-wrapper")
+    const checkedCount = Array.from(view.querySelectorAll(".view-items .select input")).filter(i => i.checked).length
+    if (checkedCount >= 1)
+      multiWrapper.classList.add("active")
     else
-      document.querySelector(".view.active .multi-wrapper").classList.remove("active")
+      multiWrapper.classList.remove("active")
   }))
 
   //Download all button
@@ -213,8 +324,9 @@ document.addEventListener("DOMContentLoaded", function () {
   document.querySelectorAll(".filter-icon").forEach(item => item.addEventListener("click", event => {
     item.classList.toggle("active")
     let view = item.parentNode.parentNode.parentNode.parentNode
-    view.querySelector(".searchbar").classList.toggle("active")
-    let state = view.querySelector(".searchbar").classList.contains("active")
+    const searchbar = view.querySelector(".searchbar")
+    searchbar.classList.toggle("active")
+    let state = searchbar.classList.contains("active")
     if (!state) {
       view.querySelector(".searchbar .form-item input").value = ""
       view.querySelectorAll(".view-items .view-row").forEach(item => item.classList.remove("hidden"))
@@ -239,9 +351,9 @@ document.addEventListener("DOMContentLoaded", function () {
   let observer = new MutationObserver(function (mutations) {
     mutations.forEach(function (mutation) {
       let view = mutation.target.parentNode.parentNode.id
-      if (mutation.target.children.length != lastCounts[view] && mutation.target.children.length > lastCounts[view]) {
+      if (mutation.target.children.length !== lastCounts[view] && mutation.target.children.length > lastCounts[view]) {
         lastCounts[view] = mutation.target.children.length
-        let sidebarItem = Array.from(document.querySelectorAll(".sidebar-item p")).find(i => i.innerHTML.toLocaleLowerCase() == view)
+        let sidebarItem = Array.from(document.querySelectorAll(".sidebar-item p")).find(i => i.innerHTML.toLocaleLowerCase() === view)
         if (!document.querySelector(".view#" + view).classList.contains("active"))
           sidebarItem.parentNode.querySelector(".newContent").classList.add("active")
       }
@@ -260,12 +372,13 @@ document.addEventListener("DOMContentLoaded", function () {
 function updateAll() {
   document.querySelectorAll(".view .view-title .select input").forEach(item => item.checked = false)
 
-  //If more than one item is selected, show the multi-item wrapper
+  //If one or more items is selected, show the multi-item wrapper
   document.querySelectorAll(".view .view-items .select input").forEach(i => i.onclick = function () {
-    if (Array.from(document.querySelectorAll(".view.active .view-items .select input")).filter(i => i.checked).length >= 2)
-      document.querySelector(".view.active .multi-wrapper").classList.add("active")
+    const multiWrapper = document.querySelector(".view.active .multi-wrapper")
+    if (Array.from(document.querySelectorAll(".view.active .view-items .select input")).filter(i => i.checked).length >= 1)
+      multiWrapper.classList.add("active")
     else
-      document.querySelector(".view.active .multi-wrapper").classList.remove("active")
+      multiWrapper.classList.remove("active")
   })
 
   //Add click event for the inspect icon
@@ -298,9 +411,9 @@ function updateAll() {
 
       //Check if the item being crawled is an HTML page or an asset
       if (isUrlHTMLFile(url))
-        crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].isCrawled = true
+        crawl.all.links[crawl.all.links.findIndex(i => i.href === url)].isCrawled = true
       else
-        crawl.all.assets[crawl.all.assets.findIndex(i => i.link == url)].isCrawled = true
+        crawl.all.assets[crawl.all.assets.findIndex(i => i.link === url)].isCrawled = true
 
       //Remove Crawl Icon
       event.target.parentNode.remove()
@@ -373,6 +486,7 @@ function updateAll() {
               })
               styleSheets.forEach(styleSheet => styleSheet.remove())
               Promise.allSettled(styleSheetPromises).then(data => {
+                const bodyElement = pageDoc.querySelector("body")
 
                 data.forEach((styleSheet) => {
                   if (styleSheet.value) {
@@ -380,11 +494,11 @@ function updateAll() {
                     let page = styleSheet.value[1]
                     let elm = createElementFromHTML(page)
                     elm.setAttribute("data-link", url)
-                    pageDoc.querySelector("body").appendChild(elm)
+                    bodyElement.appendChild(elm)
                   }
                 })
                 console.log("Moving older Styles to bottom")
-                pageDoc.querySelectorAll("style:not([data-link])").forEach(style => pageDoc.querySelector("body").appendChild(style))
+                pageDoc.querySelectorAll("style:not([data-link])").forEach(style => bodyElement.appendChild(style))
                 done(pageDoc)
               })
             })
@@ -404,17 +518,19 @@ function updateAll() {
               })
               scripts.forEach(script => script.remove())
               Promise.allSettled(scriptPromises).then(data => {
+                const bodyElement = pageDoc.querySelector("body")
+                
                 data.forEach((script) => {
                   if (script.value) {
                     let url = script.value[0]
                     let page = script.value[1]
                     let elm = createElementFromHTML(page)
                     elm.setAttribute("data-link", url)
-                    pageDoc.querySelector("body").appendChild(elm)
+                    bodyElement.appendChild(elm)
                   }
                 })
                 console.log("Moving older Scripts to bottom")
-                pageDoc.querySelectorAll("script:not([data-link])").forEach(script => pageDoc.querySelector("body").appendChild(script))
+                pageDoc.querySelectorAll("script:not([data-link])").forEach(script => bodyElement.appendChild(script))
                 done(pageDoc)
               })
             })
@@ -509,13 +625,13 @@ function updateAll() {
           }
           async function convertAllImages1(pageDoc) {
             return new Promise(resolve => {
-              if (pageDoc.querySelectorAll('img[src], *[style*="background"]').length == 0) resolve(pageDoc)
+              if (pageDoc.querySelectorAll('img[src], *[style*="background"]').length === 0) resolve(pageDoc)
 
               let count = 0
 
               pageDoc.querySelectorAll('img[src], *[style*="background"], img[data-src]').forEach(element => {
 
-                let isBackground = element.tagName == "IMG" ? false : true
+                let isBackground = element.tagName === "IMG" ? false : true
                 let src
                 if (isBackground && element.style.cssText.match(imageUrlRegex)) {
                   src = imageUrlRegex.exec(element.style.cssText).groups.image
@@ -537,11 +653,11 @@ function updateAll() {
                     else
                       element.src = dataUrl
                     count--
-                    if (count == 0)
+                    if (count === 0)
                       resolve(pageDoc)
                   }).catch(() => {
                     count--
-                    if (count == 0)
+                    if (count === 0)
                       resolve(pageDoc)
                     else
                       return
@@ -556,7 +672,7 @@ function updateAll() {
 
         function crawlIfNeeded(url) {
           return new Promise((resolve, reject) => {
-            if (Object.keys(crawl).find(i => i == url))
+            if (Object.keys(crawl).find(i => i === url))
               resolve(crawl[url])
             else
               crawlURL(url, false).then(page => resolve(page)).catch(error => reject(error))
@@ -587,34 +703,51 @@ function testURL(url, element) {
 
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), 10000)
-  fetch(CORS_BYPASS_URL + encodeURIComponent(url), { signal: controller.signal })
-    .then(res => {
-      if (res.ok) return res.json()
-      else throw new Error(res.error)
-    })
-    .then(data => {
-      if (data.status.http_code == 200) {
+  
+  // Try direct fetch first
+  const testFetch = async () => {
+    try {
+      const directRes = await fetch(url, { signal: controller.signal })
+      clearTimeout(timeoutId)
+      return { ok: true, status: directRes.status }
+    } catch (directError) {
+      // Fall back to CORS proxy
+      const proxyRes = await fetch(CORS_BYPASS_URL + encodeURIComponent(url), { signal: controller.signal })
+      if (!proxyRes.ok) throw new Error(proxyRes.error)
+      const data = await proxyRes.json()
+      clearTimeout(timeoutId)
+      return { ok: true, status: data.status.http_code, data: data }
+    }
+  }
+  
+  testFetch()
+    .then(result => {
+      const linkIndex = crawl.all.links.findIndex(i => i.href === url)
+      if (result.status === 200) {
         element.classList.add("success")
         element.title = "Link is valid"
         element.innerHTML = '<i class="fas fa-check-circle"></i>'
-        crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].test = "success"
+        if (linkIndex > -1) crawl.all.links[linkIndex].test = "success"
       }
-      else if (data.error || data.status.error) {
+      else if (result.data && (result.data.error || result.data.status?.error)) {
         throw new Error()
       }
       else {
         element.classList.add("warning")
-        element.title = "Returned a status code of " + data.status.http_code + "\nClick to retry"
+        element.title = "Returned a status code of " + result.status + "\nClick to retry"
         element.innerHTML = '<i class="fas fa-exclamation-circle"></i>'
-        crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].test = "warning"
-        crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].statusCode = data.status.http_code
+        if (linkIndex > -1) {
+          crawl.all.links[linkIndex].test = "warning"
+          crawl.all.links[linkIndex].statusCode = result.status
+        }
       }
     })
     .catch(() => {
       element.classList.add("error")
       element.title = "Link doesn't exist or took to long to respond\nClick to retry"
       element.innerHTML = '<i class="fas fa-times-circle"></i>'
-      crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].test = "failed"
+      const linkIndex = crawl.all.links.findIndex(i => i.href === url)
+      if (linkIndex > -1) crawl.all.links[linkIndex].test = "failed"
     })
     .finally(() => {
       element.classList.remove("testing")
@@ -688,7 +821,12 @@ function updatePages() {
   //Iterate all links in the crawl object adding to the HTML string
   let html = ''
 
-  getPages().forEach(link => {
+  // Sort pages alphabetically by href
+  const sortedPages = getPages().sort((a, b) => {
+    return a.href.localeCompare(b.href)
+  })
+
+  sortedPages.forEach(link => {
     //Pages should only contain local HTML links but not anchors
 
 
@@ -696,15 +834,21 @@ function updatePages() {
     let linkTagsText = ''
     let instancesText = '<strong>Instances:</strong>(' + link.instances.length + ')<ul>'
     linkTagsText += "Original URL: <strong>" + link._href + '</strong><br>'
+    
+    // Add duplicate information if applicable
+    if (link.isDuplicate) {
+      linkTagsText += '<span style="color: #2196F3;">Duplicate of: <strong>' + link.duplicateOf + '</strong></span><br>'
+    }
 
     //No need to display isLocal if it's a page
-    Object.keys(link.tags).forEach(i => linkTagsText += i != "isLocal" ? "" + i + ": <strong>" + link.tags[i] + "</strong><br>" : '')
+    Object.keys(link.tags).forEach(i => linkTagsText += i !== "isLocal" ? "" + i + ": <strong>" + link.tags[i] + "</strong><br>" : '')
     if (linkTagsText.length > 0)
       linkTagsText = linkTagsText.substr(0, linkTagsText.length - 4) + '<hr>'
 
     //Add all instances to the instance string
     link.instances.forEach(i => {
-      instancesText += '<li><a href="' + i.foundOn + '" target="_blank">' + i.foundOn + '</a><ul>'
+      const fragmentUrl = createTextFragmentUrl(i.foundOn, i.text || i.alt || i.title)
+      instancesText += '<li><a href="' + fragmentUrl + '" target="_blank">' + i.foundOn + '</a><ul>'
       if (i.title)
         instancesText += '<li>Title: <strong>' + i.title + '</strong></li>'
       if (i.text)
@@ -730,6 +874,8 @@ function updatePages() {
       html += '<a class="error crawl" target="_blank" href="' + link.href + '" title="Page doesn\'t exist or took to long to respond\nClick to retry"><i class="fas fa-times-circle"></i></a>'
     else if (link.isWarning)
       html += '<a class="warning crawl" target="_blank" href="' + link.href + '" title="Returned a status code of ' + link.statusCode + '\nClick to retry"><i class="fas fa-exclamation-circle"></i></a>'
+    else if (link.isDuplicate)
+      html += '<a class="info duplicate" title="Duplicate of ' + link.duplicateOf + '"><i class="fas fa-info-circle"></i></a>'
     else if (link.isCrawled)
       html += '<a class="inspect" title="Inspect Page" href="' + link.href + '"><i class="fas fa-search"></i></a>'
     else
@@ -811,7 +957,8 @@ function setupPopup(url) {
 
     //Add all instances to the instance string
     link.instances.forEach(i => {
-      instancesText += '<li><a href="' + i.foundOn + '" target="_blank">' + i.foundOn + '</a><ul>'
+      const fragmentUrl = createTextFragmentUrl(i.foundOn, i.text || i.alt || i.title)
+      instancesText += '<li><a href="' + fragmentUrl + '" target="_blank">' + i.foundOn + '</a><ul>'
       if (i.title)
         instancesText += '<li>Title: <strong>' + i.title + '</strong></li>'
       if (i.text)
@@ -831,17 +978,17 @@ function setupPopup(url) {
       `</div>
         <div class="tools">`+
       '<a class="goto" target="_blank" href="' + href + '" title="Open the link"><i class="fas fa-external-link-alt"></i></a>'
-    if (!isUrlProtocol(href) && !isUrlAnchor(href) && htmlIndex == 'links') {
-      if (link.test == null)
+    if (!isUrlProtocol(href) && !isUrlAnchor(href) && htmlIndex === 'links') {
+      if (link.test === null)
         html[htmlIndex] += '<a class="test" target="_blank" href="' + href + '" title="Test the link"><i class="fas fa-question-circle"></i></a>'
-      if (link.test == "success")
+      if (link.test === "success")
         html[htmlIndex] += '<a class="success" target="_blank" href="' + href + '" title="Link is valid"><i class="fas fa-check-circle"></i></a>'
-      else if (link.test == "warning")
+      else if (link.test === "warning")
         html[htmlIndex] += '<a class="warning" target="_blank" href="' + href + '" title="Returned a status code of ' + link.statusCode + '\nClick to retry"><i class="fas fa-exclamation-circle"></i></a>'
-      else if (link.test == "error")
+      else if (link.test === "error")
         html[htmlIndex] += '<a class="error" target="_blank" href="' + href + '" title="Link doesn\'t exist or took to long to respond\nClick to retry"><i class="fas fa-times-circle"></i></a>'
     }
-    if (htmlIndex != 'links')
+    if (htmlIndex !== 'links')
       html[htmlIndex] += '<a class="download" href="' + href + '" title="Download Page"><i class="fas fa-file-download"></i></a>'
     html[htmlIndex] += `</div>
           <div class="info">
@@ -965,7 +1112,8 @@ function updateAssets() {
 
     //Add all instances to the instance string
     link.instances.forEach(i => {
-      instancesText += '<li><a href="' + i.foundOn + '" target="_blank">' + i.foundOn + '</a><ul>'
+      const fragmentUrl = createTextFragmentUrl(i.foundOn, i.alt || i.title)
+      instancesText += '<li><a href="' + fragmentUrl + '" target="_blank">' + i.foundOn + '</a><ul>'
       Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "<li>" + i1 + ": <strong>" + i.tags[i1] + "</strong></li>" : '')
       instancesText += '</ul></li>'
     })
@@ -1036,7 +1184,8 @@ function updateLinks() {
 
     //Add all instances to the instance string
     link.instances.forEach(i => {
-      instancesText += '<li><a href="' + i.foundOn + '" target="_blank">' + i.foundOn + '</a><ul>'
+      const fragmentUrl = createTextFragmentUrl(i.foundOn, i.text || i.title)
+      instancesText += '<li><a href="' + fragmentUrl + '" target="_blank">' + i.foundOn + '</a><ul>'
       if (i.title)
         instancesText += '<li>Title: <strong>' + i.title + '</strong></li>'
       if (i.text)
@@ -1122,7 +1271,8 @@ function updateFiles() {
 
     //Add all instances to the instance string
     link.instances.forEach(i => {
-      instancesText += '<li><a href="' + i.foundOn + '" target="_blank">' + i.foundOn + '</a><ul>'
+      const fragmentUrl = createTextFragmentUrl(i.foundOn, i.text || i.title)
+      instancesText += '<li><a href="' + fragmentUrl + '" target="_blank">' + i.foundOn + '</a><ul>'
       if (i.title)
         instancesText += '<li>Title: <strong>' + i.title + '</strong></li>'
       if (i.text)
@@ -1196,7 +1346,8 @@ function updateMedia() {
       imageTagsText = imageTagsText.substr(0, imageTagsText.length - 4) + '<hr>'
 
     file.instances.forEach(i => {
-      instancesText += '<li><a href="' + i.foundOn + '" target="_blank">' + i.foundOn + '</a><ul>'
+      const fragmentUrl = createTextFragmentUrl(i.foundOn, i.alt)
+      instancesText += '<li><a href="' + fragmentUrl + '" target="_blank">' + i.foundOn + '</a><ul>'
       if (i.alt)
         instancesText += '<li>Alt: <strong>' + i.alt + '</strong></li>'
       Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "<li>" + i1 + ": <strong>" + i.tags[i1] + "</strong></li>" : '')

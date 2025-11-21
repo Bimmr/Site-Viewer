@@ -1,3 +1,30 @@
+// Storage utility functions (duplicated here because service workers can't import modules easily in MV3)
+/**
+ * Function to set the value of a key in the storage
+ * @param {any} key - the key to set the value to
+ * @param {*} value  - the value to set
+ */
+function storageSet(key, value) {
+    chrome.storage.local.set({ [key]: value });
+}
+
+/**
+ * Function to get the value of a key from the storage
+ * @param {any} key - the key to get the value from
+ * @returns {Promise} - a promise that resolves to the value
+ */
+function storageGet(key) {
+    if (!(key instanceof Array))
+        key = [key];
+
+    return new Promise((resolve, reject) => {
+        chrome.storage.local.get(key, result => {
+            let value = result ? Object.keys(result).length > 1 ? result : result[key] : null
+            resolve(value)
+        })
+    })
+}
+
 /**
 * Listen to files being downloaded and suggest the name if the file is being downloaded from Site Viewer
 */
@@ -5,7 +32,7 @@ storageGet('manageDownloads').then(manageDownloads => {
     if (manageDownloads)
         chrome.downloads.onDeterminingFilename.addListener(function (item, suggest) {
             //If item download is from this extension
-            if (item.byExtensionId == chrome.runtime.id) {
+            if (item.byExtensionId === chrome.runtime.id) {
                 storageGet(item.url).then(url => {
 
                     if (url)
@@ -24,11 +51,11 @@ storageGet('manageDownloads').then(manageDownloads => {
                     name = name.replace("/", "__").replace(nonWordRegex, '_')
 
                     //If the name is empty, assume you're downloading the home page
-                    if (name == "__" || name == "")
+                    if (name === "__" || name === "")
                         name = "index.html"
 
                     //If there is no extension, add .html
-                    if (name.indexOf(".") == -1)
+                    if (name.indexOf(".") === -1)
                         name += ".html"
 
                     //Suggest the name of the file
@@ -40,34 +67,16 @@ storageGet('manageDownloads').then(manageDownloads => {
 
                         console.log("Suggesting: " + name)
                         suggest({ filename: name })
+                    }).catch(error => {
+                        console.error("Failed to get settings for download:", error)
+                        suggest({ filename: name })
                     })
+                }).catch(error => {
+                    console.error("Failed to get URL for download:", error)
                 })
                 return true;
             }
         })
+}).catch(error => {
+    console.error("Failed to check manageDownloads setting:", error)
 })
-
-/**
- * Function to set the value of a key in the storage
- * @param {any} key - the key to set the value to
- * @param {*} value  - the value to set
- */
-function storageSet(key, value) {
-    chrome.storage.local.set({ [key]: value });
-}
-/**
- * Function to get the value of a key from the storage
- * @param {any} key - the key to get the value from
- * @returns {Promise} - a promise that resolves to the value
- */
-function storageGet(key) {
-    if (!(key instanceof Array))
-        key = [key];
-
-    return new Promise((resolve, reject) => {
-        chrome.storage.local.get(key, result => {
-            let value = result ? Object.keys(result).length > 1 ? result : result[key] : null
-            resolve(value)
-        })
-    })
-}

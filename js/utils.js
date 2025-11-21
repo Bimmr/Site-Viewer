@@ -1,17 +1,23 @@
 // Functions to check if the url is a specific type
-const isUrlHTMLFile = url => new URL(url).pathname.split('/').pop().indexOf('.') <= 0 || url.indexOf(".html") >= 0 || url.indexOf(".shtml") >= 0 || url.indexOf(".htm") >= 0 || url.indexOf(".aspx") >= 0 || url.indexOf(".asp") >= 0 || url.indexOf(".jsp") >= 0 || url.indexOf(".php") >= 0
-const isUrlPDFFile = url => url.indexOf('.pdf') >= 0
+const isUrlHTMLFile = url => {
+  const pathname = new URL(url).pathname.split('/').pop();
+  return pathname.indexOf('.') <= 0 || url.includes(".html") || url.includes(".shtml") || url.includes(".htm") || url.includes(".aspx") || url.includes(".asp") || url.includes(".jsp") || url.includes(".php") || url.includes(".xhtml");
+}
+const isUrlPDFFile = url => url.includes('.pdf')
 const isUrlProtocol = url => isUrlProtocolMailto(url) || isUrlProtocolTel(url)
-const isUrlProtocolMailto = url => url.indexOf('mailto:') >= 0
-const isUrlProtocolTel = url => url.indexOf('tel:') >= 0
-const isUrlLocal = url => (url.toLowerCase().indexOf(hostURL.toLowerCase()) == 0 || !url.match(httpRegex)) && !isUrlProtocol(url)
-const isUrlAnchor = url => url.indexOf("#") >= 0
-const isUrlImage = url => url.indexOf(".png") >= 0 || url.indexOf(".gif") >= 0 || url.indexOf(".svg") >= 0 || url.indexOf(".jpg") >= 0 || url.indexOf(".jpeg") >= 0 || url.indexOf(".bmp") >= 0 || url.indexOf(".webp") >= 0 || url.indexOf("data:image/svg") >= 0
-const isUrlVideo = url => url.indexOf(".mp4") >= 0 || url.indexOf(".webm") >= 0 || url.indexOf(".ogg") >= 0
-const isUrlAudio = url => url.indexOf(".mp3") >= 0 || url.indexOf(".wav") >= 0 || url.indexOf(".ogg") >= 0
-const isUrlStyleSheet = url => url.indexOf(".css") >= 0 || url.indexOf("fonts.googleapis.com/css") >= 0
-const isUrlScript = url => url.indexOf(".js") >= 0 || url.indexOf(".jsx") >= 0 || url.indexOf(".ts") >= 0 || url.indexOf(".tsx") >= 0 || url.indexOf("googletagmanager.com/gtag/js") >= 0
-const isUrlFont = url => url.indexOf(".ttf") >= 0 || url.indexOf("fonts.googleapis.com") >= 0
+const isUrlProtocolMailto = url => url.includes('mailto:')
+const isUrlProtocolTel = url => url.includes('tel:')
+const isUrlLocal = url => (url.toLowerCase().includes(hostURL.toLowerCase()) && url.toLowerCase().indexOf(hostURL.toLowerCase()) === 0) || (!url.match(httpRegex) && !isUrlProtocol(url))
+const isUrlAnchor = url => url.includes("#")
+const isUrlImage = url => url.includes(".png") || url.includes(".gif") || url.includes(".svg") || url.includes(".jpg") || url.includes(".jpeg") || url.includes(".bmp") || url.includes(".webp") || url.includes(".ico") || url.includes(".tiff") || url.includes(".tif") || url.includes(".avif") || url.startsWith("data:image/")
+const isUrlVideo = url => url.includes(".mp4") || url.includes(".webm") || url.includes(".ogg") || url.includes(".ogv") || url.includes(".avi") || url.includes(".mov") || url.includes(".wmv") || url.includes(".flv") || url.includes(".m4v") || url.includes(".mkv")
+const isUrlAudio = url => url.includes(".mp3") || url.includes(".wav") || url.includes(".ogg") || url.includes(".oga") || url.includes(".m4a") || url.includes(".aac") || url.includes(".flac") || url.includes(".wma")
+const isUrlStyleSheet = url => url.includes(".css") || url.includes(".scss") || url.includes(".sass") || url.includes(".less") || url.includes("fonts.googleapis.com/css")
+const isUrlScript = url => url.includes(".js") || url.includes(".jsx") || url.includes(".ts") || url.includes(".tsx") || url.includes(".mjs") || url.includes(".cjs") || url.includes("googletagmanager.com/gtag/js")
+const isUrlFont = url => url.includes(".ttf") || url.includes(".otf") || url.includes(".woff") || url.includes(".woff2") || url.includes(".eot") || url.includes("fonts.googleapis.com") || url.includes("fonts.gstatic.com")
+const isUrlDocument = url => url.includes(".doc") || url.includes(".docx") || url.includes(".xls") || url.includes(".xlsx") || url.includes(".ppt") || url.includes(".pptx") || url.includes(".odt") || url.includes(".ods") || url.includes(".odp")
+const isUrlArchive = url => url.includes(".zip") || url.includes(".rar") || url.includes(".7z") || url.includes(".tar") || url.includes(".gz") || url.includes(".bz2")
+const isUrlData = url => url.includes(".json") || url.includes(".xml") || url.includes(".csv") || url.includes(".yaml") || url.includes(".yml")
 
 
 /**
@@ -20,7 +26,7 @@ const isUrlFont = url => url.indexOf(".ttf") >= 0 || url.indexOf("fonts.googleap
 * @returns {HTMLElement} - HTML element
 */
 function createElementFromHTML(htmlString) {
-    var template = document.createElement('template');
+    const template = document.createElement('template');
     template.innerHTML = htmlString.trim();
     return template.content.firstChild;
 }
@@ -46,12 +52,18 @@ function getFAIcon(value, getIndex = false) {
             icon = ['<i class="fas fa-anchor"></i>', 1]
         else if (isUrlPDFFile(value))
             icon = ['<i class="fas fa-file-pdf"></i>', 20]
+        else if (isUrlDocument(value))
+            icon = ['<i class="fas fa-file-word"></i>', 21]
+        else if (isUrlArchive(value))
+            icon = ['<i class="fas fa-file-archive"></i>', 22]
+        else if (isUrlData(value))
+            icon = ['<i class="fas fa-file-code"></i>', 23]
         else if (isUrlImage(value))
-            icon = ['<i class="fas fa-image"></i>', 21]
+            icon = ['<i class="fas fa-image"></i>', 24]
         else if (isUrlVideo(value))
-            icon = ['<i class="fas fa-file-video"></i>', 22]
+            icon = ['<i class="fas fa-file-video"></i>', 25]
         else if (isUrlAudio(value))
-            icon = ['<i class="fas fa-file-audio"></i>', 23]
+            icon = ['<i class="fas fa-file-audio"></i>', 26]
         else if (isUrlStyleSheet(value))
             icon = ['<i class="fab fa-css3-alt"></i>', 30]
         else if (isUrlScript(value))
@@ -104,31 +116,24 @@ function getFAIcon(value, getIndex = false) {
 * @returns {number} -1 if a is before b, 1 if a is after b, alphabetically if they are equal
 */
 function sortLinks(a, b) {
-    let aIndex,
-        bIndex
+    // Get icon indices for comparison
+    const aIndex = a.tags.tag === 'a' && b.tags.tag === 'a' 
+        ? getFAIcon(a.href, true) 
+        : getFAIcon(a.tags.tag, true)
+    const bIndex = b.tags.tag === 'a' && a.tags.tag === 'a'
+        ? getFAIcon(b.href, true)
+        : getFAIcon(b.tags.tag, true)
 
-    //A Index
-    if (a.tags.tag == 'a' && b.tags.tag == 'a') {
-        aIndex = getFAIcon(a.href, true)
-        bIndex = getFAIcon(b.href, true)
-    } else {
-        aIndex = getFAIcon(a.tags.tag, true)
-        bIndex = getFAIcon(b.tags.tag, true)
-    }
+    if (aIndex !== bIndex) return aIndex - bIndex
 
-    if (aIndex == bIndex) {
-        if (a.isError && !b.isError)
-            return -1
-        else if (!a.isError && b.isError)
-            return 1
-        if (a.isCrawled && !b.isCrawled)
-            return -1
-        else if (!a.isCrawled && b.isCrawled)
-            return 1
-        else
-            return a.href.localeCompare(b.href)
-    } else
-        return aIndex - bIndex
+    // Sort by error status
+    if (a.isError !== b.isError) return a.isError ? -1 : 1
+    
+    // Sort by crawled status
+    if (a.isCrawled !== b.isCrawled) return a.isCrawled ? -1 : 1
+    
+    // Sort alphabetically by href
+    return a.href.localeCompare(b.href)
 }
 /**
 * Function to create a delay before performing a task, to avoid multiple calls
@@ -171,50 +176,56 @@ function storageSet(key, value) {
 }
 
 function toDataURL(url) {
-    return new Promise((resolve, reject) => {
-        fetch(CORS_BYPASS_URL_RAW + encodeURIComponent(url))
-            .then(res => {
-                if (res.ok) return res.blob()
-                else throw new Error(res.error)
-            })
-            .then(data => {
-
-                const reader = new FileReader()
-                reader.onloadend = () => resolve(reader.result)
-                reader.onerror = reject
-                reader.readAsDataURL(data)
-            })
-            .catch(err => {
-                reject(err)
-            })
+    return new Promise(async (resolve, reject) => {
+        try {
+            // Try direct fetch first
+            let res, blob
+            try {
+                res = await fetch(url)
+                if (res.ok) {
+                    blob = await res.blob()
+                } else {
+                    throw new Error('Direct fetch failed')
+                }
+            } catch (directError) {
+                // Fall back to CORS proxy
+                res = await fetch(CORS_BYPASS_URL_RAW + encodeURIComponent(url))
+                if (!res.ok) throw new Error(res.error)
+                blob = await res.blob()
+            }
+            
+            const reader = new FileReader()
+            reader.onloadend = () => resolve(reader.result)
+            reader.onerror = reject
+            reader.readAsDataURL(blob)
+        } catch (err) {
+            reject(err)
+        }
     })
 }
 
-const getLocation = function (href) {
-    var l = document.createElement("a");
-    l.href = href;
-    return l;
+const getLocation = href => {
+    const link = document.createElement("a");
+    link.href = href;
+    return link;
 }
 
 const formatLink = (url, link) => {
-    let chromeExtensionProtocol = 'chrome-extension:'
-    let chromeExtensionId = window.extensionId
+    const chromeExtensionProtocol = 'chrome-extension:'
+    const chromeExtensionId = window.extensionId
 
-    let urlLocation = new URL(url)
-    let urlOrigin = urlLocation.origin
+    const urlLocation = new URL(url)
+    const linkLocation = new URL(getLocation(link))
 
-    let linkLocation = new URL(getLocation(link))
-
-    //If it's not a local link or a // link
-    if (linkLocation.protocol != chromeExtensionProtocol)
-        return link
+    // If it's not a local link or a // link
+    if (linkLocation.protocol !== chromeExtensionProtocol) return link
 
     // If it's a // link
-    if (linkLocation.host != chromeExtensionId)
-        return urlLocation.protocol + "//" + linkLocation.host + linkLocation.pathname + linkLocation.hash + linkLocation.search
+    if (linkLocation.host !== chromeExtensionId) {
+        return `${urlLocation.protocol}//${linkLocation.host}${linkLocation.pathname}${linkLocation.hash}${linkLocation.search}`
+    }
 
     // If it's a local link 
-    if (linkLocation.pathname == "/viewer.html")
-        return urlLocation.protocol + "//" + urlLocation.host + "/" + linkLocation.hash + linkLocation.search
-    return urlLocation.protocol + "//" + urlLocation.host + linkLocation.pathname + linkLocation.hash + linkLocation.search
+    const basePath = linkLocation.pathname === "/viewer.html" ? "/" : linkLocation.pathname
+    return `${urlLocation.protocol}//${urlLocation.host}${basePath}${linkLocation.hash}${linkLocation.search}`
 }

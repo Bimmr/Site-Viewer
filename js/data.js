@@ -3,27 +3,27 @@
 let baseUrl = 'https://bimmr.com'
 let hostURL = 'https://bimmr.com'
 
-// CORS Bypass to allow cross-origin requests
+// CORS Bypass to allow cross-origin requests (will be updated from settings)
 let CORS_BYPASS_URL = 'https://api.allorigins.win/get?url='
 let CORS_BYPASS_URL_RAW = 'https://api.allorigins.win/raw?url='
 
 //Regex for Chrome Extension
-let chromeExtensionRegex = new RegExp(/(chrome-extension:\/\/\w*\/(viewer\.html)?)|(chrome-extension:\/)/g)
+const chromeExtensionRegex = /(chrome-extension:\/\/\w*\/(viewer\.html)?)|(chrome-extension:\/)/
 
 //Regex for viewer.html
-let viewerRegex = new RegExp(/(viewer.html)/g)
+const viewerRegex = /(viewer.html)/
 
-//Regex for background or background-image style
-let imageUrlRegex = new RegExp(/background(-image)?\s*:(.*?)(url)\(\s*(\'|")?((?!['"]?data:).*?)(?<image>.*?)\3?(\'|")?\s*\)/g)
+//Regex for background or background-image style - Function to create fresh instance
+const getImageUrlRegex = () => /background(-image)?\s*:(.*?)(url)\(\s*(\'|")?((?!['']?data:).*?)(?<image>.*?)\3?(\'|")?\s*\)/g
 
 //let urlRegex = new RegExp(/background(-image)?\s*:(.*?)(url)\(\s*(\'|")?(?<image>.*?)\3?(\'|")?\s*\)/g) - Ignoring if it contains 'data:'
-let httpRegex = new RegExp(/^((http|https):)?\/\//g)
+const httpRegex = /^((http|https):)?\/\//
 
-//Regex for a tag link
-let aTagRegex = new RegExp(/(<a)(?:(?!<\/a>).)*/g)
+//Regex for a tag link - Function to create fresh instance
+const getATagRegex = () => /(<a)(?:(?!<\/a>).)*/g
 
 //Regex for quotes
-let quoteRegex = new RegExp(/["']/g)
+const quoteRegex = /["']/
 
 //Regex for external stylesheets
 let externalStylesheetRegex = new RegExp(/(<link)(?:(?!<\/link>).)*/g)

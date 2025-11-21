@@ -2,6 +2,131 @@
 let crawl = { all: { media: [], links: [], assets: [] } }
 //Track whats being crawled
 let crawling = []
+//Cache for page hashes to optimize duplicate detection
+const pageHashCache = new Map()
+
+// Rate limiting implementation
+let lastCrawlTime = 0
+const rateLimitedFetch = async (fetchFn) => {
+  const now = Date.now()
+  const timeSinceLastCrawl = now - lastCrawlTime
+  const rateLimit = settings?.crawl?.rateLimitMs || 100
+  
+  if (timeSinceLastCrawl < rateLimit) {
+    const delay = rateLimit - timeSinceLastCrawl
+    console.log(`Rate limiting: waiting ${delay}ms before next request`)
+    await new Promise(resolve => setTimeout(resolve, delay))
+  }
+  
+  lastCrawlTime = Date.now()
+  return fetchFn()
+}
+
+/**
+ * Remove HTML comments from string
+ * @param {string} str - String to process
+ * @returns {string} - String without HTML comments
+ */
+function removeHTMLComments(str) {
+  return str.replace(/<!--[\s\S]*?-->/g, '')
+}
+
+/**
+ * Remove JavaScript comments from string
+ * @param {string} str - String to process
+ * @returns {string} - String without JS comments
+ */
+function removeJSComments(str) {
+  // Remove single-line comments
+  str = str.replace(/\/\/.*$/gm, '')
+  // Remove multi-line comments
+  str = str.replace(/\/\*[\s\S]*?\*\//g, '')
+  return str
+}
+
+/**
+ * Remove CSS comments from string
+ * @param {string} str - String to process
+ * @returns {string} - String without CSS comments
+ */
+function removeCSSComments(str) {
+  return str.replace(/\/\*[\s\S]*?\*\//g, '')
+}
+
+/**
+ * Check if a URL is valid and doesn't contain unresolved template variables
+ * @param {string} url - URL to validate
+ * @returns {boolean} - True if valid, false otherwise
+ */
+function isValidURL(url) {
+  if (!url || typeof url !== 'string') return false
+  
+  // Filter out template literals and JavaScript expressions
+  if (url.includes('${') || url.includes('%7B') || url.includes('%7D')) return false
+  if (url.includes('{') && url.includes('}')) return false
+  
+  // Filter out JavaScript ternary operators and logical expressions
+  if (url.includes('?') && url.includes(':') && (url.includes("'") || url.includes('"'))) return false
+  
+  // Filter out other variable patterns
+  if (url.match(/\$\w+/)) return false // $variable
+  if (url.match(/\{\{.*\}\}/)) return false // {{variable}}
+  if (url.match(/%[A-Z0-9]{2}%[A-Z0-9]{2}/)) return false // Multiple encoded special chars that suggest template syntax
+  
+  return true
+}
+
+/**
+ * Generate a simple hash from page content for duplicate detection
+ * @param {object} page - Page object with content
+ * @returns {string} - Hash string
+ */
+function generatePageHash(page) {
+  // Create a hash based on multiple content characteristics
+  const content = [
+    page.title || '',
+    page.description || '',
+    page.links.length,
+    page.media.length,
+    page.assets.length,
+    // Sample of link hrefs for better comparison (first 15)
+    page.links.slice(0, 15).map(l => l.href).sort().join('|'),
+    // Sample of media sources (first 10)
+    page.media.slice(0, 10).map(m => m.src).sort().join('|'),
+    // Sample of asset links (first 10)
+    page.assets.slice(0, 10).map(a => a.link).sort().join('|')
+  ].join(':::')
+  
+  // Simple string hash function
+  let hash = 0
+  for (let i = 0; i < content.length; i++) {
+    const char = content.charCodeAt(i)
+    hash = ((hash << 5) - hash) + char
+    hash = hash & hash // Convert to 32bit integer
+  }
+  return hash.toString(36)
+}
+
+/**
+ * Check if a page is a duplicate of an already crawled page
+ * @param {object} page - Page object to check
+ * @param {string} currentUrl - Current URL being checked
+ * @returns {string|null} - URL of duplicate page if found, null otherwise
+ */
+function findDuplicatePage(page, currentUrl) {
+  const currentHash = generatePageHash(page)
+  
+  // Check hash cache for duplicates
+  for (const [url, hash] of pageHashCache) {
+    if (url !== currentUrl && hash === currentHash) {
+      return url
+    }
+  }
+  
+  // Store hash in cache
+  pageHashCache.set(currentUrl, currentHash)
+  return null
+}
 
 
 /**
@@ -14,8 +139,8 @@ async function crawlURL(url, addToAll = true) {
     return new Promise(async (resolve, reject) => {
   
       //Update crawling view with crawling info
-      if (crawling.length == 0)
-        document.querySelector("#crawlingSiteText").innerHTML = url
+      if (crawling.length === 0)
+        document.querySelector("#crawlingSiteText").textContent = url
       document.querySelector("#crawling").classList.add("active")
   
       //Remove any old filter and search stuff
@@ -26,17 +151,48 @@ async function crawlURL(url, addToAll = true) {
   
       crawling.push(url)
   
-      fetch(CORS_BYPASS_URL + encodeURIComponent(url))
-        .then(res => {
-          if (res.ok) return res.json()
-          else throw new Error(res.error)
-        })
-        .then(data => {
-          if (data.status && data.status.http_code != 200) {
+      // Helper function to attempt fetch with CORS bypass
+      const fetchWithCorsProxy = async (url) => {
+        return rateLimitedFetch(async () => {
+          const res = await fetch(CORS_BYPASS_URL + encodeURIComponent(url))
+          if (!res.ok) throw new Error(`Network request failed with status ${res.status}`)
+          const data = await res.json()
+          if (data.status && data.status.http_code !== 200) {
             throw new Error(data.status.http_code)
           }
+          if (!data.contents) {
+            throw new Error('No content received from the URL')
+          }
+          return data.contents
+        })
+      }
   
-          data = data.contents
+      // Helper function to attempt direct fetch
+      const fetchDirect = async (url) => {
+        return rateLimitedFetch(async () => {
+          const res = await fetch(url)
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          return await res.text()
+        })
+      }
+  
+      // Try direct fetch first, fall back to CORS proxy if it fails
+      const fetchData = async (url) => {
+        try {
+          return await fetchDirect(url)
+        } catch (directError) {
+          // Silently fall back to CORS proxy
+          try {
+            return await fetchWithCorsProxy(url)
+          } catch (proxyError) {
+            // If both fail, throw the proxy error
+            throw proxyError
+          }
+        }
+      }
+  
+      fetchData(url)
+        .then(data => {
   
           let type = "html"
   
@@ -63,13 +219,15 @@ async function crawlURL(url, addToAll = true) {
   
           //Basic a tag - get link and add to crawl all list, but if already found add as an instance
           Array.from(doc.querySelectorAll("a")).filter(
-            element => element.getAttribute("href") != null &&
-              element.getAttribute("href").indexOf("javascript:void(0);") == -1 &&
+            element => element.getAttribute("href") !== null &&
+              element.getAttribute("href").indexOf("javascript:void(0);") === -1 &&
               !element.getAttribute("href").startsWith("?")
           ).forEach(element => {
             let link = createLinkObject(url, element)
+            // Validate URL before adding
+            if (!isValidURL(link.href) || !isValidURL(link._href)) return
             let found
-            if (!(found = links.find(i => i.href == link.href || i.href == link._href))) {
+            if (!(found = links.find(i => i.href === link.href || i.href === link._href))) {
               links.push(link)
             }
             else
@@ -82,9 +240,11 @@ async function crawlURL(url, addToAll = true) {
           //Basic iframe tag - get link and add to crawl all list, but if already found add as an instance
           doc.querySelectorAll("iframe").forEach(element => {
             let link = createLinkObject(url, element)
+            // Validate URL before adding
+            if (!isValidURL(link.href) || !isValidURL(link._href)) return
             if ((link._href && (link._href.startsWith("?")))) return
             let found
-            if (!(found = links.find(i => i.href == link.href || i.href == link._href))) {
+            if (!(found = links.find(i => i.href === link.href || i.href === link._href))) {
               links.push(link)
             }
             else
@@ -98,10 +258,12 @@ async function crawlURL(url, addToAll = true) {
           //Basic img tag - get image and add to crawl all list, but if already found add as an instance
           doc.querySelectorAll("img").forEach(element => {
             let image = createImageObject(url, element)
+            // Validate URL before adding
+            if (!isValidURL(image.src)) return
   
             let found
             if (isUrlImage(image.src))
-              if (!(found = media.find(i => i.src == image.src)))
+              if (!(found = media.find(i => i.src === image.src)))
                 media.push(image)
               else
                 found.instances.push({
@@ -117,7 +279,7 @@ async function crawlURL(url, addToAll = true) {
             if (element.poster && element.poster.length > 0) {
               let image = createImageObject(url, null, element.poster)
               let foundImage
-              if (!(foundImage = media.find(i => i.src == image.src)))
+              if (!(foundImage = media.find(i => i.src === image.src)))
                 media.push(image)
               else
                 foundImage.instances.push({
@@ -130,7 +292,7 @@ async function crawlURL(url, addToAll = true) {
             if (element.querySelector("source")) {
               let video = createImageObject(url, null, element.querySelector("source").src)
               let foundVideo
-              if (!(foundVideo = media.find(i => i.src == video.src)))
+              if (!(foundVideo = media.find(i => i.src === video.src)))
                 media.push(video)
               else
                 foundVideo.instances.push({
@@ -147,7 +309,7 @@ async function crawlURL(url, addToAll = true) {
             if (element.querySelector("source")) {
               let audio = createImageObject(url, null, element.querySelector("source").src)
               let foundAudio
-              if (!(foundAudio = media.find(i => i.src == audio.src)))
+              if (!(foundAudio = media.find(i => i.src === audio.src)))
                 media.push(audio)
               else
                 foundAudio.instances.push({
@@ -161,13 +323,16 @@ async function crawlURL(url, addToAll = true) {
   
           //Background Image styles - get image and add to crawl all list, but if already found add as an instance
           doc.querySelectorAll('*[style*="background"]').forEach(element => {
-            if (element.style.cssText.match(imageUrlRegex)) {
-              let src = imageUrlRegex.exec(element.style.cssText).groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
-              imageUrlRegex.lastIndex = 0;
+            const imageUrlRegex = getImageUrlRegex();
+            const match = imageUrlRegex.exec(element.style.cssText);
+            if (match) {
+              let src = match.groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
+              // Validate URL before adding
+              if (!isValidURL(src)) return
               let image = createImageObject(url, null, src)
               let found
               if (isUrlImage(image.src))
-                if (!(found = media.find(i => i.src == image.src))) {
+                if (!(found = media.find(i => i.src === image.src))) {
                   image.instances[0].alt = element.alt || element.title
                   image.instances[0].tags.isBackground = true
                   image.instances[0].tags.isInline = true
@@ -185,14 +350,22 @@ async function crawlURL(url, addToAll = true) {
           //Find Background Images hidden in style tags - get image and add to crawl all list, but if already found add as an instance
           if (!isUrlHTMLFile(url) || (isUrlHTMLFile(url) && settings.crawl.onPageStyles))
             doc.querySelectorAll('style').forEach(element => {
-              if (element.innerHTML.match(imageUrlRegex))
-                element.innerHTML.match(imageUrlRegex).forEach(style => {
-                  let src = imageUrlRegex.exec(style).groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
-                  imageUrlRegex.lastIndex = 0
-                  let found
-                  let image = createImageObject(url, null, src)
-                  if (isUrlImage(image.src))
-                    if (!(found = media.find(i => i.src == image.src))) {
+              // Remove CSS comments before parsing
+              const cleanContent = removeCSSComments(element.innerHTML)
+              const imageUrlRegex = getImageUrlRegex();
+              const matches = cleanContent.match(imageUrlRegex);
+              if (matches)
+                matches.forEach(style => {
+                  const regex = getImageUrlRegex();
+                  const match = regex.exec(style);
+                  if (match) {
+                    let src = match.groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
+                    // Validate URL before adding
+                    if (!isValidURL(src)) return
+                    let found
+                    let image = createImageObject(url, null, src)
+                    if (isUrlImage(image.src))
+                    if (!(found = media.find(i => i.src === image.src))) {
                       image.instances[0].alt = element.alt || element.title
                       image.instances[0].tags.isBackground = true
                       image.instances[0].tags.isInStyleTag = true
@@ -204,22 +377,30 @@ async function crawlURL(url, addToAll = true) {
                         alt: image.instances[0].alt || element.title,
                         tags: { isBackground: true, isInStyleTag: true }
                       })
+                  }
                 })
             })
   
           //Find Background Images/Links in script tags - get links/images and add to crawl all list, but if already found add as an instance
           if (!isUrlHTMLFile(url) || (isUrlHTMLFile(url) && settings.crawl.onPageScripts))
             doc.querySelectorAll('script').forEach(element => {
+              // Remove JS comments before parsing
+              const cleanContent = removeJSComments(element.innerHTML)
   
               //Look for BackgroundImages
-              if (element.innerHTML.match(imageUrlRegex))
-                element.innerHTML.match(imageUrlRegex).forEach(style => {
-                  let src = imageUrlRegex.exec(style).groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
-                  imageUrlRegex.lastIndex = 0
-                  let image = createImageObject(url, null, src)
-                  let found
-                  if (isUrlImage(image.src))
-                    if (!(found = media.find(i => i.src == image.src))) {
+              const imageMatches = cleanContent.match(getImageUrlRegex());
+              if (imageMatches)
+                imageMatches.forEach(style => {
+                  const regex = getImageUrlRegex();
+                  const match = regex.exec(style);
+                  if (match) {
+                    let src = match.groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
+                    // Validate URL before adding
+                    if (!isValidURL(src)) return
+                    let image = createImageObject(url, null, src)
+                    let found
+                    if (isUrlImage(image.src))
+                    if (!(found = media.find(i => i.src === image.src))) {
                       image.instances[0].alt = element.alt || element.title
                       image.instances[0].tags.isBackground = true
                       image.instances[0].tags.isInScriptTag = true
@@ -231,18 +412,23 @@ async function crawlURL(url, addToAll = true) {
                         alt: image.instances[0].alt || element.title,
                         tags: { isBackground: true, isInScriptTag: true }
                       })
+                  }
                 })
   
               //Look for Links
-              if (element.innerHTML.match(aTagRegex))
-                element.innerHTML.match(aTagRegex).forEach(element => {
+              const aTagMatches = cleanContent.match(getATagRegex());
+              if (aTagMatches)
+                aTagMatches.forEach(element => {
                   element += "</a>"
                   let linkElement = createElementFromHTML(element)
                   let link = createLinkObject(url, linkElement)
+                  
+                  // Validate URL before adding
+                  if (!isValidURL(link.href) || !isValidURL(link._href)) return
                   if ((link._href && (link._href.startsWith("?")))) return
                   let found
-  
-                  if (!(found = links.find(i => i.href == link.href) || (link.href.length == 1 && link.href[0] == '/'))) {
+
+                  if (!(found = links.find(i => i.href === link.href) || (link.href.length === 1 && link.href[0] === '/'))) {
                     link.instances[0].tags.isInScriptTag = true
                     links.push(link)
                   }
@@ -274,7 +460,7 @@ async function crawlURL(url, addToAll = true) {
   
           //Add page to crawled object
           let page = {
-            title: doc.querySelector("title")?.innerHTML,
+            title: doc.querySelector("title")?.textContent,
             description: doc.querySelector("meta[name='description']")?.content,
             links: links.sort(sortLinks),
             media,
@@ -287,31 +473,45 @@ async function crawlURL(url, addToAll = true) {
   
             //For Links - add link to crawl all list or add to instance if already crawled
             page.links.forEach(link => {
-              if (!crawl.all.links.find(i => i.href == link.href)) crawl.all.links.push(link)
-              else {
-                let instances = crawl.all.links.find(i => i.href == link.href).instances
-                crawl.all.links.find(i => i.href == link.href).instances = [...instances, ...link.instances]
+              const existingLink = crawl.all.links.find(i => i.href === link.href)
+              if (!existingLink) {
+                crawl.all.links.push(link)
+              } else {
+                existingLink.instances = [...existingLink.instances, ...link.instances]
               }
             })
             //For images - add link to crawl all list or add to instance if already crawled
             page.media.forEach(file => {
-              if (!crawl.all.media.find(i => i.src == file.src)) crawl.all.media.push(file)
-              else {
-                let instances = crawl.all.media.find(i => i.src == file.src).instances
-                crawl.all.media.find(i => i.src == file.src).instances = [...instances, ...file.instances]
+              const existingMedia = crawl.all.media.find(i => i.src === file.src)
+              if (!existingMedia) {
+                crawl.all.media.push(file)
+              } else {
+                existingMedia.instances = [...existingMedia.instances, ...file.instances]
               }
             })
             //For assets - add link to crawl all list or add to instance if already crawled
             page.assets.forEach(asset => {
-              if (!crawl.all.assets.find(i => i.link == asset.link)) crawl.all.assets.push(asset)
-              else {
-                let instances = crawl.all.assets.find(i => i.link == asset.link).instances
-                crawl.all.assets.find(i => i.link == asset.link).instances = [...instances, ...asset.instances]
+              const existingAsset = crawl.all.assets.find(i => i.link === asset.link)
+              if (!existingAsset) {
+                crawl.all.assets.push(asset)
+              } else {
+                existingAsset.instances = [...existingAsset.instances, ...asset.instances]
               }
             })
   
             //Add crawled page to crawl object
             crawl[url] = page
+            
+            // Check for duplicate pages
+            const duplicateOf = findDuplicatePage(page, url)
+            if (duplicateOf) {
+              // Mark this page as a duplicate
+              const linkIndex = crawl.all.links.findIndex(i => i.href == url)
+              if (linkIndex > -1) {
+                crawl.all.links[linkIndex].isDuplicate = true
+                crawl.all.links[linkIndex].duplicateOf = duplicateOf
+              }
+            }
   
             //Sort links
             crawl.all.links = crawl.all.links.sort(sortLinks)
@@ -336,7 +536,7 @@ async function crawlURL(url, addToAll = true) {
           if (crawling.length == 0)
             document.querySelector("#crawling").classList.remove("active")
           else
-            document.querySelector("#crawlingSiteText").innerHTML = crawling[0]
+            document.querySelector("#crawlingSiteText").textContent = crawling[0]
   
           resolve(page)
   
@@ -349,13 +549,20 @@ async function crawlURL(url, addToAll = true) {
           //Remove crawling overlay if not crawling anything else
           if (crawling.length == 0)
             document.querySelector("#crawling").classList.remove("active")
-          if (crawl.all.links.findIndex(i => i.href == url) > -1) {
+          
+          // Log detailed error for debugging
+          console.error(`Failed to crawl ${url}:`, error)
+          
+          const linkIndex = crawl.all.links.findIndex(i => i.href === url)
+          if (linkIndex > -1) {
             if (!isNaN(error.message)) {
-              crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].isWarning = true
-              crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].statusCode = error.message
+              crawl.all.links[linkIndex].isWarning = true
+              crawl.all.links[linkIndex].statusCode = error.message
+              crawl.all.links[linkIndex].errorMessage = `Received HTTP status code ${error.message}`
+            } else {
+              crawl.all.links[linkIndex].isError = true
+              crawl.all.links[linkIndex].errorMessage = error.message || 'Failed to load page - it may be inaccessible, blocked by CORS, or taking too long to respond'
             }
-            else
-              crawl.all.links[crawl.all.links.findIndex(i => i.href == url)].isError = true
           }
   
           //Perform updates

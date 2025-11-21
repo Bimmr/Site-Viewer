@@ -21,7 +21,7 @@
 
 </head>
 
-<body>
+<body class="preload">
   <div id="body-wrapper">
     <aside id="sidebar" class="sidebar">
       <ul class="sidebar-menu">
@@ -68,6 +68,7 @@
       <span class="sidebar-footer">SiteViewer<br>Version: <span class="version"></span></span>
     </aside>
     <main id="main">
+
 
       <!-- Crawling Overlay -->
       <div id="crawling" class="view active">
@@ -128,6 +129,7 @@
         </div>
       </div>
 
+
       <!-- Pages View -->
       <div id="pages" class="view view-withTitle">
         <div class="view-wrapper">
@@ -155,12 +157,48 @@
         </div>
         <div class="multi-wrapper">
           <div class="form-item">
+            <button type="button" class="downloadSelected">Download Selected</button>
+            <button type="button" class="crawlSelected">Crawl Selected</button>
+          </div>
+        </div>
+      </div>
+
+
+      <!-- Assets View -->
+      <div id="assets" class="view view-withTitle">
+        <div class="view-wrapper">
+          <div class="view-title">
+            <div class="select">
+              <input type="checkbox">
+            </div>
+            <div class="type">
+              <p>File Type</p>
+            </div>
+            <div class="link">
+              <p>Link</p>
+              <a title="Toggle Filter" href="#" class="filter-icon"><i class="fa fa-search"></i></a>
+            </div>
+            <div class="tools">
+              <p>File Tools</p>
+            </div>
+          </div>
+          <div class="view-items">
+            <div class="empty-row">There are no items here.</div>
+          </div>
+        </div>
+        <div class="searchbar">
+          <div class="form-item" style="margin: 0;width: 100%">
+            <input type="text" required="required" title=" ">
+            <span class="icon"><i class="fas fa-search"></i></span>
+          </div>
+        </div>
+        <div class="multi-wrapper">
+          <div class="form-item">
             <button class="downloadSelected">Download Selected</button>
             <button class="crawlSelected">Crawl Selected</button>
           </div>
         </div>
       </div>
-
 
 
       <!-- Links View -->
@@ -195,45 +233,7 @@
         </div>
         <div class="multi-wrapper">
           <div class="form-item">
-            <button class="testSelected">Test Selected</button>
-          </div>
-        </div>
-      </div>
-
-
-      <!-- Assets View -->
-      <div id="assets" class="view view-withTitle">
-        <div class="view-wrapper">
-          <div class="view-title">
-            <div class="select">
-              <input type="checkbox">
-            </div>
-            <div class="type">
-              <p>File Type</p>
-            </div>
-            <div class="link">
-              <p>Link</p>
-              <a title="Toggle Filter" href="#" class="filter-icon"><i class="fa fa-search"></i></a>
-            </div>
-            <div class="tools">
-              <p>File Tools</p>
-            </div>
-          </div>
-
-          <div class="view-items">
-            <div class="empty-row">There are no items here.</div>
-          </div>
-        </div>
-        <div class="searchbar">
-          <div class="form-item" style="margin: 0;width: 100%">
-            <input type="text" required="required" title=" ">
-            <span class="icon"><i class="fas fa-search"></i></span>
-          </div>
-        </div>
-        <div class="multi-wrapper">
-          <div class="form-item">
-            <button class="downloadSelected">Download Selected</button>
-            <button class="crawlSelected">Crawl Selected</button>
+            <button type="button" class="testSelected">Test Selected</button>
           </div>
         </div>
       </div>
@@ -268,10 +268,12 @@
         </div>
         <div class="multi-wrapper">
           <div class="form-item">
-            <button class="downloadSelected">Download Selected</button>
+            <button type="button" class="downloadSelected">Download Selected</button>
           </div>
         </div>
       </div>
+
+
       <!-- Media View -->
       <div id="media" class="view view-withTitle">
         <div class="view-wrapper">
@@ -304,14 +306,44 @@
         </div>
         <div class="multi-wrapper">
           <div class="form-item">
-            <button class="downloadSelected">Download Selected</button>
+            <button type="button" class="downloadSelected">Download Selected</button>
           </div>
         </div>
       </div>
 
+      
       <!-- Settings View -->
       <div id="settings" class="view">
         <div class="view-wrapper">
+          <div class="card">
+            <h3 class="card-title">Crawl Rate Limiting</h3>
+            <p>Set the delay (in milliseconds) between crawl requests to avoid overwhelming servers.</p>
+            <p><small>Lower values = faster crawling but may trigger rate limits. Recommended: 100-500ms</small></p>
+            <br>
+            <div class="form-item split">
+              <div class="border">
+                <input id="crawl-rateLimitMs" type="number" name="crawl-rateLimitMs" min="0" max="5000" value="100" required>
+                <label for="crawl-rateLimitMs">Rate Limit (ms)</label>
+              </div>
+              <div></div>
+            </div>
+          </div>
+          <div class="card">
+            <h3 class="card-title">CORS Proxy Configuration</h3>
+            <p>Configure the CORS bypass proxy URLs used for cross-origin requests.</p>
+            <p><small>Change these if the default proxy is unavailable or you want to use your own.</small></p>
+            <br>
+            <div class="form-item split">
+              <div class="border">
+                <input id="crawl-corsProxyUrl" type="text" name="crawl-corsProxyUrl" value="https://api.allorigins.win/get?url=" required>
+                <label for="crawl-corsProxyUrl">CORS Proxy URL</label>
+              </div>
+              <div class="border">
+                <input id="crawl-corsProxyRawUrl" type="text" name="crawl-corsProxyRawUrl" value="https://api.allorigins.win/raw?url=" required>
+                <label for="crawl-corsProxyRawUrl">CORS Proxy Raw URL</label>
+              </div>
+            </div>
+          </div>
           <div class="card">
             <h3 class="card-title">Crawl the On Page Assets</h3>
             <p>Do you want to crawl the on page assets. These would be anything in <i>&lt;script&gt;</i> or
@@ -434,7 +466,7 @@
                 </div>
                 <div class="multi-wrapper">
                   <div class="form-item">
-                    <button class="downloadSelected">Download Selected</button>
+                    <button type="button" class="downloadSelected">Download Selected</button>
                   </div>
                 </div>
               </div>
@@ -448,7 +480,7 @@
                 </div>
                 <div class="multi-wrapper">
                   <div class="form-item">
-                    <button class="downloadSelected">Download Selected</button>
+                    <button type="button" class="downloadSelected">Download Selected</button>
                   </div>
                 </div>
               </div>

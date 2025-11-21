@@ -35,6 +35,8 @@ hr {
 #main {
   flex-grow: 1;
   background-color: #fafafa;
+  position: relative;
+  overflow: hidden;
 }
 
 .sidebar {
@@ -169,43 +171,85 @@ hr {
 
 .view, .popup-view {
   position: absolute;
-  display: block;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  grid-template-areas:
+    "title"
+    "content";
   width: calc(100vw - var(--sidebarWidth));
-  right: -100%;
-  transition: right .5s ease-in-out, opacity .5s ease-in-out, height .5s ease-in-out, z-index .5s;
-  height: 0;
+  left: 0;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
   opacity: 0;
-  overflow-y: scroll;
-  overflow-x: hidden;
-}
-
-.view:not(.active), .popup-view:not(.active) {
-  animation: hidingViews 0.1s linear 0.5s;
-  animation-fill-mode: forwards;
+  pointer-events: none;
+  background-color: white;
+  transition: opacity 0.5s ease-in-out;
 }
 
 .view.active, .popup-view.active {
-  right: 0%;
-  height: 100%;
   opacity: 1;
+  pointer-events: auto;
 }
 
-.view-withTitle, .popup-view-withTitle {
-  margin-top: 55px !important;
-  height: calc(100% - 55px) !important;
+/* Transition animations */
+:is(.view, .popup-view).slide-in-right {
+  animation: slide-in-right 0.5s ease-in-out forwards;
 }
-
-@keyframes hidingViews {
+:is(.view, .popup-view).slide-out-right {
+  animation: slide-out-right 0.5s ease-in-out forwards;
+}
+:is(.view, .popup-view).slide-in-left {
+  animation: slide-in-left 0.5s ease-in-out forwards;
+}
+:is(.view, .popup-view).slide-out-left {
+  animation: slide-out-left 0.5s ease-in-out forwards;
+}
+@keyframes slide-in-left {
   from {
-    overflow: unset;
+    transform: translateX(100%);
+    opacity: 0.25;
   }
   to {
-    overflow: hidden;
+    transform: translateX(0%);
+    opacity: 1;
+  }
+}
+@keyframes slide-out-left {
+  from {
+    transform: translateX(0%);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(-100%);
+    opacity: 0.25;
+  }
+}
+@keyframes slide-in-right {
+  from {
+    transform: translateX(-100%);
+    opacity: 0.25;
+  }
+  to {
+    transform: translateX(0%);
+    opacity: 1;
+  }
+}
+@keyframes slide-out-right {
+  from {
+    transform: translateX(0%);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0.25;
   }
 }
 
-.view:not(.active) .view-title, .popup-view:not(.active) .view-title {
-  right: -100%;
+.view-wrapper, .popup-view-wrapper {
+  grid-area: content;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .view-title, .view-row {
@@ -215,18 +259,28 @@ hr {
 }
 
 .view-title {
+  grid-area: title;
   background: rgba(0, 0, 0, 0.8);
   text-align: left;
   border-bottom: 2px solid #ddd;
   font-size: 1.15em;
   font-weight: bold;
   color: #fff;
-  position: fixed;
+  width: 100%;
+  z-index: 1;
+  display: none;
+  position: sticky;
   top: 0;
-  right: 0;
-  width: calc(100vw - calc(var(--sidebarWidth) + 18px));
-  padding-right: 18px;
-  transition: right .5s ease-in-out;
+}
+
+.view-withTitle .view-title, .popup-view-withTitle .view-title {
+  display: flex;
+  flex-flow: row nowrap;
+}
+
+.view.active .view-title, .popup-view.active .view-title {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .view-title>* {
@@ -307,6 +361,11 @@ hr {
 .view-row .tools .warning i{
   color: #ffb400;
 }
+.view-row .tools .info i,
+.view-row .tools .duplicate i {
+  color: #2196F3;
+  cursor: default;
+}
 
 .view-items .empty-row {
   padding: 5em 0;
@@ -362,7 +421,7 @@ hr {
 }
 
 #crawling .view-wrapper {
-  height: 100vh;
+  height: 100%;
   display: flex;
   flex-flow: column;
   justify-content: center;
@@ -683,7 +742,7 @@ hr {
   min-width: 150px;
 }
 
-.form-item input[type="text"]:focus~label, .form-item input[type="text"]:valid~label, .form-item input[type="search"]:focus~label, .form-item input[type="search"]:valid~label, .form-item textarea:focus~label, .form-item textarea:valid~label, .form-item .editable:focus~label, .form-item .editable:not(:empty)~label {
+.form-item input[type="text"]:focus~label, .form-item input[type="text"]:valid~label, .form-item input[type="number"]:focus~label, .form-item input[type="number"]:valid~label, .form-item input[type="search"]:focus~label, .form-item input[type="search"]:valid~label, .form-item textarea:focus~label, .form-item textarea:valid~label, .form-item .editable:focus~label, .form-item .editable:not(:empty)~label {
   top: -12px;
   font-size: 12px;
 }
@@ -736,6 +795,7 @@ input[type="checkbox"]{
 
 .form-item input[type="checkbox"] {
   -webkit-appearance: none;
+  appearance: none;
   border: 1px solid #777;
   width: 30px;
   height: 18px;

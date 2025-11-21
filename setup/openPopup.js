@@ -23,7 +23,7 @@ openPopup()
 */
 function openPopup() {
     window.close()
-    if (popupWindow == null || popupWindow.closed) {
+    if (popupWindow === null || popupWindow.closed) {
         popupWindow = window.open(
             chrome.runtime.getURL("viewer.html"),
             "SiteViewer - "+ Math.floor(Math.random() * 100),

@@ -421,7 +421,19 @@ async function crawlURL(url, addToAll = true) {
                 aTagMatches.forEach(element => {
                   element += "</a>"
                   let linkElement = createElementFromHTML(element)
+                  
+                  if (!linkElement) {
+                    console.warn("Failed to create element from HTML:", element)
+                    return
+                  }
+                  
                   let link = createLinkObject(url, linkElement)
+                  
+                  // Skip if link creation failed
+                  if (!link) {
+                    console.warn("Failed to create link object from element:", linkElement)
+                    return
+                  }
                   
                   // Validate URL before adding
                   if (!isValidURL(link.href) || !isValidURL(link._href)) return
@@ -587,6 +599,9 @@ async function crawlURL(url, addToAll = true) {
 * @param {Element} element - The element to create the link from
 */
 function createLinkObject(url, element) {
+
+    // Return null if element is invalid
+    if (!element) return null
 
     //Create the link object
     let link = {

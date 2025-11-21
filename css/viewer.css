@@ -250,16 +250,17 @@ hr {
   grid-area: content;
   overflow-y: auto;
   overflow-x: hidden;
+  display: grid;
+  grid-template-rows: auto 1fr;
 }
 
 .view-title, .view-row {
-  display: flex;
-  flex-flow: row nowrap;
+  display: grid;
   border-bottom: 1px solid #ddd;
+  align-items: center;
 }
 
 .view-title {
-  grid-area: title;
   background: rgba(0, 0, 0, 0.8);
   text-align: left;
   border-bottom: 2px solid #ddd;
@@ -274,8 +275,7 @@ hr {
 }
 
 .view-withTitle .view-title, .popup-view-withTitle .view-title {
-  display: flex;
-  flex-flow: row nowrap;
+  display: grid;
 }
 
 .view.active .view-title, .popup-view.active .view-title {
@@ -302,7 +302,7 @@ hr {
   border-left: 1px solid rgba(221, 221, 221, 0.25);
 }
 
-.view-row>* {
+.view-row>*:not(:first-child) {
   border-left: 1px solid rgba(221, 221, 221, 0.5);
 }
 
@@ -311,24 +311,54 @@ hr {
 }
 
 .view-title .select, .view-row .select {
-  flex-basis: 5%;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .view-title .tools, .view-row .tools {
-  flex-basis: 10%;
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 5px;
 }
 
-.view-row .info {
-  flex-basis: 5%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+/* Grid column definitions for each view type */
+#pages .view-title,
+#pages .view-row {
+  grid-template-columns: 50px 4fr 1fr;
+}
+
+/* Chevron indicator for nested pages */
+#pages .view-row .link p[style*="padding-left"]::before {
+  content: "\f3be";
+  font-family: "Font Awesome 6 Free";
+  font-weight: 900;
+  margin-right: 8px;
+  color: rgb(71 71 71 / 30%);
+  font-size: 0.85em;
+  display: inline-block;
+  transform: scaleY(-1) rotate(270deg);
+}
+
+#assets .view-title,
+#assets .view-row {
+  grid-template-columns: 50px 80px 1fr 150px;
+}
+
+#links .view-title,
+#links .view-row {
+  grid-template-columns: 50px 100px 4fr 1fr;
+}
+
+#files .view-title,
+#files .view-row {
+  grid-template-columns: 50px 100px 4fr 1fr;
+}
+
+#media .view-title,
+#media .view-row {
+  grid-template-columns: 50px 2fr 4fr 1fr;
 }
 
 .view-row .tools i {
@@ -338,12 +368,21 @@ hr {
   transition: color .3s;
 }
 
-.view-row .info .hover-popup-icon span {
+.view-row .tools .info .hover-popup-icon span {
   font-size: .8em;
+  padding: 5px 10px;
 }
 
-.view-row .info .hover-popup-icon i:first-of-type {
+.view-row .tools .info .hover-popup-icon .fa-stack i {
+  font-size: 2em;
+  padding: 0;
+}
+.view-row .tools .info .hover-popup-icon .fa-stack i:first-of-type {
   color: #4a4a4a;
+}
+.view-row .tools .info .hover-popup-icon .fa-stack .fa-inverse {
+  color: #fff;
+  font-size: 1em;
 }
 
 .view-row .tools i:hover {

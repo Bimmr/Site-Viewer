@@ -821,14 +821,31 @@ function updatePages() {
   //Iterate all links in the crawl object adding to the HTML string
   let html = ''
 
-  // Sort pages alphabetically by href
+  // Sort pages by URL path depth and alphabetically
   const sortedPages = getPages().sort((a, b) => {
-    return a.href.localeCompare(b.href)
+    // Split URLs by '/' to get path segments
+    const pathA = a.href.split('/').filter(segment => segment.length > 0)
+    const pathB = b.href.split('/').filter(segment => segment.length > 0)
+    
+    // Compare each path segment
+    const minLength = Math.min(pathA.length, pathB.length)
+    for (let i = 0; i < minLength; i++) {
+      const comparison = pathA[i].localeCompare(pathB[i])
+      if (comparison !== 0) return comparison
+    }
+    
+    // If all segments match, shorter path comes first
+    return pathA.length - pathB.length
   })
 
   sortedPages.forEach(link => {
     //Pages should only contain local HTML links but not anchors
 
+    // Calculate path depth for indentation (subtract domain parts)
+    const pathSegments = link.href.split('/').filter(segment => segment.length > 0)
+    // Remove protocol and domain (first 2 segments like "https:" and "domain.com")
+    const pathDepth = Math.max(0, pathSegments.length - 2)
+    const indentStyle = pathDepth > 0 ? `style="padding-left: ${pathDepth * 20}px;"` : ''
 
     //Create string of tags and instances
     let linkTagsText = ''
@@ -846,17 +863,7 @@ function updatePages() {
       linkTagsText = linkTagsText.substr(0, linkTagsText.length - 4) + '<hr>'
 
     //Add all instances to the instance string
-    link.instances.forEach(i => {
-      const fragmentUrl = createTextFragmentUrl(i.foundOn, i.text || i.alt || i.title)
-      instancesText += '<li><a href="' + fragmentUrl + '" target="_blank">' + i.foundOn + '</a><ul>'
-      if (i.title)
-        instancesText += '<li>Title: <strong>' + i.title + '</strong></li>'
-      if (i.text)
-        instancesText += '<li>Text: <strong>' + i.text + '</strong></li>'
-      Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "<li>" + i1 + ": <strong>" + i.tags[i1] + "</strong></li>" : '')
-      instancesText += '</ul></li>'
-    })
-    instancesText += '</ul>'
+    instancesText = formatInstances(link.instances, i => i.text || i.alt || i.title)
 
     //Add to HTML to html string for the item
     html += `
@@ -865,7 +872,7 @@ function updatePages() {
             <input type="checkbox">
           </div>
           <div class="link">
-            <p>` + link.href + `</p>
+            <p ${indentStyle}>` + link.href + `</p>
           </div>
           <div class="tools">
             <a class="download" href="`+ link.href + `" title="Download Page"><i class="fas fa-file-download"></i></a>` +
@@ -881,17 +888,17 @@ function updatePages() {
     else
       html += '<a class="crawl" target="_blank" href="' + link.href + '" title="Crawl page"><i class="fas fa-sitemap"></i></a>'
     html +=
-      `</div>
-          <div class="info">
-            <div class="hover-popup-icon">
-            <span class="fa-stack fa-1x">
-            <i class="fas fa-square fa-stack-2x"></i>
-            <i class="fas fa-info fa-stack-1x fa-inverse"></i>
-          </span>
-              <div class="hover-popup">`+
+      `<div class="info">
+              <div class="hover-popup-icon">
+              <span class="fa-stack fa-1x">
+              <i class="fas fa-square fa-stack-2x"></i>
+              <i class="fas fa-info fa-stack-1x fa-inverse"></i>
+            </span>
+                <div class="hover-popup">`+
       linkTagsText +
       instancesText +
       `</div>
+              </div>
             </div>
           </div>
         </div>
@@ -956,17 +963,7 @@ function setupPopup(url) {
       linkTagsText = linkTagsText.substr(0, linkTagsText.length - 4) + '<hr>'
 
     //Add all instances to the instance string
-    link.instances.forEach(i => {
-      const fragmentUrl = createTextFragmentUrl(i.foundOn, i.text || i.alt || i.title)
-      instancesText += '<li><a href="' + fragmentUrl + '" target="_blank">' + i.foundOn + '</a><ul>'
-      if (i.title)
-        instancesText += '<li>Title: <strong>' + i.title + '</strong></li>'
-      if (i.text)
-        instancesText += '<li>Text: <strong>' + i.text + '</strong></li>'
-      Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "<li>" + i1 + ": <strong>" + i.tags[i1] + "</strong></li>" : '')
-      instancesText += '</ul></li>'
-    })
-    instancesText += '</ul>'
+    instancesText = formatInstances(link.instances, i => i.text || i.alt || i.title)
 
     html[htmlIndex] +=
       '<div class="view-row">' +
@@ -990,8 +987,7 @@ function setupPopup(url) {
     }
     if (htmlIndex !== 'links')
       html[htmlIndex] += '<a class="download" href="' + href + '" title="Download Page"><i class="fas fa-file-download"></i></a>'
-    html[htmlIndex] += `</div>
-          <div class="info">
+    html[htmlIndex] += `<div class="info">
           <div class="hover-popup-icon">
             <span class="fa-stack fa-1x">
               <i class="fas fa-square fa-stack-2x"></i>
@@ -1003,6 +999,7 @@ function setupPopup(url) {
       `</div>
             </div>
           </div>
+        </div>
         </div>
       </div>
       `
@@ -1023,14 +1020,7 @@ function setupPopup(url) {
     if (fileTagsText.length > 0)
       fileTagsText = fileTagsText.substr(0, fileTagsText.length - 4) + '<hr>'
 
-    file.instances.forEach(i => {
-      instancesText += '<li><a href="' + i.foundOn + '" target="_blank">' + i.foundOn + '</a><ul>'
-      if (i.alt)
-        instancesText += '<li>Alt: <strong>' + i.alt + '</strong></li>'
-      Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "<li>" + i1 + ": <strong>" + i.tags[i1] + "</strong></li>" : '')
-      instancesText += '</ul></li>'
-    })
-    instancesText += '</ul>'
+    instancesText = formatInstances(file.instances, i => i.alt || i.title)
 
     //Add to HTML to html string for the item
     html.media += `
@@ -1110,14 +1100,8 @@ function updateAssets() {
     if (linkTagsText.length > 0)
       linkTagsText = linkTagsText.substr(0, linkTagsText.length - 4) + '<hr>'
 
-    //Add all instances to the instance string
-    link.instances.forEach(i => {
-      const fragmentUrl = createTextFragmentUrl(i.foundOn, i.alt || i.title)
-      instancesText += '<li><a href="' + fragmentUrl + '" target="_blank">' + i.foundOn + '</a><ul>'
-      Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "<li>" + i1 + ": <strong>" + i.tags[i1] + "</strong></li>" : '')
-      instancesText += '</ul></li>'
-    })
-    instancesText += '</ul>'
+    //Add all instances to the instance string (filter out duplicates)
+    instancesText = formatInstances(link.instances, i => i.alt || i.title)
 
     //Add to HTML to html string for the item
     html += `
@@ -1136,8 +1120,7 @@ function updateAssets() {
     if (!link.isCrawled && (isUrlScript(link.link) || isUrlStyleSheet(link.link)))
       html += '<a class="crawl" target="_blank" href="' + link.link + '" title="Crawl page"><i class="fas fa-sitemap"></i></a>'
     html +=
-      `</div>
-          <div class="info">
+      `<div class="info">
             <div class="hover-popup-icon">
             <span class="fa-stack fa-1x">
             <i class="fas fa-square fa-stack-2x"></i>
@@ -1148,6 +1131,7 @@ function updateAssets() {
       instancesText +
       `</div>
             </div>
+          </div>
           </div>
         </div>
       `
@@ -1183,17 +1167,7 @@ function updateLinks() {
       linkTagsText = linkTagsText.substr(0, linkTagsText.length - 4) + '<hr>'
 
     //Add all instances to the instance string
-    link.instances.forEach(i => {
-      const fragmentUrl = createTextFragmentUrl(i.foundOn, i.text || i.title)
-      instancesText += '<li><a href="' + fragmentUrl + '" target="_blank">' + i.foundOn + '</a><ul>'
-      if (i.title)
-        instancesText += '<li>Title: <strong>' + i.title + '</strong></li>'
-      if (i.text)
-        instancesText += '<li>Text: <strong>' + i.text + '</strong></li>'
-      Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "<li>" + i1 + ": <strong>" + i.tags[i1] + "</strong></li>" : '')
-      instancesText += '</ul></li>'
-    })
-    instancesText += '</ul>'
+    instancesText = formatInstances(link.instances, i => i.text || i.title)
 
     //Add to HTML to html string for the item
     html += `
@@ -1222,8 +1196,7 @@ function updateLinks() {
       else if (link.test == "failed")
         html += '<a class="error" target="_blank" href="' + link.href + '" title="Test the link"><i class="fas fa-exclamation-circle"></i></a>'
     }
-    html += `</div>
-          <div class="info">
+    html += `<div class="info">
           <div class="hover-popup-icon">
             <span class="fa-stack fa-1x">
               <i class="fas fa-square fa-stack-2x"></i>
@@ -1235,6 +1208,7 @@ function updateLinks() {
       `</div>
             </div>
           </div>
+        </div>
         </div>
       </div>
       `
@@ -1270,17 +1244,7 @@ function updateFiles() {
       linkTagsText = linkTagsText.substr(0, linkTagsText.length - 4) + '<hr>'
 
     //Add all instances to the instance string
-    link.instances.forEach(i => {
-      const fragmentUrl = createTextFragmentUrl(i.foundOn, i.text || i.title)
-      instancesText += '<li><a href="' + fragmentUrl + '" target="_blank">' + i.foundOn + '</a><ul>'
-      if (i.title)
-        instancesText += '<li>Title: <strong>' + i.title + '</strong></li>'
-      if (i.text)
-        instancesText += '<li>Text: <strong>' + i.text + '</strong></li>'
-      Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "<li>" + i1 + ": <strong>" + i.tags[i1] + "</strong></li>" : '')
-      instancesText += '</ul></li>'
-    })
-    instancesText += '</ul>'
+    instancesText = formatInstances(link.instances, i => i.text || i.title)
 
     //Add to HTML to html string for the item
     html += `
@@ -1297,7 +1261,6 @@ function updateFiles() {
         <div class="tools">
           <a class="download" href="`+ link.href + `" title="Download File"><i class="fas fa-file-download"></i></a>
           <a class="goto" target="_blank" href="`+ link.href + `" title="Go to link"><i class="fas fa-external-link-alt"></i></a>
-          </div>
           <div class="info"><div class="hover-popup-icon">
           <span class="fa-stack fa-1x">
           <i class="fas fa-square fa-stack-2x"></i>
@@ -1308,6 +1271,7 @@ function updateFiles() {
       instancesText +
       `</div>
         </div>
+          </div>
           </div>
         </div>
       </div>
@@ -1345,15 +1309,7 @@ function updateMedia() {
     if (imageTagsText.length > 0)
       imageTagsText = imageTagsText.substr(0, imageTagsText.length - 4) + '<hr>'
 
-    file.instances.forEach(i => {
-      const fragmentUrl = createTextFragmentUrl(i.foundOn, i.alt)
-      instancesText += '<li><a href="' + fragmentUrl + '" target="_blank">' + i.foundOn + '</a><ul>'
-      if (i.alt)
-        instancesText += '<li>Alt: <strong>' + i.alt + '</strong></li>'
-      Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "<li>" + i1 + ": <strong>" + i.tags[i1] + "</strong></li>" : '')
-      instancesText += '</ul></li>'
-    })
-    instancesText += '</ul>'
+    instancesText = formatInstances(file.instances, i => i.alt)
 
     //Add to HTML to html string for the item
     html += `
@@ -1372,7 +1328,6 @@ function updateMedia() {
        <div class="tools">
          <a class="goto" target="_blank" href="` + file.src + `" title="Open Image"><i class="fas fa-external-link-alt"></i></a>
          <a class="download" href="`+ file.src + `" title="Download Image"><i class="fas fa-file-download"></i></a>
-         </div>
          <div class="info">
          <div class="hover-popup-icon">
             <span class="fa-stack fa-1x">
@@ -1385,6 +1340,7 @@ function updateMedia() {
       `</div>
       </div>
               </div>
+         </div>
        </div>
      </div>
      `
@@ -1397,6 +1353,38 @@ function updateMedia() {
 
 }
 
-const getPages = () => crawl.all.links.filter(link => isUrlLocal(link.href) && isUrlHTMLFile(link.href) && !isUrlAnchor(link.href) && !isUrlScript(link.href) && !isUrlStyleSheet(link.href))
+// Helper function to check if a URL is a duplicate page
+const isDuplicatePage = (url) => {
+  const page = crawl.all.links.find(link => link.href === url)
+  return page && page.isDuplicate
+}
+
+// Helper function to filter and format instances, excluding duplicates
+const formatInstances = (instances, getTextFn) => {
+  const nonDuplicateInstances = instances.filter(i => !isDuplicatePage(i.foundOn))
+  let instancesText = '<strong>Instances:</strong>(' + nonDuplicateInstances.length + ')<ul>'
+  nonDuplicateInstances.forEach(i => {
+    const fragmentUrl = createTextFragmentUrl(i.foundOn, getTextFn(i))
+    instancesText += '<li><a href="' + fragmentUrl + '" target="_blank">' + i.foundOn + '</a><ul>'
+    if (i.title)
+      instancesText += '<li>Title: <strong>' + i.title + '</strong></li>'
+    if (i.text)
+      instancesText += '<li>Text: <strong>' + i.text + '</strong></li>'
+    if (i.alt)
+      instancesText += '<li>Alt: <strong>' + i.alt + '</strong></li>'
+    Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "<li>" + i1 + ": <strong>" + i.tags[i1] + "</strong></li>" : '')
+    instancesText += '</ul></li>'
+  })
+  instancesText += '</ul>'
+  return instancesText
+}
+
+const getPages = () => crawl.all.links.filter(link => {
+  // Exclude malformed URLs with template literal syntax or encoded operators
+  if (link.href.includes("'%20+%20") || link.href.includes("%27%20+%20") || link.href.match(/['"]\s*\+\s*['"]/)) {
+    return false
+  }
+  return isUrlLocal(link.href) && isUrlHTMLFile(link.href) && !isUrlAnchor(link.href) && !isUrlScript(link.href) && !isUrlStyleSheet(link.href)
+})
 const getLinks = () => crawl.all.links.filter(link => (isUrlHTMLFile(link.href) && !isUrlLocal(link.href)) || isUrlAnchor(link.href) || isUrlProtocol(link.href))
 const getFiles = () => crawl.all.links.filter(link => !isUrlHTMLFile(link.href) && !isUrlProtocol(link.href))

@@ -136,17 +136,21 @@ function sortLinks(a, b) {
     return a.href.localeCompare(b.href)
 }
 /**
-* Function to create a delay before performing a task, to avoid multiple calls
+* Function to debounce calls to avoid excessive invocations
 * @param {function} fn - function to call
-* @param {number} md - delay in ms
+* @param {number} ms - delay in ms
+* @returns {function} - debounced function
 */
-function delay(fn, ms) {
+function debounce(fn, ms) {
     let timer = 0;
     return function (...args) {
         clearTimeout(timer);
         timer = setTimeout(fn.bind(this, ...args), ms || 0);
     };
 }
+
+// Alias for backward compatibility
+const delay = debounce
 
 
 /**

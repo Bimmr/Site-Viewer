@@ -4,6 +4,8 @@ let crawl = { all: { media: [], links: [], assets: [] } }
 let crawling = []
 //Cache for page hashes to optimize duplicate detection
 const pageHashCache = new Map()
+//Mutex lock to prevent race conditions
+const crawlLocks = new Set()
 
 // Rate limiting implementation
 let lastCrawlTime = 0
@@ -58,22 +60,39 @@ function removeCSSComments(str) {
  * @param {string} url - URL to validate
  * @returns {boolean} - True if valid, false otherwise
  */
+/**
+ * Validate if a URL is valid and not a template/variable
+ * @param {string} url - URL to validate
+ * @returns {boolean} - True if valid URL
+ */
 function isValidURL(url) {
   if (!url || typeof url !== 'string') return false
   
-  // Filter out template literals and JavaScript expressions
-  if (url.includes('${') || url.includes('%7B') || url.includes('%7D')) return false
-  if (url.includes('{') && url.includes('}')) return false
-  
-  // Filter out JavaScript ternary operators and logical expressions
-  if (url.includes('?') && url.includes(':') && (url.includes("'") || url.includes('"'))) return false
-  
-  // Filter out other variable patterns
-  if (url.match(/\$\w+/)) return false // $variable
-  if (url.match(/\{\{.*\}\}/)) return false // {{variable}}
-  if (url.match(/%[A-Z0-9]{2}%[A-Z0-9]{2}/)) return false // Multiple encoded special chars that suggest template syntax
-  
-  return true
+  try {
+    // Filter out template literals and JavaScript expressions
+    if (url.includes('${') || url.includes('%7B') || url.includes('%7D')) return false
+    if (url.includes('{') && url.includes('}')) return false
+    
+    // Filter out JavaScript ternary operators and logical expressions
+    if (url.includes('?') && url.includes(':') && (url.includes("'") || url.includes('"'))) return false
+    
+    // Filter out other variable patterns
+    if (url.match(/\$\w+/)) return false // $variable
+    if (url.match(/\{\{.*\}\}/)) return false // {{variable}}
+    if (url.match(/%[A-Z0-9]{2}%[A-Z0-9]{2}/)) return false // Multiple encoded special chars that suggest template syntax
+    
+    // Additional validation: try to parse as URL for http/https URLs
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      const urlObj = new URL(url)
+      // Check for invalid characters in hostname
+      if (!urlObj.hostname || urlObj.hostname.includes(' ')) return false
+    }
+    
+    return true
+  } catch (error) {
+    console.warn('Invalid URL detected:', url, error)
+    return false
+  }
 }
 
 /**
@@ -138,6 +157,15 @@ function findDuplicatePage(page, currentUrl) {
 async function crawlURL(url, addToAll = true) {
     return new Promise(async (resolve, reject) => {
   
+      // Check for race condition - if already crawling this URL, skip
+      if (crawlLocks.has(url)) {
+        console.log(`Already crawling ${url}, skipping duplicate request`)
+        return
+      }
+      
+      // Acquire lock
+      crawlLocks.add(url)
+      
       // Show toast notification for crawling
       if (typeof showNotification === 'function') {
         showNotification(`Crawling: ${url}`, 'info', 2000)
@@ -543,6 +571,9 @@ async function crawlURL(url, addToAll = true) {
           //find and remove element from array
           let index = crawling.indexOf(url)
           if (index > -1) crawling.splice(index, 1)
+          
+          // Release lock
+          crawlLocks.delete(url)
 
           // Show completion toast for this URL
           if (typeof showNotification === 'function') {
@@ -558,6 +589,9 @@ async function crawlURL(url, addToAll = true) {
           //find and remove element from array
           let index = crawling.indexOf(url)
           if (index > -1) crawling.splice(index, 1)
+          
+          // Release lock
+          crawlLocks.delete(url)
   
           // Show error toast and next crawl item if there is one
           if (typeof showNotification === 'function') {

@@ -68,6 +68,33 @@ function createTextFragmentUrl(baseUrl, text) {
 }
 
 /**
+ * Create DocumentFragment from HTML string for better performance
+ * @param {string} htmlString - HTML string to convert
+ * @returns {DocumentFragment} - Document fragment containing the HTML elements
+ */
+function createFragment(htmlString) {
+  const template = document.createElement('template')
+  template.innerHTML = htmlString.trim()
+  return template.content
+}
+
+/**
+ * Efficiently render HTML to a container using DocumentFragment
+ * @param {HTMLElement} container - Target container element
+ * @param {string} htmlString - HTML string to render
+ */
+function renderToContainer(container, htmlString) {
+  if (!htmlString || htmlString.length === 0) {
+    container.innerHTML = '<div class="empty-row">There are no items here.</div>'
+    return
+  }
+  
+  const fragment = createFragment(htmlString)
+  container.innerHTML = '' // Clear existing content
+  container.appendChild(fragment)
+}
+
+/**
  * Process the download queue with concurrent limit
  */
 function processDownloadQueue() {
@@ -124,6 +151,16 @@ document.addEventListener("DOMContentLoaded", function () {
   window.onunload = refreshParent;
   function refreshParent() {
     console.log("Refreshing parent window")
+    // Clean up intervals to prevent memory leaks
+    if (window.moreToCrawlInterval) {
+      clearInterval(window.moreToCrawlInterval)
+      window.moreToCrawlInterval = null
+    }
+    // Clean up observer
+    if (window.viewObserver) {
+      window.viewObserver.disconnect()
+      window.viewObserver = null
+    }
     window.close()
   }
 
@@ -344,6 +381,16 @@ document.addEventListener("DOMContentLoaded", function () {
   })
 
   document.querySelector("#settings #recrawlBtn").addEventListener("click", event => {
+    // Clean up any existing intervals
+    if (window.moreToCrawlInterval) {
+      clearInterval(window.moreToCrawlInterval)
+      window.moreToCrawlInterval = null
+    }
+    
+    // Clean up crawling state
+    crawling.length = 0
+    crawlLocks.clear()
+    
     //Reset
     crawl = { all: { media: [], links: [], assets: [] } }
     pageHashCache.clear() // Clear hash cache on recrawl
@@ -443,8 +490,8 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   }))
 
-  //Filter/Searchbar gets typed in
-  document.querySelectorAll(".searchbar .form-item input").forEach(item => item.addEventListener("keyup", delay(function () {
+  //Filter/Searchbar gets typed in (debounced to avoid excessive filtering)
+  document.querySelectorAll(".searchbar .form-item input").forEach(item => item.addEventListener("keyup", debounce(function () {
     let view = item.parentNode.parentNode.parentNode
     let search = item.value.toLowerCase()
     view.querySelectorAll(".view-items .view-row").forEach(item => {
@@ -457,8 +504,8 @@ document.addEventListener("DOMContentLoaded", function () {
   }, 500)))
 
 
-  //Track new items in views and indiciate if new
-  let observer = new MutationObserver(function (mutations) {
+  //Track new items in views and indicate if new
+  window.viewObserver = new MutationObserver(function (mutations) {
     mutations.forEach(function (mutation) {
       let view = mutation.target.parentNode.parentNode.id
       if (mutation.target.children.length !== lastCounts[view] && mutation.target.children.length > lastCounts[view]) {
@@ -471,7 +518,7 @@ document.addEventListener("DOMContentLoaded", function () {
   })
   //Watch all view items for changes
   document.querySelectorAll(".view .view-items").forEach(item => {
-    observer.observe(item, { childList: true })
+    window.viewObserver.observe(item, { childList: true })
   })
 
 })
@@ -1057,12 +1104,8 @@ function updatePages() {
         </div>
       `
   })
-  //Add html to page
-  if (html.length > 0)
-    wrapper.innerHTML = html
-  else
-    wrapper.innerHTML = `<div class="empty-row">There are no items here.</div>`
-
+  //Add html to page using DocumentFragment for better performance
+  renderToContainer(wrapper, html)
 }
 
 /** 

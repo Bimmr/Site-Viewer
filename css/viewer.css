@@ -604,6 +604,73 @@ hr {
   color: var(--colourAccent);
 }
 
+/* Settings card styling */
+#settings .settings-card {
+  margin-bottom: 25px;
+  border-left: 4px solid transparent;
+  transition: border-color 0.3s;
+}
+
+#settings .settings-card:nth-child(1) {
+  border-left-color: #FF6B6B;
+}
+
+#settings .settings-card:nth-child(2) {
+  border-left-color: #4ECDC4;
+}
+
+#settings .settings-card:nth-child(3) {
+  border-left-color: #45B7D1;
+}
+
+#settings .settings-card:nth-child(4) {
+  border-left-color: #96CEB4;
+}
+
+#settings .settings-card:nth-child(5) {
+  border-left-color: #FECA57;
+}
+
+#settings .settings-card:nth-child(6) {
+  border-left-color: #FF9FF3;
+}
+
+#settings .card-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.2em;
+  margin-bottom: 15px;
+}
+
+#settings .card-title i {
+  font-size: 1.1em;
+  opacity: 0.8;
+}
+
+#settings .card p {
+  margin-bottom: 10px;
+  line-height: 1.6;
+}
+
+/* Settings warning box */
+.settings-warning {
+  background: #FFF3CD;
+  border: 1px solid #FFC107;
+  border-radius: 6px;
+  padding: 12px 15px;
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #856404;
+}
+
+.settings-warning i {
+  color: #FFC107;
+  font-size: 1.1em;
+}
+
 /* Overview grid layout */
 #overview .view-wrapper {
   display: grid;
@@ -870,13 +937,15 @@ hr {
   transition: top 0.3s, right 0.5s;
   right: 5px;
   width: 300px;
-  background: #4c4c4c;
-  border-radius: 5px;
+  background: #fff;
+  border-radius: 8px;
   display: flex;
   flex-flow: row nowrap;
-  padding: 10px;
-  color: #fff;
-  box-shadow: 0 1px 4px 1px rgba(0, 0, 0, .14);
+  padding: 0;
+  color: #666;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  width: 50%;
+  overflow: hidden;
 }
 
 .view:not(.active) .searchbar.active {
@@ -885,20 +954,36 @@ hr {
 
 .searchbar.active {
   top: 10px;
+  z-index: 1;
+  right: 2%;
 }
 
-.searchbar .form-item input[type="text"] {
-  flex-basis: 90%;
-  max-width: 90%;
-  margin: 0;
-  padding: 0;
-  color: #fff;
+.searchbar .form-item {
+  display: flex;
+  align-items: center;
 }
 
 .searchbar .form-item .icon {
-  flex-basis: 10%;
-  border-left: 1px solid #888;
-  padding-left: 10px;
+  padding: 12px 15px;
+  color: #999;
+  background: #f5f5f5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.searchbar .form-item input[type="text"] {
+  flex: 1;
+  margin: 0;
+  padding: 12px 15px;
+  color: #333;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+}
+
+.searchbar .form-item input[type="text"]::placeholder {
+  color: #999;
 }
 .combine-settings{
   max-height: 0px;

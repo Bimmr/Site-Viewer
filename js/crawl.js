@@ -138,10 +138,10 @@ function findDuplicatePage(page, currentUrl) {
 async function crawlURL(url, addToAll = true) {
     return new Promise(async (resolve, reject) => {
   
-      //Update crawling view with crawling info
-      if (crawling.length === 0)
-        document.querySelector("#crawlingSiteText").textContent = url
-      document.querySelector("#crawling").classList.add("active")
+      // Show toast notification for crawling
+      if (typeof showNotification === 'function') {
+        showNotification(`Crawling: ${url}`, 'info', 2000)
+      }
   
       //Remove any old filter and search stuff
       document.querySelectorAll(".filter-icon").forEach(item => item.classList.remove("active"))
@@ -543,24 +543,29 @@ async function crawlURL(url, addToAll = true) {
           //find and remove element from array
           let index = crawling.indexOf(url)
           if (index > -1) crawling.splice(index, 1)
-  
-          //Remove Crawling overlay if not crawling anything else, otherwise update crawling text to the next thing thats been crawling the longest
-          if (crawling.length == 0)
-            document.querySelector("#crawling").classList.remove("active")
-          else
-            document.querySelector("#crawlingSiteText").textContent = crawling[0]
-  
-          resolve(page)
-  
-        }).catch(error => {
+
+          // Show completion toast for this URL
+          if (typeof showNotification === 'function') {
+            showNotification(`Crawl completed: ${url}`, 'success', 3000)
+            // Show next crawl item if there is one
+            if (crawling.length > 0) {
+              showNotification(`Crawling: ${crawling[0]}`, 'info', 5000)
+            }
+          }
+
+          resolve(page)        }).catch(error => {
   
           //find and remove element from array
           let index = crawling.indexOf(url)
           if (index > -1) crawling.splice(index, 1)
   
-          //Remove crawling overlay if not crawling anything else
-          if (crawling.length == 0)
-            document.querySelector("#crawling").classList.remove("active")
+          // Show error toast and next crawl item if there is one
+          if (typeof showNotification === 'function') {
+            showNotification(`Failed to crawl: ${url}`, 'error', 5000)
+            if (crawling.length > 0) {
+              showNotification(`Crawling: ${crawling[0]}`, 'info', 5000)
+            }
+          }
           
           // Log detailed error for debugging
           console.error(`Failed to crawl ${url}:`, error)

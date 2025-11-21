@@ -2,6 +2,57 @@
 //Track lastHTML to show what has changed
 let lastCounts = { pages: 1, assets: 1, links: 1, files: 1, media: 1 }
 
+// Download queue management
+const DOWNLOAD_QUEUE = {
+  queue: [],
+  active: 0,
+  maxConcurrent: 3
+}
+
+// Constants for magic numbers
+const BLOB_CLEANUP_DELAY = 2000 // ms
+const TEXT_FRAGMENT_MAX_LENGTH = 50 // characters
+
+/**
+ * Show a toast notification to the user
+ * @param {string} message - The message to display
+ * @param {string} type - The type of notification ('success', 'error', 'info')
+ * @param {number} duration - How long to show the notification in ms (default: 2000)
+ */
+function showNotification(message, type = 'info', duration = 2000) {
+  // Create or get the notification container
+  let container = document.querySelector('.notification-container')
+  if (!container) {
+    container = document.createElement('div')
+    container.className = 'notification-container'
+    document.body.appendChild(container)
+  }
+  
+  // Create notification
+  const notification = document.createElement('div')
+  notification.className = `download-notification ${type}`
+  notification.textContent = message
+  container.appendChild(notification)
+  
+  // Set the countdown animation duration to match the toast duration
+  notification.style.setProperty('--duration', `${duration}ms`)
+  
+  // Trigger animation
+  setTimeout(() => notification.classList.add('show'), 10)
+  
+  // Auto remove
+  setTimeout(() => {
+    notification.classList.remove('show')
+    setTimeout(() => {
+      notification.remove()
+      // Remove container if empty
+      if (container.children.length === 0) {
+        container.remove()
+      }
+    }, 300)
+  }, duration)
+}
+
 /**
  * Helper function to create a URL with text fragment for scroll-to-text functionality
  * @param {string} baseUrl - The base URL
@@ -12,8 +63,32 @@ function createTextFragmentUrl(baseUrl, text) {
   if (!text) return baseUrl
   
   // Encode the text for URL and limit to first 50 characters for reliability
-  const textForFragment = encodeURIComponent(text.trim().substring(0, 50))
+  const textForFragment = encodeURIComponent(text.trim().substring(0, TEXT_FRAGMENT_MAX_LENGTH))
   return baseUrl + '#:~:text=' + textForFragment
+}
+
+/**
+ * Process the download queue with concurrent limit
+ */
+function processDownloadQueue() {
+  while (DOWNLOAD_QUEUE.active < DOWNLOAD_QUEUE.maxConcurrent && DOWNLOAD_QUEUE.queue.length > 0) {
+    const downloadFn = DOWNLOAD_QUEUE.queue.shift()
+    DOWNLOAD_QUEUE.active++
+    
+    downloadFn().finally(() => {
+      DOWNLOAD_QUEUE.active--
+      processDownloadQueue()
+    })
+  }
+}
+
+/**
+ * Queue a download to prevent overwhelming the browser
+ * @param {Function} downloadFn - Function that returns a Promise for the download
+ */
+function queueDownload(downloadFn) {
+  DOWNLOAD_QUEUE.queue.push(downloadFn)
+  processDownloadQueue()
 }
 
 //Settings
@@ -301,10 +376,30 @@ document.addEventListener("DOMContentLoaded", function () {
       multiWrapper.classList.remove("active")
   }))
 
-  //Download all button
+  //Download all button with queue management
   document.querySelectorAll(".downloadSelected").forEach(item => item.addEventListener("click", event => {
     let items = document.querySelectorAll(".view.active .view-items .select input:checked")
-    items.forEach(item => item.parentNode.parentNode.querySelector("a.download i")?.click())
+    const totalItems = items.length
+    
+    if (totalItems === 0) {
+      showNotification('No items selected', 'warning')
+      return
+    }
+    
+    showNotification(`Queueing ${totalItems} download${totalItems > 1 ? 's' : ''}...`, 'info')
+    
+    items.forEach(item => {
+      const downloadIcon = item.parentNode.parentNode.querySelector("a.download i")
+      if (downloadIcon) {
+        queueDownload(() => {
+          return new Promise(resolve => {
+            downloadIcon.click()
+            // Small delay between downloads
+            setTimeout(resolve, 200)
+          })
+        })
+      }
+    })
   }))
 
   //Test all button
@@ -458,7 +553,7 @@ function updateAll() {
             }
 
             //Create blob
-            let fileBlob = new Blob([pageDoc.querySelector("html").outerHTML], { type: "plain/text" });
+            let fileBlob = new Blob([pageDoc.querySelector("html").outerHTML], { type: "text/html" });
             blobUrl = URL.createObjectURL(fileBlob);
 
             //Save blob to localstorage
@@ -468,7 +563,26 @@ function updateAll() {
             url = blobUrl
 
             console.log("Sending to download")
-            chrome.downloads.download({ url })
+            showNotification('Starting download...', 'info')
+            
+            chrome.downloads.download({ 
+              url,
+              saveAs: false,
+              conflictAction: 'uniquify'
+            }, (downloadId) => {
+              if (chrome.runtime.lastError) {
+                console.error("Download failed:", chrome.runtime.lastError)
+                showNotification('Download failed: ' + chrome.runtime.lastError.message, 'error', 5000)
+              } else {
+                console.log("Download started with ID:", downloadId)
+                showNotification('Download started successfully', 'success')
+                // Cleanup blob URL after a delay to ensure download has started
+                setTimeout(() => {
+                  URL.revokeObjectURL(blobUrl)
+                  storageSet(blobUrl, null)
+                }, BLOB_CLEANUP_DELAY)
+              }
+            })
 
           }
 
@@ -591,85 +705,73 @@ function updateAll() {
             })
           }
 
-          //Convert all imgs
+          /**
+           * Convert all images to data URLs for embedding
+           * @param {Document} pageDoc - The document to process
+           * @returns {Promise<Document>} The processed document
+           */
           async function convertAllImages(pageDoc) {
             return new Promise(done => {
               let images = pageDoc.querySelectorAll('img[src]:not([src^=data]), img[data-src], *[style*="background"]')
               let imagePromises = []
+              let successCount = 0
+              let failureCount = 0
+              
               images.forEach(image => {
                 imagePromises.push(new Promise((resolveImage, rejectImage) => {
-                  let isImageTag = image.tagName.toLowerCase() === "img"
-                  let src = image.src || image.getAttribute("data-src")
-                  console.log(!isImageTag, image.style.cssText.match(imageUrlRegex))
-                  if (!isImageTag && image.style.cssText.match(imageUrlRegex)) {
-                    src = imageUrlRegex.exec(element.style.cssText).groups.image
-                    imageUrlRegex.lastIndex = 0;
+                  try {
+                    let isImageTag = image.tagName.toLowerCase() === "img"
+                    let src = image.src || image.getAttribute("data-src")
+                    
+                    if (!isImageTag && image.style.cssText.match(imageUrlRegex)) {
+                      src = imageUrlRegex.exec(image.style.cssText).groups.image
+                      imageUrlRegex.lastIndex = 0;
+                    }
+                    
+                    if (!src) {
+                      console.warn('No source found for image, skipping')
+                      return resolveImage()
+                    }
+                    
+                    let img = createImageObject(baseUrl, null, src)
+                    toDataURL(img.src).then(dataUrl => {
+                      console.log("Successfully converted image:", src)
+                      if (isImageTag)
+                        image.src = dataUrl
+                      else
+                        image.style = image.style.cssText.replace(new RegExp(src, "g"), dataUrl)
+                      successCount++
+                      resolveImage()
+                    }).catch(err => {
+                      console.error("Failed to convert image:", src, err)
+                      failureCount++
+                      resolveImage() // Resolve anyway to continue processing
+                    })
+                  } catch (err) {
+                    console.error('Error processing image:', err)
+                    failureCount++
+                    resolveImage() // Resolve to continue
                   }
-                  console.log(src)
-                  let img = createImageObject(baseUrl, null, src)
-                  toDataURL(img.src).then(dataUrl => {
-                    console.log("Wants to replace", src, "with", "...")
-                    if (isImageTag)
-                      image.src = dataUrl
-                    else
-                      image.style = image.style.cssText.replace(new RegExp(src, "g"), dataUrl)
-                    resolveImage()
-                  }).catch(err => rejectImage(err))
                 })
                 )
               })
+              
               Promise.allSettled(imagePromises).then(data => {
+                console.log(`Image conversion complete: ${successCount} succeeded, ${failureCount} failed`)
+                if (failureCount > 0) {
+                  showNotification(`Warning: ${failureCount} images failed to convert`, 'warning', 3000)
+                }
                 done(pageDoc)
               })
             })
           }
-          async function convertAllImages1(pageDoc) {
-            return new Promise(resolve => {
-              if (pageDoc.querySelectorAll('img[src], *[style*="background"]').length === 0) resolve(pageDoc)
-
-              let count = 0
-
-              pageDoc.querySelectorAll('img[src], *[style*="background"], img[data-src]').forEach(element => {
-
-                let isBackground = element.tagName === "IMG" ? false : true
-                let src
-                if (isBackground && element.style.cssText.match(imageUrlRegex)) {
-                  src = imageUrlRegex.exec(element.style.cssText).groups.image
-                  imageUrlRegex.lastIndex = 0;
-                }
-                else if (!isBackground) {
-                  src = element.src || element.getAttribute("data-src")
-                } else
-                  return
-                console.log(src)
-
-                let img = createImageObject(url, isBackground ? element.src : null, src)
-                if (!settings.combine.onlyLocal || (settings.combine.onlyLocal && img.tags.isLocal)) {
-                  count++
-                  toDataURL(img.src).then(dataUrl => {
-                    let srcToReplace = img._src || img.src
-                    if (isBackground)
-                      element.style.cssText = element.style.cssText.replace(new RegExp(srcToReplace, "g"), dataUrl)
-                    else
-                      element.src = dataUrl
-                    count--
-                    if (count === 0)
-                      resolve(pageDoc)
-                  }).catch(() => {
-                    count--
-                    if (count === 0)
-                      resolve(pageDoc)
-                    else
-                      return
-                  })
-                }
-              })
-            })
-          }
-
         })
 
-
+        /**
+         * Crawl a URL if it hasn't been crawled yet
+         * @param {string} url - The URL to crawl
+         * @returns {Promise} Promise that resolves to the crawled page data
+         */
         function crawlIfNeeded(url) {
           return new Promise((resolve, reject) => {
             if (Object.keys(crawl).find(i => i === url))
@@ -681,7 +783,21 @@ function updateAll() {
 
       } else {
         console.log("Simple Download")
-        chrome.downloads.download({ url })
+        showNotification('Starting download...', 'info')
+        
+        chrome.downloads.download({ 
+          url,
+          saveAs: false,
+          conflictAction: 'uniquify'
+        }, (downloadId) => {
+          if (chrome.runtime.lastError) {
+            console.error("Download failed:", chrome.runtime.lastError)
+            showNotification('Download failed: ' + chrome.runtime.lastError.message, 'error', 3000)
+          } else {
+            console.log("Download started with ID:", downloadId)
+            showNotification('Download started successfully', 'success')
+          }
+        })
       }
     }
   })
@@ -999,7 +1115,7 @@ function setupPopup(url) {
       `</div>
             </div>
           </div>
-        </div>
+          </div>
         </div>
       </div>
       `
@@ -1027,8 +1143,10 @@ function setupPopup(url) {
         <div class="view-row">
            
           <div class="image">`
-    if (isImage)
-      html.media += '<img src="' + file.src + '">'
+    if (isImage) {
+      const altText = file.instances && file.instances[0] && file.instances[0].alt ? file.instances[0].alt : ''
+      html.media += '<img src="' + file.src + '" alt="' + altText + '" title="' + altText + '">'
+    }
     else html.media += getFAIcon(file.src)
     html.media += `</div>
           <div class="link">`+
@@ -1037,7 +1155,6 @@ function setupPopup(url) {
        <div class="tools">
         <a class="goto" target="_blank" href="` + file.src + `" title="Open Image"><i class="fas fa-external-link-alt"></i></a>
          <a class="download" href="`+ file.src + `" title="Download Image"><i class="fas fa-file-download"></i></a>
-         </div>
          <div class="info">
          <div class="hover-popup-icon">
             <span class="fa-stack fa-1x">
@@ -1050,6 +1167,7 @@ function setupPopup(url) {
       `</div>
       </div>
               </div>
+         </div>
        </div>
      </div>
      `
@@ -1187,13 +1305,13 @@ function updateLinks() {
       `</div>
         <div class="tools"><a class="goto" target="_blank" href="` + link.href + `" title="Open link"><i class="fas fa-external-link-alt"></i></a>`
     if (!isUrlProtocol(link.href) && !isUrlAnchor(link.href)) {
-      if (link.test == null)
+      if (!link.test || link.test === null)
         html += '<a class="test" target="_blank" href="' + link.href + '" title="Test the link"><i class="fas fa-question-circle"></i></a>'
-      if (link.test == "success")
+      else if (link.test === "success")
         html += '<a class="success" target="_blank" href="' + link.href + '" title="Link is valid"><i class="fas fa-check-circle"></i></a>'
-      else if (link.test == "warning")
+      else if (link.test === "warning")
         html += '<a class="warning" target="_blank" href="' + link.href + '" title="Returned a status code of ' + link.statusCode + '"><i class="fas fa-exclamation-circle"></i></a>'
-      else if (link.test == "failed")
+      else if (link.test === "failed")
         html += '<a class="error" target="_blank" href="' + link.href + '" title="Test the link"><i class="fas fa-exclamation-circle"></i></a>'
     }
     html += `<div class="info">
@@ -1318,8 +1436,10 @@ function updateMedia() {
             <input type="checkbox">
           </div>
           <div class="image">`
-    if (isImage)
-      html += '<img class="expand-image"  src="' + file.src + '">'
+    if (isImage) {
+      const altText = file.instances && file.instances[0] && file.instances[0].alt ? file.instances[0].alt : ''
+      html += '<img class="expand-image" src="' + file.src + '" alt="' + altText + '" title="' + altText + '">'
+    }
     else html += getFAIcon(file.src)
     html += `</div>
           <div class="link">`+
@@ -1359,22 +1479,49 @@ const isDuplicatePage = (url) => {
   return page && page.isDuplicate
 }
 
-// Helper function to filter and format instances, excluding duplicates
+/**
+ * Helper function to filter and format instances, excluding duplicates
+ * Groups instances by foundOn URL and shows count suffix for multiple occurrences
+ * @param {Array} instances - Array of instance objects
+ * @param {Function} getTextFn - Function to extract text for fragment URL
+ * @returns {string} Formatted HTML string of instances
+ */
 const formatInstances = (instances, getTextFn) => {
   const nonDuplicateInstances = instances.filter(i => !isDuplicatePage(i.foundOn))
+  
+  // Group instances by foundOn URL
+  const groupedInstances = new Map()
+  nonDuplicateInstances.forEach(instance => {
+    const url = instance.foundOn
+    if (!groupedInstances.has(url)) {
+      groupedInstances.set(url, [])
+    }
+    groupedInstances.get(url).push(instance)
+  })
+  
   let instancesText = '<strong>Instances:</strong>(' + nonDuplicateInstances.length + ')<ul>'
-  nonDuplicateInstances.forEach(i => {
-    const fragmentUrl = createTextFragmentUrl(i.foundOn, getTextFn(i))
-    instancesText += '<li><a href="' + fragmentUrl + '" target="_blank">' + i.foundOn + '</a><ul>'
-    if (i.title)
-      instancesText += '<li>Title: <strong>' + i.title + '</strong></li>'
-    if (i.text)
-      instancesText += '<li>Text: <strong>' + i.text + '</strong></li>'
-    if (i.alt)
-      instancesText += '<li>Alt: <strong>' + i.alt + '</strong></li>'
-    Object.keys(i.tags).forEach(i1 => instancesText += i.tags[i1] ? "<li>" + i1 + ": <strong>" + i.tags[i1] + "</strong></li>" : '')
+  
+  groupedInstances.forEach((instanceGroup, url) => {
+    const count = instanceGroup.length
+    const firstInstance = instanceGroup[0]
+    const fragmentUrl = createTextFragmentUrl(url, getTextFn(firstInstance))
+    
+    // Add count suffix if multiple instances on same page
+    const countSuffix = count > 1 ? ` (${count})` : ''
+    instancesText += '<li><a href="' + fragmentUrl + '" target="_blank">' + url + countSuffix + '</a><ul>'
+    
+    // Show details from first instance
+    if (firstInstance.title)
+      instancesText += '<li>Title: <strong>' + firstInstance.title + '</strong></li>'
+    if (firstInstance.text)
+      instancesText += '<li>Text: <strong>' + firstInstance.text + '</strong></li>'
+    if (firstInstance.alt)
+      instancesText += '<li>Alt: <strong>' + firstInstance.alt + '</strong></li>'
+    Object.keys(firstInstance.tags).forEach(i1 => instancesText += firstInstance.tags[i1] ? "<li>" + i1 + ": <strong>" + firstInstance.tags[i1] + "</strong></li>" : '')
+    
     instancesText += '</ul></li>'
   })
+  
   instancesText += '</ul>'
   return instancesText
 }

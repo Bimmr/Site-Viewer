@@ -28,6 +28,80 @@ hr {
   display: none !important;
 }
 
+/* Download notification styles */
+.notification-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.download-notification {
+  padding: 15px 20px;
+  border-radius: 5px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-family: 'Roboto', sans-serif;
+  font-size: 14px;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.3s, transform 0.3s;
+  max-width: 300px;
+  word-wrap: break-word;
+  pointer-events: auto;
+  position: relative;
+  overflow: hidden;
+}
+
+.download-notification::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  width: 100%;
+  background-color: rgba(255, 255, 255, 0.5);
+  transform-origin: right;
+  animation: countdown var(--duration, 3000ms) linear forwards;
+}
+
+.download-notification.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.download-notification.success {
+  background-color: #4caf50;
+  color: white;
+}
+
+.download-notification.error {
+  background-color: #f44336;
+  color: white;
+}
+
+.download-notification.warning {
+  background-color: #ff9800;
+  color: white;
+}
+
+.download-notification.info {
+  background-color: #2196F3;
+  color: white;
+}
+
+@keyframes countdown {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
 #body-wrapper {
   display: flex;
 }
@@ -361,6 +435,23 @@ hr {
   grid-template-columns: 50px 2fr 4fr 1fr;
 }
 
+/* Popup view grid definitions */
+#popup-view-links .view-row {
+  grid-template-columns: 100px 4fr 1fr;
+}
+
+#popup-view-files .view-row {
+  grid-template-columns: 100px 4fr 1fr;
+}
+
+#popup-view-assets .view-row {
+  grid-template-columns: 80px 1fr 150px;
+}
+
+#popup-view-media .view-row {
+  grid-template-columns: 2fr 4fr 1fr;
+}
+
 .view-row .tools i {
   font-size: 1.5em;
   padding: 5px 10px;
@@ -440,49 +531,6 @@ hr {
 
 .view .multi-wrapper.active, .popup-view .multi-wrapper.active {
   bottom: 0;
-}
-
-/* Crawling View */
-
-#crawling.view {
-  background: #fff;
-  right: 0;
-  overflow: hidden;
-  height: 100vh;
-  opacity: 0;
-  z-index: 0;
-}
-
-#crawling.view.active {
-  opacity: .75;
-  right: 0;
-  z-index: 99;
-}
-
-#crawling .view-wrapper {
-  height: 100%;
-  display: flex;
-  flex-flow: column;
-  justify-content: center;
-  align-items: center;
-}
-
-#crawling i {
-  margin-top: 0.5em;
-}
-
-#crawling .icon-wrapper {
-  color: #333;
-  animation: 1s linear 0.2s infinite alternate loadingCrawl;
-}
-
-@keyframes loadingCrawl {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0.5;
-  }
 }
 
 /* Main View */

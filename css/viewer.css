@@ -40,7 +40,7 @@ hr {
   pointer-events: none;
 }
 
-.download-notification {
+.toast-notification {
   padding: 15px 20px;
   border-radius: 5px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
@@ -56,7 +56,7 @@ hr {
   overflow: hidden;
 }
 
-.download-notification::after {
+.toast-notification::after {
   content: '';
   position: absolute;
   bottom: 0;
@@ -68,27 +68,27 @@ hr {
   animation: countdown var(--duration, 3000ms) linear forwards;
 }
 
-.download-notification.show {
+.toast-notification.show {
   opacity: 1;
   transform: translateY(0);
 }
 
-.download-notification.success {
+.toast-notification.success {
   background-color: #4caf50;
   color: white;
 }
 
-.download-notification.error {
+.toast-notification.error {
   background-color: #f44336;
   color: white;
 }
 
-.download-notification.warning {
+.toast-notification.warning {
   background-color: #ff9800;
   color: white;
 }
 
-.download-notification.info {
+.toast-notification.info {
   background-color: #2196F3;
   color: white;
 }
@@ -143,18 +143,25 @@ hr {
   position: relative;
   display: flex;
   flex-flow: row nowrap;
+  align-items: center;
   border-radius: 5px;
-  transition: background-color .2s;
+  transition: background-color .3s, transform .2s;
 }
 
 .sidebar-item:hover {
-  background-color: rgba(155, 155, 155, .3);
+  background-color: rgba(155, 155, 155, .2);
   cursor: pointer;
+}
+
+.sidebar-item:not(.active):hover {
+  background-color: rgba(155, 155, 155, .15);
+  transform: translateX(2px);
 }
 
 .sidebar-item.active {
   box-shadow: 0 12px 20px -10px rgba(76, 175, 80, .28), 0 4px 20px 0 rgba(0, 0, 0, .12), 0 7px 8px -5px rgba(76, 175, 80, .2);
   background-color: var(--colourAccent);
+  border-left: 4px solid rgba(255, 255, 255, .5);
 }
 
 .sidebar .sidebar-item i {
@@ -191,19 +198,6 @@ hr {
   background-color: rgba(180, 180, 180, .3);
 }
 
-.sidebar-item .newContent {
-  counter-increment: newContentDelay;
-  animation: 0.65s linear 0.2s infinite alternate newContentFlashing;
-  color: var(--colourAccent);
-  padding-left: 5px;
-  display: none;
-  font-size: .7em;
-  position: absolute;
-  left: -7px;
-  top: -1px;
-  opacity: 0.25;
-}
-
 /* .sidebar-item:nth-child(2) .newContent {
   animation-delay: 0.6s;
 }
@@ -224,6 +218,41 @@ hr {
   100% {
     opacity: 1;
   }
+}
+
+/* Count badges */
+.sidebar-item .count-badge {
+  margin-left: auto;
+  background-color: rgba(0, 0, 0, .15);
+  color: #fff;
+  border-radius: 12px;
+  padding: 2px 8px;
+  font-size: 0.75em;
+  font-weight: 600;
+  min-width: 20px;
+  text-align: center;
+  transition: background-color .3s;
+  position: relative;
+}
+
+.sidebar-item .newContent {
+  counter-increment: newContentDelay;
+  animation: 0.65s linear 0.2s infinite alternate newContentFlashing;
+  color: var(--colourAccent);
+  display: none;
+  font-size: 0.6em;
+  position: absolute;
+  left: -3px;
+  top: -3px;
+  opacity: 0.25;
+}
+
+.sidebar-item.active .count-badge {
+  background-color: rgba(255, 255, 255, .25);
+}
+
+.sidebar-item:not(.active):hover .count-badge {
+  background-color: rgba(0, 0, 0, .25);
 }
 
 .sidebar-item .newContent.active {
@@ -365,11 +394,13 @@ hr {
 .view-row {
   width: 100%;
   padding: 5px 0;
-  transition: background 0.3s;
+  transition: background 0.2s, border-left 0.2s;
+  border-left: 3px solid transparent;
 }
 
 .view-row:hover {
-  background: rgba(97, 72, 72, 0.1)
+  background: #f5f5f5;
+  border-left-color: var(--colourAccent);
 }
 
 .view-title>* {
@@ -501,6 +532,21 @@ hr {
   padding: 5em 0;
   width: 100%;
   text-align: center;
+  color: #999;
+  font-size: 1.1em;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1em;
+}
+
+.view-items .empty-row::before {
+  content: '\f071';
+  font-family: 'Font Awesome 6 Free';
+  font-weight: 900;
+  font-size: 3em;
+  color: #ccc;
+  display: block;
 }
 
 .view-title .filter-icon {
@@ -545,6 +591,8 @@ hr {
   font-size: 5em;
   text-align: center;
   padding: 10px;
+  font-weight: 300;
+  margin: 0;
 }
 
 #overview .title {
@@ -554,6 +602,122 @@ hr {
 
 #overview .card-title, #overview .title h1, #settings .card-title {
   color: var(--colourAccent);
+}
+
+/* Overview grid layout */
+#overview .view-wrapper {
+  display: grid;
+  grid-template-rows: 2fr 3fr 3fr;
+  gap: 10px;
+  height: 100%;
+}
+
+#overview .view-wrapper > .row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+/* Individual card styling with colors and icons */
+#overview .card {
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Remove hover effect from first card (title card) */
+#overview .view-wrapper > .card:first-child {
+  cursor: default;
+}
+
+#overview .view-wrapper > .card:first-child:hover {
+  transform: none;
+  box-shadow: 2px 3px 6px rgba(0, 0, 0, 0.25);
+}
+
+#overview .card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+}
+
+#overview .card .card-title {
+  font-size: 1.5em;
+  font-weight: 500;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+#overview .card .card-title::before {
+  font-family: 'Font Awesome 6 Free';
+  font-weight: 900;
+  font-size: 1.3em;
+  opacity: 0.8;
+}
+
+/* Pages card - Blue */
+#overview .row:nth-child(2) .card:nth-child(1) {
+  border-top: 4px solid #2196F3;
+}
+#overview .row:nth-child(2) .card:nth-child(1) .card-title {
+  color: #2196F3;
+}
+#overview .row:nth-child(2) .card:nth-child(1) .card-title::before {
+  content: '\f0ac';
+  color: #2196F3;
+}
+
+/* Assets card - Purple */
+#overview .row:nth-child(2) .card:nth-child(2) {
+  border-top: 4px solid #9C27B0;
+}
+#overview .row:nth-child(2) .card:nth-child(2) .card-title {
+  color: #9C27B0;
+}
+#overview .row:nth-child(2) .card:nth-child(2) .card-title::before {
+  content: '\f56e';
+  color: #9C27B0;
+}
+
+/* Links card - Orange */
+#overview .row:nth-child(2) .card:nth-child(3) {
+  border-top: 4px solid #FF9800;
+}
+#overview .row:nth-child(2) .card:nth-child(3) .card-title {
+  color: #FF9800;
+}
+#overview .row:nth-child(2) .card:nth-child(3) .card-title::before {
+  content: '\f0c1';
+  color: #FF9800;
+}
+
+/* Files card - Teal */
+#overview .row:nth-child(3) .card:nth-child(1) {
+  border-top: 4px solid #009688;
+}
+#overview .row:nth-child(3) .card:nth-child(1) .card-title {
+  color: #009688;
+}
+#overview .row:nth-child(3) .card:nth-child(1) .card-title::before {
+  content: '\f15b';
+  color: #009688;
+}
+
+/* Media card - Pink */
+#overview .row:nth-child(3) .card:nth-child(2) {
+  border-top: 4px solid #E91E63;
+}
+#overview .row:nth-child(3) .card:nth-child(2) .card-title {
+  color: #E91E63;
+}
+#overview .row:nth-child(3) .card:nth-child(2) .card-title::before {
+  content: '\f03e';
+  color: #E91E63;
 }
 
 #overview .hover-popup-icon {

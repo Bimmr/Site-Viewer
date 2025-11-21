@@ -30,7 +30,7 @@ function showNotification(message, type = 'info', duration = 2000) {
   
   // Create notification
   const notification = document.createElement('div')
-  notification.className = `download-notification ${type}`
+  notification.className = `toast-notification ${type}`
   notification.textContent = message
   container.appendChild(notification)
   
@@ -236,6 +236,20 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   }))
 
+  // Overview card click handlers - navigate to respective views
+  const overviewCards = document.querySelectorAll("#overview .card")
+  const sidebarItems = document.querySelectorAll(".sidebar-item")
+  
+  overviewCards.forEach((card, index) => {
+    card.addEventListener("click", () => {
+      // Cards map to sidebar items: Pages(0), Assets(1), Links(2), Files(3), Media(4)
+      const targetSidebarItem = sidebarItems[index]
+      if (targetSidebarItem) {
+        targetSidebarItem.click()
+      }
+    })
+  })
+
   document.querySelector(".crawlAllBtn").addEventListener("click", event => {
     // Prevent multiple intervals from being created
     if (window.moreToCrawlInterval) {
@@ -412,7 +426,8 @@ document.addEventListener("DOMContentLoaded", function () {
   document.querySelectorAll(".crawlSelected").forEach(item => item.addEventListener("click", event => {
     let items = document.querySelectorAll(".view.active .view-items .select input:checked")
     items.forEach(item => item.parentNode.parentNode.querySelector("a.crawl i")?.click())
-    document.querySelector(".view.active .view-title .select input:checked").checked = false
+    const titleCheckbox = document.querySelector(".view.active .view-title .select input:checked")
+    if (titleCheckbox) titleCheckbox.checked = false
   }))
 
   //Filter Icons for links
@@ -886,8 +901,11 @@ function updateOverview() {
 
   //Get all counters in overview
   let countElements = document.querySelectorAll("#overview .count")
+  let sidebarBadges = document.querySelectorAll(".sidebar-item .count-badge")
+  
   for (let i = 0; i < countElements.length; i++) {
     const element = countElements[i]
+    const badge = sidebarBadges[i]
     const target = targetCount[i]
 
     //Have a nice animation counting up to the new count
@@ -896,10 +914,29 @@ function updateOverview() {
       const speed = 5000
       const inc = target / speed;
       if (count < target) {
-        element.innerText = Math.ceil(count + inc)
+        const newCount = Math.ceil(count + inc)
+        element.innerText = newCount
+        if (badge) {
+          // For pages badge (index 0), show crawled/total format
+          if (i === 0) {
+            const crawledPages = getPages().filter(link => link.isCrawled).length
+            badge.innerText = `${crawledPages}/${newCount}`
+          } else {
+            badge.innerText = newCount
+          }
+        }
         setTimeout(updateCount, 1)
       } else {
         element.innerText = target
+        if (badge) {
+          // For pages badge (index 0), show crawled/total format
+          if (i === 0) {
+            const crawledPages = getPages().filter(link => link.isCrawled).length
+            badge.innerText = `${crawledPages}/${target}`
+          } else {
+            badge.innerText = target
+          }
+        }
       }
     }
     updateCount()

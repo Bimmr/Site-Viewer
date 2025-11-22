@@ -167,10 +167,13 @@ hr {
 .sidebar .sidebar-item i {
   margin-right: 20px;
   padding-left: 4px;
+  display: flex;
+  align-items: center;
   justify-content: center;
   line-height: 30px;
   opacity: .8;
   width: 32px;
+  height: 32px;
 }
 
 .sidebar .sidebar-item.active i {

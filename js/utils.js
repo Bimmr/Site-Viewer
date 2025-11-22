@@ -8,7 +8,16 @@ const isUrlProtocol = url => isUrlProtocolMailto(url) || isUrlProtocolTel(url)
 const isUrlProtocolMailto = url => url.includes('mailto:')
 const isUrlProtocolTel = url => url.includes('tel:')
 const isUrlLocal = url => (url.toLowerCase().includes(hostURL.toLowerCase()) && url.toLowerCase().indexOf(hostURL.toLowerCase()) === 0) || (!url.match(httpRegex) && !isUrlProtocol(url))
-const isUrlAnchor = url => url.includes("#")
+const isUrlAnchor = url => {
+  if (!url.includes("#")) return false
+  try {
+    const urlObj = new URL(url)
+    const urlHost = urlObj.origin
+    return urlHost === hostURL
+  } catch {
+    return url.includes("#")
+  }
+}
 const isUrlImage = url => url.includes(".png") || url.includes(".gif") || url.includes(".svg") || url.includes(".jpg") || url.includes(".jpeg") || url.includes(".bmp") || url.includes(".webp") || url.includes(".ico") || url.includes(".tiff") || url.includes(".tif") || url.includes(".avif") || url.startsWith("data:image/")
 const isUrlVideo = url => url.includes(".mp4") || url.includes(".webm") || url.includes(".ogg") || url.includes(".ogv") || url.includes(".avi") || url.includes(".mov") || url.includes(".wmv") || url.includes(".flv") || url.includes(".m4v") || url.includes(".mkv")
 const isUrlAudio = url => url.includes(".mp3") || url.includes(".wav") || url.includes(".ogg") || url.includes(".oga") || url.includes(".m4a") || url.includes(".aac") || url.includes(".flac") || url.includes(".wma")

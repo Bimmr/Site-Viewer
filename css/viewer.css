@@ -690,7 +690,6 @@ hr {
   cursor: pointer;
   transition: transform 0.2s, box-shadow 0.2s;
   position: relative;
-  overflow: hidden;
   display: flex;
   flex-direction: column;
 }

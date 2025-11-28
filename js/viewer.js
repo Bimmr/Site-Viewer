@@ -1040,8 +1040,13 @@ function updateOverview() {
         if (badge) {
           // For pages badge (index 0), show crawled/total format
           if (i === 0) {
-            const crawledPages = getPages().filter(link => link.isCrawled).length
-            badge.innerText = `${crawledPages}/${newCount}`
+            const crawledPages = getPages().filter(link => link.isCrawled)
+            const errorPages = crawledPages.filter(link => link.isError || link.isWarning)
+            const validCrawledPages = crawledPages.length - errorPages.length
+            badge.innerText = `${validCrawledPages}/${newCount}`
+            if (errorPages.length > 0) {
+              badge.title = `${errorPages.length} page(s) had errors or warnings`
+            }
           } else {
             badge.innerText = newCount
           }

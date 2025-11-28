@@ -542,11 +542,19 @@ async function crawlURL(url, addToAll = true) {
             //Add crawled page to crawl object
             crawl[url] = page
             
+            // Clear any previous error/warning flags on successful crawl
+            const linkIndex = crawl.all.links.findIndex(i => i.href == url)
+            if (linkIndex > -1) {
+              delete crawl.all.links[linkIndex].isError
+              delete crawl.all.links[linkIndex].isWarning
+              delete crawl.all.links[linkIndex].statusCode
+              delete crawl.all.links[linkIndex].errorMessage
+            }
+            
             // Check for duplicate pages
             const duplicateOf = findDuplicatePage(page, url)
             if (duplicateOf) {
               // Mark this page as a duplicate
-              const linkIndex = crawl.all.links.findIndex(i => i.href == url)
               if (linkIndex > -1) {
                 crawl.all.links[linkIndex].isDuplicate = true
                 crawl.all.links[linkIndex].duplicateOf = duplicateOf

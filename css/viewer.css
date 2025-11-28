@@ -722,70 +722,80 @@ hr {
   gap: 10px;
 }
 
-#overview .card .card-title::before {
-  font-family: 'Font Awesome 6 Free';
-  font-weight: 900;
+#overview .card .card-title i {
   font-size: 1.3em;
   opacity: 0.8;
 }
 
+/* Queue card - Yellow/Gold */
+#queue-card {
+  border-top: 4px solid #FFC107;
+}
+
+#queue-card .title h2 {
+  color: #FFC107;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 1.5em;
+  font-weight: 500;
+  margin-bottom: 10px;
+}
+
+#queue-card .title h2 i {
+  font-size: 1.3em;
+  opacity: 0.8;
+}
+
+#queue-card .title p {
+  text-align: center;
+  font-size: 1.2em;
+  margin: 5px 0;
+}
+
 /* Pages card - Blue */
-#overview .row:nth-child(2) .card:nth-child(1) {
+#overview .row:nth-of-type(3) .card:nth-child(1) {
   border-top: 4px solid #2196F3;
 }
-#overview .row:nth-child(2) .card:nth-child(1) .card-title {
-  color: #2196F3;
-}
-#overview .row:nth-child(2) .card:nth-child(1) .card-title::before {
-  content: '\f0ac';
+#overview .row:nth-of-type(3) .card:nth-child(1) .card-title,
+#overview .row:nth-of-type(3) .card:nth-child(1) .card-title i {
   color: #2196F3;
 }
 
 /* Assets card - Purple */
-#overview .row:nth-child(2) .card:nth-child(2) {
+#overview .row:nth-of-type(3) .card:nth-child(2) {
   border-top: 4px solid #9C27B0;
 }
-#overview .row:nth-child(2) .card:nth-child(2) .card-title {
-  color: #9C27B0;
-}
-#overview .row:nth-child(2) .card:nth-child(2) .card-title::before {
-  content: '\f56e';
+#overview .row:nth-of-type(3) .card:nth-child(2) .card-title,
+#overview .row:nth-of-type(3) .card:nth-child(2) .card-title i {
   color: #9C27B0;
 }
 
 /* Links card - Orange */
-#overview .row:nth-child(2) .card:nth-child(3) {
+#overview .row:nth-of-type(3) .card:nth-child(3) {
   border-top: 4px solid #FF9800;
 }
-#overview .row:nth-child(2) .card:nth-child(3) .card-title {
-  color: #FF9800;
-}
-#overview .row:nth-child(2) .card:nth-child(3) .card-title::before {
-  content: '\f0c1';
+#overview .row:nth-of-type(3) .card:nth-child(3) .card-title,
+#overview .row:nth-of-type(3) .card:nth-child(3) .card-title i {
   color: #FF9800;
 }
 
 /* Files card - Teal */
-#overview .row:nth-child(3) .card:nth-child(1) {
+#overview .row:nth-of-type(4) .card:nth-child(1) {
   border-top: 4px solid #009688;
 }
-#overview .row:nth-child(3) .card:nth-child(1) .card-title {
-  color: #009688;
-}
-#overview .row:nth-child(3) .card:nth-child(1) .card-title::before {
-  content: '\f15b';
+#overview .row:nth-of-type(4) .card:nth-child(1) .card-title,
+#overview .row:nth-of-type(4) .card:nth-child(1) .card-title i {
   color: #009688;
 }
 
 /* Media card - Pink */
-#overview .row:nth-child(3) .card:nth-child(2) {
+#overview .row:nth-of-type(4) .card:nth-child(2) {
   border-top: 4px solid #E91E63;
 }
-#overview .row:nth-child(3) .card:nth-child(2) .card-title {
-  color: #E91E63;
-}
-#overview .row:nth-child(3) .card:nth-child(2) .card-title::before {
-  content: '\f03e';
+#overview .row:nth-of-type(4) .card:nth-child(2) .card-title,
+#overview .row:nth-of-type(4) .card:nth-child(2) .card-title i {
   color: #E91E63;
 }
 

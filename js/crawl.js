@@ -603,7 +603,6 @@ async function crawlURL(url, addToAll = true) {
             updateLinks()
             updateFiles()
             updateMedia()
-            updateOverview()
   
             //Update Listeners
             updateAll()
@@ -615,6 +614,9 @@ async function crawlURL(url, addToAll = true) {
           
           // Release lock
           crawlLocks.delete(url)
+
+          // Update overview after removing from crawling array
+          updateOverview()
 
           // Show completion toast for this URL
           if (typeof showNotification === 'function') {

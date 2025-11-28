@@ -1011,6 +1011,24 @@ function testURL(url, element) {
 */
 function updateOverview() {
 
+  //Update queue status
+  const queueCard = document.getElementById('queue-card')
+  const queueCount = document.getElementById('queue-count')
+  const currentlyCrawling = document.getElementById('currently-crawling')
+  
+  if (typeof fetchQueue !== 'undefined' && typeof crawling !== 'undefined') {
+    const queueLength = fetchQueue.length
+    const crawlingCount = crawling.length
+    
+    if (queueLength > 0 || crawlingCount > 0) {
+      queueCard.style.display = 'block'
+      queueCount.textContent = queueLength
+      currentlyCrawling.textContent = crawlingCount
+    } else {
+      queueCard.style.display = 'none'
+    }
+  }
+
   //Get count of view-rows in each view
   let targetCount = [
     document.querySelectorAll("#pages .view-row").length,

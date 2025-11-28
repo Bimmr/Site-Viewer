@@ -7,21 +7,54 @@ const pageHashCache = new Map()
 //Mutex lock to prevent race conditions
 const crawlLocks = new Set()
 
-// Rate limiting implementation
-let lastCrawlTime = 0
+// Rate limiting queue implementation
+const fetchQueue = []
+let isProcessingQueue = false
+let lastFetchTime = 0
+
 const rateLimitedFetch = async (fetchFn) => {
-  const now = Date.now()
-  const timeSinceLastCrawl = now - lastCrawlTime
-  const rateLimit = settings?.crawl?.rateLimitMs || 100
-  
-  if (timeSinceLastCrawl < rateLimit) {
-    const delay = rateLimit - timeSinceLastCrawl
-    console.log(`Rate limiting: waiting ${delay}ms before next request`)
-    await new Promise(resolve => setTimeout(resolve, delay))
+  return new Promise((resolve, reject) => {
+    // Add to queue
+    fetchQueue.push({ fetchFn, resolve, reject })
+    
+    // Start processing if not already running
+    if (!isProcessingQueue) {
+      processQueue()
+    }
+  })
+}
+
+const processQueue = async () => {
+  if (fetchQueue.length === 0) {
+    isProcessingQueue = false
+    return
   }
   
-  lastCrawlTime = Date.now()
-  return fetchFn()
+  isProcessingQueue = true
+  const { fetchFn, resolve, reject } = fetchQueue.shift()
+  
+  // Apply rate limiting
+  const now = Date.now()
+  const timeSinceLastFetch = now - lastFetchTime
+  const rateLimit = settings?.crawl?.rateLimitMs || 100
+  
+  if (timeSinceLastFetch < rateLimit) {
+    const delay = rateLimit - timeSinceLastFetch
+    await new Promise(r => setTimeout(r, delay))
+  }
+  
+  lastFetchTime = Date.now()
+  
+  // Execute the fetch
+  try {
+    const result = await fetchFn()
+    resolve(result)
+  } catch (error) {
+    reject(error)
+  }
+  
+  // Process next item in queue
+  processQueue()
 }
 
 /**

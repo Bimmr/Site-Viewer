@@ -495,7 +495,7 @@ hr {
 
 .view-row .tools .info .hover-popup-icon span {
   font-size: .8em;
-  padding: 5px 10px;
+  margin: 5px 10px;
 }
 
 .view-row .tools .info .hover-popup-icon .fa-stack i {
@@ -804,11 +804,6 @@ hr {
 #overview .hover-popup {
   text-align: left;
   word-break: break-all;
-}
-
-#overview .hover-popup-icon:hover .hover-popup {
-  left: 20px;
-  width: 300px;
 }
 
 .view ul, .popup-view ul {
@@ -1309,23 +1304,31 @@ input[type="checkbox"]{
 }
 
 /* Hover Popup */
-
 .hover-popup-icon {
   position: relative;
 }
 
-.hover-popup-icon:hover .hover-popup {
+.hover-popup-icon:has(i:hover, .hover-popup:hover, span:hover) .hover-popup {
   right: 0;
-  width: 200px;
+  width: 250px;
   opacity: 1;
   transition: right .35s, visibility .35s, opacity .35s, max-height 1s;
   max-height: 200px;
+  visibility: visible;
+  animation: showScrollbar 0s 1s forwards; /* Show scrollbar after 1s */
+}
+
+@keyframes showScrollbar {
+  to {
+    overflow-y: auto;
+  }
 }
 
 .hover-popup {
   position: absolute;
   opacity: 0;
-  top: -10%;
+  top: 100%;
+  margin-top: -10px;
   right: -500px;
   width: 1px;
   background: #fff;
@@ -1335,15 +1338,20 @@ input[type="checkbox"]{
   border: 1px solid #ccc;
   border-radius: 5px;
   overflow-x: hidden;
-  overflow-y: auto;
-  z-index: 5;
+  overflow-y: hidden;
+  z-index: 1000;
   transition: none;
   max-height: 1px;
   word-break: break-all;
+  pointer-events: auto;
+}
+
+/* Ensure the popup doesn't create unnecessary scrolling */
+.view-items {
+  overflow: visible;
 }
 
 /* Full Popups */
-
 .popup .popup-wrapper {
   opacity: 0;
   border-radius: 15px;

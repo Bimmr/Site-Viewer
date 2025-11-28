@@ -20,37 +20,45 @@ const TEXT_FRAGMENT_MAX_LENGTH = 50 // characters
  * @param {number} duration - How long to show the notification in ms (default: 2000)
  */
 function showNotification(message, type = 'info', duration = 2000) {
-  // Create or get the notification container
-  let container = document.querySelector('.notification-container')
-  if (!container) {
-    container = document.createElement('div')
-    container.className = 'notification-container'
-    document.body.appendChild(container)
-  }
-  
-  // Create notification
-  const notification = document.createElement('div')
-  notification.className = `toast-notification ${type}`
-  notification.textContent = message
-  container.appendChild(notification)
-  
-  // Set the countdown animation duration to match the toast duration
-  notification.style.setProperty('--duration', `${duration}ms`)
-  
-  // Trigger animation
-  setTimeout(() => notification.classList.add('show'), 10)
-  
-  // Auto remove
-  setTimeout(() => {
-    notification.classList.remove('show')
+  requestAnimationFrame(() => {
+    // Create or get the notification container
+    let container = document.querySelector('.notification-container')
+    if (!container) {
+      container = document.createElement('div')
+      container.className = 'notification-container'
+      document.body.appendChild(container)
+    }
+    
+    // Create notification
+    const notification = document.createElement('div')
+    notification.className = `toast-notification ${type}`
+    notification.textContent = message
+    container.appendChild(notification)
+    
+    // Set the countdown animation duration to match the toast duration
+    notification.style.setProperty('--duration', `${duration}ms`)
+    
+    // Trigger animation in next frame
+    requestAnimationFrame(() => {
+      notification.classList.add('show')
+    })
+    
+    // Auto remove
     setTimeout(() => {
-      notification.remove()
-      // Remove container if empty
-      if (container.children.length === 0) {
-        container.remove()
-      }
-    }, 300)
-  }, duration)
+      requestAnimationFrame(() => {
+        notification.classList.remove('show')
+        setTimeout(() => {
+          requestAnimationFrame(() => {
+            notification.remove()
+            // Remove container if empty
+            if (container.children.length === 0) {
+              container.remove()
+            }
+          })
+        }, 300)
+      })
+    }, duration)
+  })
 }
 
 /**
@@ -204,7 +212,7 @@ document.addEventListener("DOMContentLoaded", function () {
       })
     }
   }).catch(error => {
-    console.error("Failed to load settings:", error)
+    showNotification('Failed to load settings', 'error', 3000)
   })
 
   //Crawl base url
@@ -290,38 +298,49 @@ document.addEventListener("DOMContentLoaded", function () {
   document.querySelector(".crawlAllBtn").addEventListener("click", event => {
     // Prevent multiple intervals from being created
     if (window.moreToCrawlInterval) {
-      console.log("Crawl already in progress")
+      showNotification('Crawl already in progress', 'info')
       return
     }
 
     clickAllCrawlIcons()
 
     function clickAllCrawlIcons() {
-      crawl.all.links.forEach(link => {
-        document.querySelectorAll("#pages .crawl i").forEach(pageCrawl => pageCrawl.click())
+      // Only click crawl icons for pages that:
+      // 1. Are not already crawled (isCrawled = false)
+      // 2. Are not currently being crawled (not in crawling array)
+      // 3. Are not in error/warning state (haven't failed)
+      const uncrawledPages = getPages().filter(link => 
+        !link.isCrawled && 
+        !crawling.includes(link.href) &&
+        !link.isError &&
+        !link.isWarning
+      )
+      
+      uncrawledPages.forEach(link => {
+        // Find the corresponding crawl icon in the DOM and click it
+        const crawlIcon = Array.from(document.querySelectorAll("#pages .crawl"))
+          .find(icon => icon.href === link.href)
+        if (crawlIcon) {
+          crawlIcon.querySelector('i')?.click()
+        }
       })
     }
 
     // Store interval globally for proper cleanup
     window.moreToCrawlInterval = setInterval(() => {
-      console.log("Checking crawl status")
-
       try {
         if (crawling.length === 0) {
           if (!getPages().some(link => !link.isCrawled)) {
             document.querySelector(".crawlAllBtn").classList.add("hidden")
-            console.log("All links crawled")
-            console.log("Clearing Interval")
             clearInterval(window.moreToCrawlInterval)
             window.moreToCrawlInterval = null
           }
           else {
-            console.log("Crawling more links")
             clickAllCrawlIcons()
           }
         }
       } catch (error) {
-        console.error("Error during crawl check:", error)
+        showNotification('Error during crawl check', 'error', 3000)
         clearInterval(window.moreToCrawlInterval)
         window.moreToCrawlInterval = null
       }
@@ -353,11 +372,9 @@ document.addEventListener("DOMContentLoaded", function () {
       // Apply CORS URLs immediately when changed
       if (setting === "corsProxyUrl") {
         CORS_BYPASS_URL = settings.crawl.corsProxyUrl
-        console.log("Updated CORS Proxy URL:", CORS_BYPASS_URL)
       }
       if (setting === "corsProxyRawUrl") {
         CORS_BYPASS_URL_RAW = settings.crawl.corsProxyRawUrl
-        console.log("Updated CORS Proxy Raw URL:", CORS_BYPASS_URL_RAW)
       }
 
       storageSet("settings", settings)
@@ -366,13 +383,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
   //If managing downloads is disabled we can't combine files
   storageGet('manageDownloads').then(manageDownloads => {
-    console.log("Manage downloads: " + manageDownloads)
     if (manageDownloads === false) {
       settings.combine.enabled = false
       document.querySelector("#settings").querySelectorAll(".needsManageDownloads").forEach(e => e.classList.add("hidden"))
     }
   }).catch(error => {
-    console.error("Failed to check manageDownloads setting:", error)
+    showNotification('Failed to check download settings', 'error', 3000)
   })
 
   //Add event listeners to the combine section
@@ -418,7 +434,6 @@ document.addEventListener("DOMContentLoaded", function () {
     document.querySelectorAll("#inspecter .popup-nav-item.active, #inspecter .popup-view.active").forEach(activeItem => activeItem.classList.remove("active"))
     item.classList.add("active")
     let view = item.querySelector("p").innerHTML.toLowerCase()
-    console.log(view)
     document.querySelector("#inspecter .popup-view#popup-view-" + view)?.classList.add("active")
   }))
 
@@ -426,7 +441,9 @@ document.addEventListener("DOMContentLoaded", function () {
   document.querySelectorAll(".view-title .select input").forEach(item => item.addEventListener("click", event => {
     let view = item.parentNode.parentNode.parentNode
     let state = item.checked
-    view.querySelectorAll(".view-items .select input").forEach(item => item.checked = state)
+    view.querySelectorAll(".view-items .select input").forEach(checkbox => {
+      if (checkbox) checkbox.checked = state
+    })
     
     //Check if the multi-wrapper needs to show
     const multiWrapper = document.querySelector(".view.active .multi-wrapper")
@@ -521,50 +538,54 @@ document.addEventListener("DOMContentLoaded", function () {
     window.viewObserver.observe(item, { childList: true })
   })
 
-})
-
-/**
-* Function to run AFTER each view and popup-view is updated
-*/
-function updateAll() {
-  document.querySelectorAll(".view .view-title .select input").forEach(item => item.checked = false)
-
-  //If one or more items is selected, show the multi-item wrapper
-  document.querySelectorAll(".view .view-items .select input").forEach(i => i.onclick = function () {
-    const multiWrapper = document.querySelector(".view.active .multi-wrapper")
-    if (Array.from(document.querySelectorAll(".view.active .view-items .select input")).filter(i => i.checked).length >= 1)
-      multiWrapper.classList.add("active")
-    else
-      multiWrapper.classList.remove("active")
+  // Global event delegation for dynamically created elements
+  // Handle checkbox clicks to show/hide multi-wrapper
+  document.body.addEventListener('click', event => {
+    if (event.target.matches('.view .view-items .select input')) {
+      const multiWrapper = document.querySelector(".view.active .multi-wrapper")
+      const checkedCount = Array.from(document.querySelectorAll(".view.active .view-items .select input")).filter(i => i.checked).length
+      if (checkedCount >= 1)
+        multiWrapper.classList.add("active")
+      else
+        multiWrapper.classList.remove("active")
+    }
   })
 
-  //Add click event for the inspect icon
-  document.querySelectorAll(".view .view-items .inspect").forEach(element => element.addEventListener("click", event => {
-    event.preventDefault()
-    let url = event.target.parentNode.href
-    setupPopup(url)
-    document.querySelector("#inspecter ").classList.add("active")
-  }))
-
-  document.querySelectorAll(".expand-image").forEach(element => element.addEventListener("click", event => {
-    document.querySelector(".expanded-image").src = event.target.src
-    document.querySelector("#expander").classList.add("active")
-
-  }))
-
-  //Add click event for the inspect icon
-  document.querySelectorAll(".view-items .test:not(.crawl), view-items .warning:not(.crawl), .view-items .error:not(.crawl)").forEach(element => element.addEventListener("click", event => {
-    event.preventDefault()
-    let url = event.target.href || event.target.parentNode.href
-    console.log("testing", url)
-    testURL(url, element)
-  }))
-
-  //Add crawl event to all view-items that have a crawl icon
-  document.querySelectorAll(".view .view-items .crawl").forEach(element => {
-    element.onclick = event => {
+  // Handle inspect icon clicks
+  document.body.addEventListener('click', event => {
+    if (event.target.closest('.view .view-items .inspect')) {
       event.preventDefault()
-      let url = event.target.parentNode.href
+      const inspectLink = event.target.closest('.inspect')
+      let url = inspectLink.href
+      setupPopup(url)
+      document.querySelector("#inspecter").classList.add("active")
+    }
+  })
+
+  // Handle expand image clicks
+  document.body.addEventListener('click', event => {
+    if (event.target.matches('.expand-image')) {
+      document.querySelector(".expanded-image").src = event.target.src
+      document.querySelector("#expander").classList.add("active")
+    }
+  })
+
+  // Handle test link clicks
+  document.body.addEventListener('click', event => {
+    const testElement = event.target.closest('.view-items .test:not(.crawl), .view-items .warning:not(.crawl), .view-items .error:not(.crawl)')
+    if (testElement) {
+      event.preventDefault()
+      let url = testElement.href
+      testURL(url, testElement)
+    }
+  })
+
+  // Handle crawl icon clicks
+  document.body.addEventListener('click', event => {
+    if (event.target.closest('.view .view-items .crawl')) {
+      event.preventDefault()
+      const crawlLink = event.target.closest('.crawl')
+      let url = crawlLink.href
 
       //Check if the item being crawled is an HTML page or an asset
       if (isUrlHTMLFile(url))
@@ -573,44 +594,112 @@ function updateAll() {
         crawl.all.assets[crawl.all.assets.findIndex(i => i.link === url)].isCrawled = true
 
       //Remove Crawl Icon
-      event.target.parentNode.remove()
+      crawlLink.remove()
       crawlURL(url)
     }
   })
 
-  //Add download event to all view-items that have a download icon
-  document.querySelectorAll(".view-items .download").forEach(element => {
-    element.onclick = event => {
+  // Handle download icon clicks
+  document.body.addEventListener('click', event => {
+    if (event.target.closest('.view-items .download')) {
       event.preventDefault()
+      const downloadLink = event.target.closest('.download')
+      let url = downloadLink.href
+      handleDownload(url)
+    }
+  })
 
-      console.log("Downloading")
-      //Get url to download
-      let url = event.target.parentNode.href
-      console.log(url)
+  // Enhanced hover popup system with intelligent positioning
+  let activePopup = null
+  
+  document.body.addEventListener('mouseover', event => {
+    const hoverIcon = event.target.closest('.hover-popup-icon')
+    if (hoverIcon) {
+      const popup = hoverIcon.querySelector('.hover-popup')
+      if (popup && popup !== activePopup) {
+        activePopup = popup
+        
+        // Use double requestAnimationFrame to position after CSS transitions start
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            positionPopup(popup, hoverIcon)
+          })
+        })
+      }
+    }
+  })
+  
+  function positionPopup(popup, icon) {
+    const iconRect = icon.getBoundingClientRect()
+    const viewportHeight = window.innerHeight
+    const popupMaxHeight = 200
+    const padding = 10
+    
+    // Calculate available space above and below
+    const spaceBelow = viewportHeight - iconRect.bottom
+    const spaceAbove = iconRect.top
+    
+    // Reset previous positioning
+    popup.style.top = ''
+    popup.style.bottom = ''
+    popup.style.marginTop = ''
+    popup.style.marginBottom = ''
+    
+    // Vertical positioning: prefer below unless insufficient space
+    if (spaceBelow >= popupMaxHeight + padding || spaceBelow > spaceAbove) {
+      // Position below with overlap so mouse is over popup
+      popup.style.top = '100%'
+      popup.style.bottom = 'auto'
+      popup.style.marginTop = '-10px'
+      popup.style.marginBottom = '0'
+    } else {
+      // Position above with overlap so mouse is over popup
+      popup.style.top = 'auto'
+      popup.style.bottom = '100%'
+      popup.style.marginTop = '0'
+      popup.style.marginBottom = '-10px'
+    }
+  }
+  
+  // Clean up when mouse leaves
+  document.body.addEventListener('mouseout', event => {
+    if (event.target.closest('.hover-popup-icon') && !event.relatedTarget?.closest('.hover-popup-icon')) {
+      activePopup = null
+    }
+  })
 
-      //If combining images and assets into one file
-      if (isUrlHTMLFile(url) && settings.combine.enabled) {
-        console.log("Is Html and is combine")
+})
+
+/**
+* Function to run AFTER each view and popup-view is updated
+*/
+function updateAll() {
+  // Reset title checkboxes
+  document.querySelectorAll(".view .view-title .select input").forEach(item => item.checked = false)
+}
+
+/**
+* Handle download logic for a URL
+* @param {string} url - The URL to download
+*/
+function handleDownload(url) {
+  //If combining images and assets into one file
+  if (isUrlHTMLFile(url) && settings.combine.enabled) {
 
         crawlIfNeeded(url).then(page => {
 
           convertAll(page);
 
           async function convertAll(page) {
-            console.log("Converting all")
             let pageDoc = page.doc.cloneNode(true)
             if (settings.combine.assets) {
-              console.log("Converting all scripts to HTML File")
               pageDoc = await convertAllScripts(pageDoc)
-              console.log("Converting all styles to HTML File")
               pageDoc = await convertAllStyles(pageDoc)
             }
             if (settings.combine.imagesInAssets) {
-              console.log("Converting all Style images in assets to HTML File")
               pageDoc = await convertAllStyleImages(pageDoc)
             }
             if (settings.combine.images) {
-              console.log("Converting all images to HTML File")
               pageDoc = await convertAllImages(pageDoc)
             }
 
@@ -624,7 +713,6 @@ function updateAll() {
             //Update url to blobUrl
             url = blobUrl
 
-            console.log("Sending to download")
             showNotification('Starting download...', 'info')
             
             chrome.downloads.download({ 
@@ -633,10 +721,8 @@ function updateAll() {
               conflictAction: 'uniquify'
             }, (downloadId) => {
               if (chrome.runtime.lastError) {
-                console.error("Download failed:", chrome.runtime.lastError)
                 showNotification('Download failed: ' + chrome.runtime.lastError.message, 'error', 5000)
               } else {
-                console.log("Download started with ID:", downloadId)
                 showNotification('Download started successfully', 'success')
                 // Cleanup blob URL after a delay to ensure download has started
                 setTimeout(() => {
@@ -673,7 +759,6 @@ function updateAll() {
                     bodyElement.appendChild(elm)
                   }
                 })
-                console.log("Moving older Styles to bottom")
                 pageDoc.querySelectorAll("style:not([data-link])").forEach(style => bodyElement.appendChild(style))
                 done(pageDoc)
               })
@@ -705,7 +790,6 @@ function updateAll() {
                     bodyElement.appendChild(elm)
                   }
                 })
-                console.log("Moving older Scripts to bottom")
                 pageDoc.querySelectorAll("script:not([data-link])").forEach(script => bodyElement.appendChild(script))
                 done(pageDoc)
               })
@@ -731,7 +815,6 @@ function updateAll() {
                         imageUrlRegex.lastIndex = 0
                         toDataURL(img.src).then(dataUrl => {
                           let srcToReplace = img._src || img.src
-                          console.log("Wants to replace", srcToReplace, "with", "...")
                           resolveImage([srcToReplace, dataUrl])
                         }).catch(err => rejectImage(err))
                       })
@@ -740,9 +823,7 @@ function updateAll() {
                     Promise.allSettled(imagePromises).then(data => {
                       let toReplace = []
                       data.forEach(image => {
-                        console.log(image)
                         if (image.value) {
-                          console.log("Passing along", image.value[0], "with", "...")
                           toReplace.push(image.value)
                         }
                       })
@@ -757,7 +838,6 @@ function updateAll() {
                 styleList.forEach(style => {
                   if (style.length > 0) {
                     style.forEach(image => {
-                      console.log("Replacing", image[0], "with", image[1])
                       matchedStyles.forEach(styleTag => styleTag.innerHTML = styleTag.innerHTML.replace(new RegExp(image[0], "g"), image[1]))
                     })
                   }
@@ -791,13 +871,11 @@ function updateAll() {
                     }
                     
                     if (!src) {
-                      console.warn('No source found for image, skipping')
                       return resolveImage()
                     }
                     
                     let img = createImageObject(baseUrl, null, src)
                     toDataURL(img.src).then(dataUrl => {
-                      console.log("Successfully converted image:", src)
                       if (isImageTag)
                         image.src = dataUrl
                       else
@@ -805,12 +883,10 @@ function updateAll() {
                       successCount++
                       resolveImage()
                     }).catch(err => {
-                      console.error("Failed to convert image:", src, err)
                       failureCount++
                       resolveImage() // Resolve anyway to continue processing
                     })
                   } catch (err) {
-                    console.error('Error processing image:', err)
                     failureCount++
                     resolveImage() // Resolve to continue
                   }
@@ -843,28 +919,22 @@ function updateAll() {
           })
         }
 
-      } else {
-        console.log("Simple Download")
-        showNotification('Starting download...', 'info')
-        
-        chrome.downloads.download({ 
-          url,
-          saveAs: false,
-          conflictAction: 'uniquify'
-        }, (downloadId) => {
-          if (chrome.runtime.lastError) {
-            console.error("Download failed:", chrome.runtime.lastError)
-            showNotification('Download failed: ' + chrome.runtime.lastError.message, 'error', 3000)
-          } else {
-            console.log("Download started with ID:", downloadId)
-            showNotification('Download started successfully', 'success')
-          }
-        })
-      }
+    } else {
+      showNotification('Starting download...', 'info')
+      
+      chrome.downloads.download({ 
+        url,
+        saveAs: false,
+        conflictAction: 'uniquify'
+      }, (downloadId) => {
+        if (chrome.runtime.lastError) {
+          showNotification('Download failed: ' + chrome.runtime.lastError.message, 'error', 3000)
+        } else {
+          showNotification('Download started successfully', 'success')
+        }
+      })
     }
-  })
-
-}
+  }
 
 /**
  * Test a URL to see if it is valid, if not return the status code
@@ -908,7 +978,11 @@ function testURL(url, element) {
         if (linkIndex > -1) crawl.all.links[linkIndex].test = "success"
       }
       else if (result.data && (result.data.error || result.data.status?.error)) {
-        throw new Error()
+        // Handle as error without throwing
+        element.classList.add("error")
+        element.title = "Link doesn't exist or took too long to respond\nClick to retry"
+        element.innerHTML = '<i class="fas fa-times-circle"></i>'
+        if (linkIndex > -1) crawl.all.links[linkIndex].test = "failed"
       }
       else {
         element.classList.add("warning")
@@ -922,7 +996,7 @@ function testURL(url, element) {
     })
     .catch(() => {
       element.classList.add("error")
-      element.title = "Link doesn't exist or took to long to respond\nClick to retry"
+      element.title = "Link doesn't exist or took too long to respond\nClick to retry"
       element.innerHTML = '<i class="fas fa-times-circle"></i>'
       const linkIndex = crawl.all.links.findIndex(i => i.href === url)
       if (linkIndex > -1) crawl.all.links[linkIndex].test = "failed"
@@ -1108,169 +1182,211 @@ function updatePages() {
   renderToContainer(wrapper, html)
 }
 
-/** 
-* Function to setup the popup according to the url
-* @param {string} url - The url to setup the popup for
-*/
-function setupPopup(url) {
+/**
+ * Build tags HTML for popup hover
+ * @param {Object} item - Link or file object
+ * @param {string} originalUrl - Original URL before formatting
+ * @returns {string} HTML string for tags section
+ */
+function buildTagsHTML(item, originalUrl) {
+  let tagsHTML = ''
+  
+  if (item.tags.isLocal && originalUrl) {
+    tagsHTML += `Original URL: <strong>${originalUrl}</strong><br>`
+  }
+  
+  Object.keys(item.tags).forEach(key => {
+    tagsHTML += `${key}: <strong>${item.tags[key]}</strong><br>`
+  })
+  
+  return tagsHTML ? tagsHTML.slice(0, -4) + '<hr>' : ''
+}
 
-  // Get the popup and the crawled object to inspect
-  let popup = document.querySelector("#inspecter")
-  let page = crawl[url]
+/**
+ * Build test status icons for links
+ * @param {Object} link - Link object
+ * @param {string} href - Link URL
+ * @returns {string} HTML string for test icons
+ */
+function buildTestIconsHTML(link, href) {
+  if (!link.test || link.test === null) {
+    return `<a class="test" target="_blank" href="${href}" title="Test the link"><i class="fas fa-question-circle"></i></a>`
+  }
+  
+  const testIcons = {
+    success: { class: 'success', icon: 'check-circle', title: 'Link is valid' },
+    warning: { class: 'warning', icon: 'exclamation-circle', title: `Returned a status code of ${link.statusCode}\nClick to retry` },
+    error: { class: 'error', icon: 'times-circle', title: "Link doesn't exist or took too long to respond\nClick to retry" }
+  }
+  
+  const config = testIcons[link.test]
+  if (!config) return ''
+  
+  return `<a class="${config.class}" target="_blank" href="${href}" title="${config.title}"><i class="fas fa-${config.icon}"></i></a>`
+}
 
-  //Add popup content
-  popup.querySelector(".card-title").innerHTML = '<h2>' + page.title + '</h2>' + '<h3>' + url + '<br><br></h3><p>' + page.description + '</p>'
-
-  let html = { links: '', files: '', assets: '', media: '' }
-  let htmlIndex = ''
-
-  //Loop through all links and assets
-  let items = [...page.links, ...page.assets]
-  items.forEach(link => {
-
-    let href = link.href ? link.href : link.link
-    let _href = link._href ? link._href : link._link
-
-    let isAsset = link.link ? true : false
-    let isLocalPage = isUrlLocal(href) && !isUrlAnchor(href)
-
-    htmlIndex = 'media'
-
-    //Check if it's an asset
-    if (isAsset)
-      htmlIndex = 'assets';
-
-    //Files are only if the link isn't a HTML page or a protocol link
-    else if (!isUrlHTMLFile(href) && !isUrlProtocol(href))
-      htmlIndex = 'files';
-
-    //Links are only if not local or is an anchor link
-    else
-      htmlIndex = 'links';
-
-    //Create string of tags and instances
-    let linkTagsText = ''
-    let instancesText = '<strong>Instances:</strong> (' + link.instances.length + ')<ul>'
-
-    if (link.tags.isLocal)
-      linkTagsText += "Original URL: <strong>" + _href + '</strong><br>'
-    Object.keys(link.tags).forEach(i => linkTagsText += "" + i + ": <strong>" + link.tags[i] + "</strong><br>")
-    if (linkTagsText.length > 0)
-      linkTagsText = linkTagsText.substr(0, linkTagsText.length - 4) + '<hr>'
-
-    //Add all instances to the instance string
-    instancesText = formatInstances(link.instances, i => i.text || i.alt || i.title)
-
-    html[htmlIndex] +=
-      '<div class="view-row">' +
-      '<div class="type">' +
-      (isLocalPage && !isAsset ? '<i class="far fa-file"></i>' : getFAIcon(href)) +
-      `</div>
-            <div class="link">`+
-      '<p>' + href + '</p>' +
-      `</div>
-        <div class="tools">`+
-      '<a class="goto" target="_blank" href="' + href + '" title="Open the link"><i class="fas fa-external-link-alt"></i></a>'
-    if (!isUrlProtocol(href) && !isUrlAnchor(href) && htmlIndex === 'links') {
-      if (link.test === null)
-        html[htmlIndex] += '<a class="test" target="_blank" href="' + href + '" title="Test the link"><i class="fas fa-question-circle"></i></a>'
-      if (link.test === "success")
-        html[htmlIndex] += '<a class="success" target="_blank" href="' + href + '" title="Link is valid"><i class="fas fa-check-circle"></i></a>'
-      else if (link.test === "warning")
-        html[htmlIndex] += '<a class="warning" target="_blank" href="' + href + '" title="Returned a status code of ' + link.statusCode + '\nClick to retry"><i class="fas fa-exclamation-circle"></i></a>'
-      else if (link.test === "error")
-        html[htmlIndex] += '<a class="error" target="_blank" href="' + href + '" title="Link doesn\'t exist or took to long to respond\nClick to retry"><i class="fas fa-times-circle"></i></a>'
-    }
-    if (htmlIndex !== 'links')
-      html[htmlIndex] += '<a class="download" href="' + href + '" title="Download Page"><i class="fas fa-file-download"></i></a>'
-    html[htmlIndex] += `<div class="info">
+/**
+ * Build view row HTML for popup link/asset
+ * @param {Object} link - Link object
+ * @param {string} category - Category ('links', 'files', 'assets')
+ * @returns {string} HTML string for view row
+ */
+function buildPopupLinkRow(link, category) {
+  const href = link.href || link.link
+  const originalUrl = link._href || link._link
+  const isAsset = !!link.link
+  const isLocalPage = isUrlLocal(href) && !isUrlAnchor(href)
+  
+  const tagsHTML = buildTagsHTML(link, originalUrl)
+  const instancesHTML = formatInstances(link.instances, i => i.text || i.alt || i.title)
+  
+  let testIconsHTML = ''
+  if (!isUrlProtocol(href) && !isUrlAnchor(href) && category === 'links') {
+    testIconsHTML = buildTestIconsHTML(link, href)
+  }
+  
+  const downloadHTML = category !== 'links' 
+    ? `<a class="download" href="${href}" title="Download"><i class="fas fa-file-download"></i></a>` 
+    : ''
+  
+  // Determine the icon to display
+  let iconHTML
+  if (link.isBroken) {
+    iconHTML = getFAIcon('broken-link')
+  } else if (isLocalPage && !isAsset) {
+    iconHTML = getFAIcon('page')
+  } else {
+    iconHTML = getFAIcon(href)
+  }
+  
+  return `
+    <div class="view-row">
+      <div class="type">
+        ${iconHTML}
+      </div>
+      <div class="link">
+        <p>${href}</p>
+      </div>
+      <div class="tools">
+        <a class="goto" target="_blank" href="${href}" title="Open"><i class="fas fa-external-link-alt"></i></a>
+        ${testIconsHTML}
+        ${downloadHTML}
+        <div class="info">
           <div class="hover-popup-icon">
             <span class="fa-stack fa-1x">
               <i class="fas fa-square fa-stack-2x"></i>
               <i class="fas fa-info fa-stack-1x fa-inverse"></i>
             </span>
-            <div class="hover-popup">`+
-      linkTagsText +
-      instancesText +
-      `</div>
+            <div class="hover-popup">
+              ${tagsHTML}
+              ${instancesHTML}
             </div>
-          </div>
           </div>
         </div>
       </div>
-      `
-  })
+    </div>
+  `
+}
 
-  //Loop through all images
-  page.media.forEach(file => {
-
-    let isImage = isUrlImage(file.src)
-
-    //Create string of tags and instances
-    let fileTagsText = ''
-    let instancesText = '<strong>Instances:</strong>(' + file.instances.length + ')<ul>'
-
-    if (file._src)
-      fileTagsText += "Original URL: <strong>" + file._src + '</strong><br>'
-    Object.keys(file.tags).forEach(i => fileTagsText += "" + i + ": <strong>" + file.tags[i] + "</strong><br>")
-    if (fileTagsText.length > 0)
-      fileTagsText = fileTagsText.substr(0, fileTagsText.length - 4) + '<hr>'
-
-    instancesText = formatInstances(file.instances, i => i.alt || i.title)
-
-    //Add to HTML to html string for the item
-    html.media += `
-        <div class="view-row">
-           
-          <div class="image">`
-    if (isImage) {
-      const altText = file.instances && file.instances[0] && file.instances[0].alt ? file.instances[0].alt : ''
-      html.media += '<img src="' + file.src + '" alt="' + altText + '" title="' + altText + '">'
-    }
-    else html.media += getFAIcon(file.src)
-    html.media += `</div>
-          <div class="link">`+
-      '<p>' + file.src + '</p>' +
-      `</div>
-       <div class="tools">
-        <a class="goto" target="_blank" href="` + file.src + `" title="Open Image"><i class="fas fa-external-link-alt"></i></a>
-         <a class="download" href="`+ file.src + `" title="Download Image"><i class="fas fa-file-download"></i></a>
-         <div class="info">
-         <div class="hover-popup-icon">
+/**
+ * Build view row HTML for popup media
+ * @param {Object} file - Media file object
+ * @returns {string} HTML string for view row
+ */
+function buildPopupMediaRow(file) {
+  const isImage = isUrlImage(file.src)
+  const altText = file.instances?.[0]?.alt || ''
+  
+  const tagsHTML = buildTagsHTML(file, file._src)
+  const instancesHTML = formatInstances(file.instances, i => i.alt || i.title)
+  
+  const imageHTML = isImage 
+    ? `<img src="${file.src}" alt="${altText}" title="${altText}">` 
+    : getFAIcon(file.src)
+  
+  return `
+    <div class="view-row">
+      <div class="image">${imageHTML}</div>
+      <div class="link">
+        <p>${file.src}</p>
+      </div>
+      <div class="tools">
+        <a class="goto" target="_blank" href="${file.src}" title="Open"><i class="fas fa-external-link-alt"></i></a>
+        <a class="download" href="${file.src}" title="Download"><i class="fas fa-file-download"></i></a>
+        <div class="info">
+          <div class="hover-popup-icon">
             <span class="fa-stack fa-1x">
               <i class="fas fa-square fa-stack-2x"></i>
               <i class="fas fa-info fa-stack-1x fa-inverse"></i>
             </span>
-                <div class="hover-popup">` +
-      fileTagsText +
-      instancesText +
-      `</div>
+            <div class="hover-popup">
+              ${tagsHTML}
+              ${instancesHTML}
+            </div>
+          </div>
+        </div>
       </div>
-              </div>
-         </div>
-       </div>
-     </div>
-     `
+    </div>
+  `
+}
+
+/**
+ * Categorize link into appropriate section
+ * @param {Object} link - Link object
+ * @returns {string} Category name ('links', 'files', 'assets')
+ */
+function categorizeLink(link) {
+  const href = link.href || link.link
+  const isAsset = !!link.link
+  
+  if (isAsset) return 'assets'
+  
+  // Broken links should go in 'links' section
+  if (link.isBroken) return 'links'
+  
+  if (!isUrlHTMLFile(href) && !isUrlProtocol(href)) return 'files'
+  return 'links'
+}
+
+/** 
+ * Setup the popup inspector for a crawled page
+ * @param {string} url - The URL to setup the popup for
+ */
+function setupPopup(url) {
+  const popup = document.querySelector("#inspecter")
+  const page = crawl[url]
+
+  // Set popup title content
+  popup.querySelector(".card-title").innerHTML = `
+    <h2>${page.title}</h2>
+    <h3>${url}<br><br></h3>
+    <p>${page.description}</p>
+  `
+
+  // Categorize and build HTML for links and assets
+  const html = { links: '', files: '', assets: '', media: '' }
+  const items = [...page.links, ...page.assets]
+  
+  // Sort items using the sortLinks function before displaying
+  items.sort(sortLinks)
+  
+  items.forEach(link => {
+    const category = categorizeLink(link)
+    html[category] += buildPopupLinkRow(link, category)
   })
 
-  //Add all HTML to the popup
-  if (html.links.length == 0)
-    html.links = '<div class="empty-row">There are no items here.</div>'
-  popup.querySelector("#popup-view-links .view-items").innerHTML = html.links
+  // Build HTML for media
+  page.media.forEach(file => {
+    html.media += buildPopupMediaRow(file)
+  })
 
-  if (html.files.length == 0)
-    html.files = '<div class="empty-row">There are no items here.</div>'
-  popup.querySelector("#popup-view-files .view-items").innerHTML = html.files
+  // Render all sections with empty state fallback
+  const sections = ['links', 'files', 'assets', 'media']
+  sections.forEach(section => {
+    const content = html[section] || '<div class="empty-row">There are no items here.</div>'
+    popup.querySelector(`#popup-view-${section} .view-items`).innerHTML = content
+  })
 
-  if (html.assets.length == 0)
-    html.assets = '<div class="empty-row">There are no items here.</div>'
-  popup.querySelector("#popup-view-assets .view-items").innerHTML = html.assets
-
-  if (html.media.length == 0)
-    html.media = '<div class="empty-row">There are no items here.</div>'
-  popup.querySelector("#popup-view-media .view-items").innerHTML = html.media
-
-  //UpdateAll to make sure goto and download icons are activated
   updateAll()
 }
 
@@ -1375,7 +1491,9 @@ function updateLinks() {
       html += `<input type="checkbox">`
     html += `</div>
         <div class="type">`
-    if (link.tags.tag == 'a')
+    if (link.isBroken)
+      html += getFAIcon('broken-link')
+    else if (link.tags.tag == 'a')
       html += getFAIcon(link.href)
     else
       html += getFAIcon(link.tags.tag)
@@ -1383,8 +1501,10 @@ function updateLinks() {
             <div class="link">`+
       '<p>' + link.href + '</p>' +
       `</div>
-        <div class="tools"><a class="goto" target="_blank" href="` + link.href + `" title="Open link"><i class="fas fa-external-link-alt"></i></a>`
-    if (!isUrlProtocol(link.href) && !isUrlAnchor(link.href)) {
+        <div class="tools">`
+    if (!link.isBroken)
+      html += '<a class="goto" target="_blank" href="' + link.href + '" title="Open link"><i class="fas fa-external-link-alt"></i></a>'
+    if (!isUrlProtocol(link.href) && !isUrlAnchor(link.href) && !link.isBroken) {
       if (!link.test || link.test === null)
         html += '<a class="test" target="_blank" href="' + link.href + '" title="Test the link"><i class="fas fa-question-circle"></i></a>'
       else if (link.test === "success")
@@ -1606,12 +1726,6 @@ const formatInstances = (instances, getTextFn) => {
   return instancesText
 }
 
-const getPages = () => crawl.all.links.filter(link => {
-  // Exclude malformed URLs with template literal syntax or encoded operators
-  if (link.href.includes("'%20+%20") || link.href.includes("%27%20+%20") || link.href.match(/['"]\s*\+\s*['"]/)) {
-    return false
-  }
-  return isUrlLocal(link.href) && isUrlHTMLFile(link.href) && !isUrlAnchor(link.href) && !isUrlScript(link.href) && !isUrlStyleSheet(link.href)
-})
-const getLinks = () => crawl.all.links.filter(link => (isUrlHTMLFile(link.href) && !isUrlLocal(link.href)) || isUrlAnchor(link.href) || isUrlProtocol(link.href))
-const getFiles = () => crawl.all.links.filter(link => !isUrlHTMLFile(link.href) && !isUrlProtocol(link.href))
+const getPages = () => crawl.all.links.filter(link => isUrlLocal(link.href) && isUrlHTMLFile(link.href) && !isUrlAnchor(link.href) && !isUrlScript(link.href) && !isUrlStyleSheet(link.href) && !link.isBroken)
+const getLinks = () => crawl.all.links.filter(link => (isUrlHTMLFile(link.href) && !isUrlLocal(link.href)) || isUrlAnchor(link.href) || isUrlProtocol(link.href) || link.isBroken)
+const getFiles = () => crawl.all.links.filter(link => !isUrlHTMLFile(link.href) && !isUrlProtocol(link.href) && !link.isBroken)

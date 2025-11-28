@@ -1,7 +1,11 @@
 // Functions to check if the url is a specific type
 const isUrlHTMLFile = url => {
-  const pathname = new URL(url).pathname.split('/').pop();
-  return pathname.indexOf('.') <= 0 || url.includes(".html") || url.includes(".shtml") || url.includes(".htm") || url.includes(".aspx") || url.includes(".asp") || url.includes(".jsp") || url.includes(".php") || url.includes(".xhtml");
+  try {
+    const pathname = new URL(url).pathname.split('/').pop();
+    return pathname.indexOf('.') <= 0 || url.includes(".html") || url.includes(".shtml") || url.includes(".htm") || url.includes(".aspx") || url.includes(".asp") || url.includes(".jsp") || url.includes(".php") || url.includes(".xhtml");
+  } catch {
+    return false
+  }
 }
 const isUrlPDFFile = url => url.includes('.pdf')
 const isUrlProtocol = url => isUrlProtocolMailto(url) || isUrlProtocolTel(url)
@@ -86,6 +90,9 @@ function getFAIcon(value, getIndex = false) {
     } catch (e) { }
     //Tags
     switch (value) {
+        case 'page':
+            icon = ['<i class="fas fa-file-lines"></i>', 1]
+            break;
         case 'iframe':
             icon = ['<i class="fas fa-window-restore"></i>', 20]
             break;
@@ -107,6 +114,9 @@ function getFAIcon(value, getIndex = false) {
         case 'script':
             icon = ['<i class="fab fa-js-square"></i>', 31]
             break;
+        case 'broken-link':
+            icon = ['<i class="fas fa-unlink"></i>', 100]
+            break;
     }
 
     if (!icon)
@@ -125,12 +135,24 @@ function getFAIcon(value, getIndex = false) {
 * @returns {number} -1 if a is before b, 1 if a is after b, alphabetically if they are equal
 */
 function sortLinks(a, b) {
+    // Get href for comparison (default to empty string if undefined)
+    const aUrl = a.href || ''
+    const bUrl = b.href || ''
+    
+    // Check if items are local HTML pages (should appear first)
+    const aIsLocalPage = isUrlLocal(aUrl) && isUrlHTMLFile(aUrl) && !isUrlAnchor(aUrl)
+    const bIsLocalPage = isUrlLocal(bUrl) && isUrlHTMLFile(bUrl) && !isUrlAnchor(bUrl)
+    
+    // Local pages always come first
+    if (aIsLocalPage && !bIsLocalPage) return -1
+    if (!aIsLocalPage && bIsLocalPage) return 1
+    
     // Get icon indices for comparison
     const aIndex = a.tags.tag === 'a' && b.tags.tag === 'a' 
-        ? getFAIcon(a.href, true) 
+        ? getFAIcon(aUrl, true) 
         : getFAIcon(a.tags.tag, true)
     const bIndex = b.tags.tag === 'a' && a.tags.tag === 'a'
-        ? getFAIcon(b.href, true)
+        ? getFAIcon(bUrl, true)
         : getFAIcon(b.tags.tag, true)
 
     if (aIndex !== bIndex) return aIndex - bIndex
@@ -142,7 +164,7 @@ function sortLinks(a, b) {
     if (a.isCrawled !== b.isCrawled) return a.isCrawled ? -1 : 1
     
     // Sort alphabetically by href
-    return a.href.localeCompare(b.href)
+    return aUrl.localeCompare(bUrl)
 }
 /**
 * Function to debounce calls to avoid excessive invocations
@@ -220,25 +242,25 @@ function toDataURL(url) {
 const getLocation = href => {
     const link = document.createElement("a");
     link.href = href;
-    return link;
+    return link.href; // Return the resolved href string, not the element
 }
 
 const formatLink = (url, link) => {
     const chromeExtensionProtocol = 'chrome-extension:'
     const chromeExtensionId = window.extensionId
 
-    const urlLocation = new URL(url)
-    const linkLocation = new URL(getLocation(link))
+        const urlLocation = new URL(url)
+        const linkLocation = new URL(getLocation(link))
 
-    // If it's not a local link or a // link
-    if (linkLocation.protocol !== chromeExtensionProtocol) return link
+        // If it's not a local link or a // link
+        if (linkLocation.protocol !== chromeExtensionProtocol) return link
 
-    // If it's a // link
-    if (linkLocation.host !== chromeExtensionId) {
-        return `${urlLocation.protocol}//${linkLocation.host}${linkLocation.pathname}${linkLocation.hash}${linkLocation.search}`
-    }
+        // If it's a // link
+        if (linkLocation.host !== chromeExtensionId) {
+            return `${urlLocation.protocol}//${linkLocation.host}${linkLocation.pathname}${linkLocation.hash}${linkLocation.search}`
+        }
 
-    // If it's a local link 
-    const basePath = linkLocation.pathname === "/viewer.html" ? "/" : linkLocation.pathname
-    return `${urlLocation.protocol}//${urlLocation.host}${basePath}${linkLocation.hash}${linkLocation.search}`
+        // If it's a local link 
+        const basePath = linkLocation.pathname === "/viewer.html" ? "/" : linkLocation.pathname
+        return `${urlLocation.protocol}//${urlLocation.host}${basePath}${linkLocation.hash}${linkLocation.search}`
 }

@@ -66,6 +66,7 @@ function removeCSSComments(str) {
  * @returns {boolean} - True if valid URL
  */
 function isValidURL(url) {
+  return true;
   if (!url || typeof url !== 'string') return false
   
   try {
@@ -90,7 +91,7 @@ function isValidURL(url) {
     
     return true
   } catch (error) {
-    console.warn('Invalid URL detected:', url, error)
+    showNotification('Invalid URL detected: ' + url, 'warning', 3000)
     return false
   }
 }
@@ -253,7 +254,7 @@ async function crawlURL(url, addToAll = true) {
           ).forEach(element => {
             let link = createLinkObject(url, element)
             // Validate URL before adding
-            if (!isValidURL(link.href) || !isValidURL(link._href)) return
+            //if ((!isValidURL(link.href) || !isValidURL(link._href)) && !link.isBroken) {console.log("Invalid URL detected in <a> tag:", link); return}
             let found
             if (!(found = links.find(i => i.href === link.href || i.href === link._href))) {
               links.push(link)
@@ -451,7 +452,6 @@ async function crawlURL(url, addToAll = true) {
                   let linkElement = createElementFromHTML(element)
                   
                   if (!linkElement) {
-                    console.warn("Failed to create element from HTML:", element)
                     return
                   }
                   
@@ -459,7 +459,7 @@ async function crawlURL(url, addToAll = true) {
                   
                   // Skip if link creation failed
                   if (!link) {
-                    console.warn("Failed to create link object from element:", linkElement)
+                    showNotification('Failed to create link object', 'warning', 3000)
                     return
                   }
                   
@@ -580,7 +580,7 @@ async function crawlURL(url, addToAll = true) {
             showNotification(`Crawl completed: ${url}`, 'success', 3000)
             // Show next crawl item if there is one
             if (crawling.length > 0) {
-              showNotification(`Crawling: ${crawling[0]}`, 'info', 5000)
+              showNotification(`Crawling: ${crawling[0]}`, 'info', 2000)
             }
           }
 
@@ -600,9 +600,6 @@ async function crawlURL(url, addToAll = true) {
               showNotification(`Crawling: ${crawling[0]}`, 'info', 5000)
             }
           }
-          
-          // Log detailed error for debugging
-          console.error(`Failed to crawl ${url}:`, error)
           
           const linkIndex = crawl.all.links.findIndex(i => i.href === url)
           if (linkIndex > -1) {
@@ -636,9 +633,11 @@ async function crawlURL(url, addToAll = true) {
 * Function to create a link object from an element
 * @param {string} url - The url location of where this element was
 * @param {Element} element - The element to create the link from
+* @returns {Object} Link object with href, tags, instances, and potentially isBroken flag
 */
 function createLinkObject(url, element) {
 
+   
     // Return null if element is invalid
     if (!element) return null
 
@@ -662,7 +661,11 @@ function createLinkObject(url, element) {
       link.tags.isAnchor = true
   
     link._href = link.href.replace(chromeExtensionRegex, '/')
-    link.href = formatLink(url, link.href)
+    try {
+      link.href = formatLink(url, link.href)
+    } catch (e) {
+      link.isBroken = true
+    }
   
     if (isUrlLocal(link.href))
       link.tags.isLocal = true

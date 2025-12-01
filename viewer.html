@@ -11,9 +11,12 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" />
 
   <link rel="stylesheet" href="css/viewer.css">
+  <link rel="stylesheet" href="modules/notifications/notifications.css">
 
+  <script src="modules/notifications/notifications.js" type="text/javascript"></script>
   <script src="js/utils.js" type="text/javascript"></script>
   <script src="js/data.js" type="text/javascript"></script>
+  <script src="js/tabCrawler.js" type="text/javascript"></script>
   <script src="js/crawl.js" type="text/javascript"></script>
   <script src="js/viewer.js" type="text/javascript"></script>
 
@@ -312,6 +315,56 @@
       <!-- Settings View -->
       <div id="settings" class="view">
         <div class="view-wrapper">
+          
+
+          <div class="card settings-card">
+            <h3 class="card-title"><i class="fas fa-window-restore"></i> Crawl Mode</h3>
+            <p>Choose how pages are crawled: fetch only, live tabs, or smart detection.</p>
+            <div class="radio-group">
+              <div class="radio-item">
+                <input type="radio" id="crawl-crawlMode-smart" name="crawl-crawlMode" value="smart" checked>
+                <label for="crawl-crawlMode-smart">
+                  <div class="radio-header">
+                    <i class="fas fa-wand-magic-sparkles"></i>
+                    <span class="radio-title">Smart Mode <span class="badge">Recommended</span></span>
+                  </div>
+                  <div class="radio-description">Auto-detects if pages need live crawling. Fast for static sites, accurate for SPAs.</div>
+                </label>
+              </div>
+              <div class="radio-item">
+                <input type="radio" id="crawl-crawlMode-live" name="crawl-crawlMode" value="live">
+                <label for="crawl-crawlMode-live">
+                  <div class="radio-header">
+                    <i class="fas fa-window-restore"></i>
+                    <span class="radio-title">Live Mode</span>
+                  </div>
+                  <div class="radio-description">Always opens tabs. Best for dynamic apps.</div>
+                </label>
+              </div>
+              <div class="radio-item">
+                <input type="radio" id="crawl-crawlMode-fetch" name="crawl-crawlMode" value="fetch">
+                <label for="crawl-crawlMode-fetch">
+                  <div class="radio-header">
+                    <i class="fas fa-download"></i>
+                    <span class="radio-title">Fetch Mode</span>
+                  </div>
+                  <div class="radio-description">Fastest, but may miss JavaScript-generated content.</div>
+                </label>
+              </div>
+            </div>
+            <br>
+            <div class="form-item split">
+              <div class="border">
+                <input id="crawl-liveWaitTime" type="number" name="crawl-liveWaitTime" min="1000" max="30000" step="1000" value="5000" required>
+                <label for="crawl-liveWaitTime">Wait Time (ms)</label>
+              </div>
+              <div class="border">
+                <input id="crawl-maxConcurrentTabs" type="number" name="crawl-maxConcurrentTabs" min="1" max="20" step="1" value="10" required>
+                <label for="crawl-maxConcurrentTabs">Max Concurrent Tabs</label>
+              </div>
+            </div>
+          </div>
+
           <div class="card settings-card">
             <h3 class="card-title"><i class="fas fa-gauge-high"></i> Crawl Rate Limiting</h3>
             <p>Set the delay (in milliseconds) between crawl requests to avoid overwhelming servers.</p>
@@ -329,6 +382,7 @@
               <div></div>
             </div>
           </div>
+
           <div class="card settings-card">
             <h3 class="card-title"><i class="fas fa-globe"></i> CORS Proxy Configuration</h3>
             <p>Configure the CORS bypass proxy URLs used for cross-origin requests.</p>
@@ -371,12 +425,22 @@
             </div>
           </div>
           <div class="card settings-card needsManageDownloads">
-            <h3 class="card-title"><i class="fas fa-link"></i> Combine Into HTML File</h3>
-            <p>When downloading a HTML File do you want to combine all the images and assets into the HTML file?</p>
+            <h3 class="card-title"><i class="fas fa-download"></i> Download Options</h3>
+            <p>Configure how files are downloaded and organized.</p>
             
+            <br>
+            <div class="form-item split">
+              <div class="border">
+                <input id="download-directory" type="text" name="download-directory" required>
+                <label for="download-directory">Download Directory</label>
+              </div>
+              <div></div>
+            </div>
+
+            <br>
             <div class="settings-warning">
               <i class="fas fa-triangle-exclamation"></i>
-              <span>This feature is still in testing and may not work as intended.</span>
+              <span>Combine feature is still in testing and may not work as intended.</span>
             </div>
             <br>
             <div class="form-item">
@@ -404,18 +468,6 @@
               </div>
             </div>
           </div>
-          <div class="card settings-card needsManageDownloads">
-            <h3 class="card-title"><i class="fas fa-folder-open"></i> Download Directory</h3>
-            <p>Want to put all the downloaded files into a specific directory?</p>
-            <br>
-            <div class="form-item split">
-              <div class="border">
-                <input id="download-directory" type="text" name="download-directory" required>
-                <label for="download-directory">Download Directory</label>
-              </div>
-              <div></div>
-            </div>
-          </div>
           <div class="card settings-card">
             <h3 class="card-title"><i class="fas fa-arrows-rotate"></i> Recrawl the Base URL</h3>
             <p>Want to clear up all your currently crawled pages and go back to only the first page being crawled?</p>
@@ -440,7 +492,9 @@
                 Exercitationem maiores, debitis odio accusantium delectus ipsum magnam mollitia nisi, aspernatur et
                 autem molestiae reprehenderit recusandae voluptatum. Mollitia perspiciatis reprehenderit animi vero est!
               </p>
-            </span><span title="Close Popup" class="card-title-icon popup-close"><i
+            </span>
+            <span title="Delete Crawl Data" class="card-title-icon popup-delete"><i class="fas fa-trash"></i></span>
+            <span title="Close Popup" class="card-title-icon popup-close"><i
                 class="far fa-window-close tool-icon"></i></span>
             <div class="popup-nav">
               <div class="popup-nav-item active">

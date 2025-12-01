@@ -14,54 +14,6 @@ const BLOB_CLEANUP_DELAY = 2000 // ms
 const TEXT_FRAGMENT_MAX_LENGTH = 50 // characters
 
 /**
- * Show a toast notification to the user
- * @param {string} message - The message to display
- * @param {string} type - The type of notification ('success', 'error', 'info')
- * @param {number} duration - How long to show the notification in ms (default: 2000)
- */
-function showNotification(message, type = 'info', duration = 2000) {
-  requestAnimationFrame(() => {
-    // Create or get the notification container
-    let container = document.querySelector('.notification-container')
-    if (!container) {
-      container = document.createElement('div')
-      container.className = 'notification-container'
-      document.body.appendChild(container)
-    }
-    
-    // Create notification
-    const notification = document.createElement('div')
-    notification.className = `toast-notification ${type}`
-    notification.textContent = message
-    container.appendChild(notification)
-    
-    // Set the countdown animation duration to match the toast duration
-    notification.style.setProperty('--duration', `${duration}ms`)
-    
-    // Trigger animation in next frame
-    requestAnimationFrame(() => {
-      notification.classList.add('show')
-    })
-    
-    // Auto remove
-    setTimeout(() => {
-      requestAnimationFrame(() => {
-        notification.classList.remove('show')
-        setTimeout(() => {
-          requestAnimationFrame(() => {
-            notification.remove()
-            // Remove container if empty
-            if (container.children.length === 0) {
-              container.remove()
-            }
-          })
-        }, 300)
-      })
-    }, duration)
-  })
-}
-
-/**
  * Helper function to create a URL with text fragment for scroll-to-text functionality
  * @param {string} baseUrl - The base URL
  * @param {string} text - The text to create a fragment for (e.g., link text, alt text, title)
@@ -133,7 +85,10 @@ let settings = {
     onPageStyles: true,
     rateLimitMs: 100,
     corsProxyUrl: 'https://api.allorigins.win/get?url=',
-    corsProxyRawUrl: 'https://api.allorigins.win/raw?url='
+    corsProxyRawUrl: 'https://api.allorigins.win/raw?url=',
+    crawlMode: 'smart', // 'fetch', 'live', or 'smart'
+    liveWaitTime: 5000,
+    maxConcurrentTabs: 10
   },
   combine: {
     enabled: false,
@@ -169,6 +124,10 @@ document.addEventListener("DOMContentLoaded", function () {
       window.viewObserver.disconnect()
       window.viewObserver = null
     }
+    // Clean up all crawler tabs
+    if (typeof closeAllCrawlerTabs === 'function') {
+      closeAllCrawlerTabs().catch(err => console.warn('Failed to close crawler tabs:', err))
+    }
     window.close()
   }
 
@@ -182,7 +141,10 @@ document.addEventListener("DOMContentLoaded", function () {
           onPageStyles: data.crawl?.onPageStyles !== undefined ? data.crawl.onPageStyles : true,
           rateLimitMs: data.crawl?.rateLimitMs !== undefined ? data.crawl.rateLimitMs : 100,
           corsProxyUrl: data.crawl?.corsProxyUrl || 'https://api.allorigins.win/get?url=',
-          corsProxyRawUrl: data.crawl?.corsProxyRawUrl || 'https://api.allorigins.win/raw?url='
+          corsProxyRawUrl: data.crawl?.corsProxyRawUrl || 'https://api.allorigins.win/raw?url=',
+          crawlMode: data.crawl?.crawlMode || (data.crawl?.liveCrawling === true ? 'live' : 'smart'), // Migrate old liveCrawling setting
+          liveWaitTime: data.crawl?.liveWaitTime !== undefined ? data.crawl.liveWaitTime : 5000,
+          maxConcurrentTabs: data.crawl?.maxConcurrentTabs !== undefined ? data.crawl.maxConcurrentTabs : 10
         },
         combine: data.combine || settings.combine,
         download: data.download || settings.download
@@ -197,40 +159,50 @@ document.addEventListener("DOMContentLoaded", function () {
       }
       
       //Settings Controls
-      document.querySelectorAll("#settings.view input").forEach(item => {
+      document.querySelectorAll("#settings.view input, #settings.view select").forEach(item => {
 
         let settingGroup = item.id.split("-")[0]
         let setting = item.id.split("-")[1]
 
         if (item.type === "checkbox")
           item.checked = settings[settingGroup][setting]
+        else if (item.type === "radio")
+          item.checked = (item.value === settings[settingGroup][setting])
         else if (item.type === "text" || item.type === "number")
+          item.value = settings[settingGroup][setting]
+        else if (item.tagName === "SELECT")
           item.value = settings[settingGroup][setting]
 
         if (settings.combine.enabled === true)
           document.querySelector(".combine-settings").classList.toggle("active")
       })
     }
+    
+    // Crawl base url after settings are loaded
+    startInitialCrawl()
   }).catch(error => {
     showNotification('Failed to load settings', 'error', 3000)
+    // Still start crawl even if settings fail to load (will use defaults)
+    startInitialCrawl()
   })
 
-  //Crawl base url
-  if (window.tabURL)
-    baseUrl = window.tabURL
+  // Function to start the initial crawl
+  function startInitialCrawl() {
+    if (window.tabURL)
+      baseUrl = window.tabURL
 
+    let url = new URL(baseUrl)
+    hostURL = url.origin
+    baseUrl = hostURL + (url.pathname ? url.pathname : '')
 
-  let url = new URL(baseUrl)
-  hostURL = url.origin
-  baseUrl = hostURL + (url.pathname ? url.pathname : '')
+    document.querySelector("#crawledSiteText").textContent = baseUrl
+    crawlURL(baseUrl, true, true)  // Pass true for isInitialPage on first crawl
 
-  document.querySelector("#crawledSiteText").textContent = baseUrl
-  crawlURL(baseUrl)
-
-  let link = createLinkObject(baseUrl, createElementFromHTML(`<a href="${baseUrl}"></a>`))
-  link.isCrawled = true
-  link.tags.isBaseUrl = true
-  crawl.all.links.push(link)
+    let link = createLinkObject(baseUrl, createElementFromHTML(`<a href="${baseUrl}"></a>`))
+    link.isCrawled = true
+    link.tags.isBaseUrl = true
+    crawl.all.links.push(link)
+  }
 
   document.querySelector(".sidebar .sidebar-footer .version").innerHTML = window.version
 
@@ -349,7 +321,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
 
   //Settings Controls
-  document.querySelectorAll("#settings.view input").forEach(item =>
+  document.querySelectorAll("#settings.view input, #settings.view select").forEach(item =>
     item.addEventListener("change", event => {
 
       let settingGroup = item.id.split("-")[0]
@@ -357,10 +329,14 @@ document.addEventListener("DOMContentLoaded", function () {
       
       if (item.type === "checkbox")
         settings[settingGroup][setting] = item.checked
+      else if (item.type === "radio")
+        settings[settingGroup][setting] = item.value
       else if (item.type === "text")
         settings[settingGroup][setting] = item.value
       else if (item.type === "number")
         settings[settingGroup][setting] = parseInt(item.value, 10) || 0
+      else if (item.tagName === "SELECT")
+        settings[settingGroup][setting] = item.value
 
       if (settingGroup === "download") {
         let downloadDirectory = settings.download.directory
@@ -425,6 +401,81 @@ document.addEventListener("DOMContentLoaded", function () {
   document.querySelectorAll(".popup .popup-close i").forEach(element => element.addEventListener("click", event => {
     document.querySelector(".popup.active").classList.remove("active")
   }))
+  
+  // Delete crawl data button handler
+  document.querySelector("#inspecter .popup-delete")?.addEventListener("click", async event => {
+    const popup = document.querySelector("#inspecter")
+    const urlElement = popup.querySelector(".card-title h3")
+    if (!urlElement) return
+    
+    const url = urlElement.textContent.split('\n')[0].trim()
+    
+    // Prevent deleting the original URL
+    if (url === baseUrl) {
+      showNotification('Cannot delete crawl data for the original URL', 'warning', 3000)
+      return
+    }
+    
+    if (!confirm(`Delete crawl data for this page?\n\n${url}\n\nThis will remove all content found on this page, but keep it as a discovered link.`)) {
+      return
+    }
+    
+    // Close the popup
+    popup.classList.remove("active")
+    
+    // Remove the page's crawled content but keep it as a link
+    if (crawl[url]) {
+      // Store the page data to get links/media/assets found on this page
+      const pageData = crawl[url]
+      
+      // Remove all links found on this page from other links' instances
+      crawl.all.links.forEach(link => {
+        link.instances = link.instances.filter(instance => instance.foundOn !== url)
+      })
+      
+      // Remove all media found on this page from other media's instances
+      crawl.all.media.forEach(media => {
+        media.instances = media.instances.filter(instance => instance.foundOn !== url)
+      })
+      
+      // Remove all assets found on this page from other assets' instances
+      crawl.all.assets.forEach(asset => {
+        asset.instances = asset.instances.filter(instance => instance.foundOn !== url)
+      })
+      
+      // Clean up items with no remaining instances
+      crawl.all.links = crawl.all.links.filter(link => link.instances.length > 0)
+      crawl.all.media = crawl.all.media.filter(media => media.instances.length > 0)
+      crawl.all.assets = crawl.all.assets.filter(asset => asset.instances.length > 0)
+      
+      // Delete the crawled page data
+      delete crawl[url]
+      
+      // Mark the link as not crawled anymore (so it can be crawled again)
+      const linkIndex = crawl.all.links.findIndex(link => link.href === url)
+      if (linkIndex > -1) {
+        crawl.all.links[linkIndex].isCrawled = false
+        // Clear any error/warning flags
+        delete crawl.all.links[linkIndex].isError
+        delete crawl.all.links[linkIndex].isWarning
+        delete crawl.all.links[linkIndex].statusCode
+        delete crawl.all.links[linkIndex].errorMessage
+        delete crawl.all.links[linkIndex].isDuplicate
+        delete crawl.all.links[linkIndex].duplicateOf
+      }
+    }
+    
+    // Update all views
+    updatePages()
+    updateAssets()
+    updateLinks()
+    updateFiles()
+    updateMedia()
+    updateOverview()
+    
+    showNotification(`Crawl data deleted for: ${url}`, 'success', 3000)
+  })
+  
   document.querySelectorAll(".popup .popup-outerWrapper").forEach(element => element.addEventListener("click", event => {
     if (Array.from(document.querySelectorAll(".popup .popup-outerWrapper")).some(element1 => element1 === event.target))
       document.querySelector(".popup.active").classList.remove("active")
@@ -1379,11 +1430,25 @@ function setupPopup(url) {
   const popup = document.querySelector("#inspecter")
   const page = crawl[url]
 
+  // Hide delete button if this is the original URL
+  const deleteButton = popup.querySelector(".popup-delete")
+  if (deleteButton) {
+    deleteButton.style.display = url === baseUrl ? 'none' : ''
+  }
+
   // Set popup title content
+  const crawlMethodIcon = page.crawlMethod === 'live' 
+    ? '<i class="fas fa-window-restore" title="Crawled using Live Mode (JavaScript executed)"></i>' 
+    : '<i class="fas fa-download" title="Crawled using Fetch Mode (raw HTML)"></i>'
+  const crawlMethodLabel = page.crawlMethod === 'live' ? 'Live Crawl' : 'Fetch Crawl'
+  
   popup.querySelector(".card-title").innerHTML = `
     <h2>${page.title}</h2>
     <h3>${url}<br><br></h3>
     <p>${page.description}</p>
+    <p style="margin-top: 10px; font-size: 0.9em; opacity: 0.8;">
+      ${crawlMethodIcon} ${crawlMethodLabel}
+    </p>
   `
 
   // Categorize and build HTML for links and assets

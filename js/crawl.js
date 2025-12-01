@@ -7,54 +7,146 @@ const pageHashCache = new Map()
 //Mutex lock to prevent race conditions
 const crawlLocks = new Set()
 
-// Rate limiting queue implementation
+// Rate limiting queue implementation with concurrency support
 const fetchQueue = []
-let isProcessingQueue = false
+let activeFetches = 0
 let lastFetchTime = 0
+let isProcessingQueue = false
+
+const getMaxConcurrentFetches = () => {
+  return settings?.crawl?.maxConcurrentTabs || 5
+}
 
 const rateLimitedFetch = async (fetchFn) => {
   return new Promise((resolve, reject) => {
     // Add to queue
     fetchQueue.push({ fetchFn, resolve, reject })
     
-    // Start processing if not already running
-    if (!isProcessingQueue) {
-      processQueue()
-    }
+    // Start processing
+    processQueue()
   })
 }
 
 const processQueue = async () => {
-  if (fetchQueue.length === 0) {
-    isProcessingQueue = false
+  // Prevent concurrent execution of queue processor
+  if (isProcessingQueue) {
     return
   }
   
   isProcessingQueue = true
-  const { fetchFn, resolve, reject } = fetchQueue.shift()
   
-  // Apply rate limiting
-  const now = Date.now()
-  const timeSinceLastFetch = now - lastFetchTime
-  const rateLimit = settings?.crawl?.rateLimitMs || 100
-  
-  if (timeSinceLastFetch < rateLimit) {
-    const delay = rateLimit - timeSinceLastFetch
-    await new Promise(r => setTimeout(r, delay))
+  // Process multiple items concurrently up to the limit
+  while (activeFetches < getMaxConcurrentFetches() && fetchQueue.length > 0) {
+    const { fetchFn, resolve, reject } = fetchQueue.shift()
+    
+    // Apply rate limiting before starting new fetch
+    const now = Date.now()
+    const timeSinceLastFetch = now - lastFetchTime
+    const rateLimit = settings?.crawl?.rateLimitMs || 100
+    
+    if (timeSinceLastFetch < rateLimit) {
+      const delay = rateLimit - timeSinceLastFetch
+      await new Promise(r => setTimeout(r, delay))
+    }
+    
+    lastFetchTime = Date.now()
+    activeFetches++
+    
+    // Execute the fetch (don't await - let it run concurrently)
+    fetchFn()
+      .then(result => {
+        resolve(result)
+      })
+      .catch(error => {
+        reject(error)
+      })
+      .finally(() => {
+        activeFetches--
+        // Try to process more items
+        isProcessingQueue = false
+        processQueue()
+      })
   }
   
-  lastFetchTime = Date.now()
-  
-  // Execute the fetch
-  try {
-    const result = await fetchFn()
-    resolve(result)
-  } catch (error) {
-    reject(error)
-  }
-  
-  // Process next item in queue
-  processQueue()
+  isProcessingQueue = false
+}
+
+/**
+ * Fetch page content by opening in a tab (live crawling)
+ * @param {string} url - URL to crawl
+ * @param {boolean} isInitialPage - Whether this is the first page (use current tab)
+ * @param {string} notificationId - ID of the crawling notification to dismiss when done
+ * @returns {Promise<string>} - HTML content after JavaScript execution
+ */
+async function fetchLive(url, isInitialPage = false, notificationId = null) {
+  return rateLimitedFetch(async () => {
+    let tabId = null
+    try {
+      // Show notification when actually starting (not when queued)
+      if (typeof showNotification === 'function') {
+        showNotification(`Crawling: ${url}`, 'info', 30000, notificationId)
+      }
+      
+      // Check if tab crawling is supported
+      if (typeof isTabCrawlingSupported !== 'function' || !(await isTabCrawlingSupported())) {
+        throw new Error('Tab crawling not supported - missing permissions or APIs')
+      }
+
+      // Open tab (in background if not initial page)
+      tabId = await openTabForCrawling(url, isInitialPage)
+      
+      // Wait for load + JS execution (skip wait for initial page as it's already loaded)
+      if (!isInitialPage) {
+        const waitTime = settings?.crawl?.liveWaitTime || 5000
+        try {
+          await waitForPageLoad(tabId, waitTime)
+        } catch (loadError) {
+          // Page load timeout or error
+          await closeTab(tabId)
+          throw new Error(`Page load failed: ${loadError.message}`)
+        }
+      }
+      
+      // Extract content with error handling
+      let html
+      try {
+        html = await extractPageContent(tabId)
+      } catch (extractError) {
+        // Content extraction failed (CSP, permissions, etc.)
+        if (tabId && !isInitialPage) {
+          await closeTab(tabId)
+        }
+        throw new Error(`Content extraction failed: ${extractError.message}`)
+      }
+      
+      // Close tab if not initial page
+      if (!isInitialPage) {
+        await closeTab(tabId)
+      }
+      
+      return html
+    } catch (error) {
+      // Clean up tab on error
+      if (tabId && !isInitialPage) {
+        try {
+          await closeTab(tabId)
+        } catch (closeError) {
+          console.warn('Failed to close tab after error:', closeError)
+        }
+      }
+      
+      // Log specific error types for debugging
+      if (error.message.includes('not supported')) {
+        console.error('Live crawling disabled: Missing permissions. Please reload the extension.')
+      } else if (error.message.includes('timeout')) {
+        console.warn('Live crawl timeout:', url)
+      } else if (error.message.includes('blocked')) {
+        console.warn('Tab blocked by popup blocker:', url)
+      }
+      
+      throw new Error(`Live crawl failed: ${error.message}`)
+    }
+  })
 }
 
 /**
@@ -161,6 +253,67 @@ function generatePageHash(page) {
 }
 
 /**
+ * Analyze HTML to determine if page needs live crawling (framework detection)
+ * @param {string} html - Raw HTML content
+ * @returns {boolean} - True if live crawling is recommended
+ */
+function shouldUseLiveCrawling(html) {
+  let score = 0
+  
+  // Framework indicators (+2 each)
+  if (html.includes('id="root"') || html.includes('data-reactroot') || html.includes('__REACT_') || html.includes('_reactRootContainer')) {
+    score += 2
+    console.log('Detected React framework')
+  }
+  if (html.includes('id="app"') || html.includes('v-app') || html.includes('v-cloak') || html.includes('__VUE__')) {
+    score += 2
+    console.log('Detected Vue framework')
+  }
+  if (html.includes('ng-app') || html.includes('ng-controller') || html.match(/\[ng-/) || html.includes('__ngContext__')) {
+    score += 2
+    console.log('Detected Angular framework')
+  }
+  if (html.includes('__NEXT_DATA__') || html.includes('_next')) {
+    score += 2
+    console.log('Detected Next.js framework')
+  }
+  if (html.includes('__NUXT__')) {
+    score += 2
+    console.log('Detected Nuxt framework')
+  }
+  if (html.includes('data-svelte-h')) {
+    score += 2
+    console.log('Detected Svelte framework')
+  }
+  
+  // Low content density (+1)
+  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i)
+  if (bodyMatch) {
+    const bodyText = bodyMatch[1]
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+      .replace(/<[^>]+>/g, '')
+      .trim()
+    
+    if (bodyText.length < 100) {
+      score += 1
+      console.log('Detected low content density (likely client-side rendered)')
+    }
+  }
+  
+  // Many script tags (+1)
+  const scriptCount = (html.match(/<script/gi) || []).length
+  if (scriptCount > 5) {
+    score += 1
+    console.log(`Detected ${scriptCount} script tags`)
+  }
+  
+  const needsLive = score >= 3
+  console.log(`Smart mode analysis: score=${score}, needsLive=${needsLive}`)
+  return needsLive
+}
+
+/**
  * Check if a page is a duplicate of an already crawled page
  * @param {object} page - Page object to check
  * @param {string} currentUrl - Current URL being checked
@@ -186,9 +339,10 @@ function findDuplicatePage(page, currentUrl) {
 * Function to crawl the URL for images, links, scripts, and stylesheets
 * @param {string} url - The url to crawl
 * @param {boolean} addToAll - If true add to crawl all
+* @param {boolean} isInitialPage - Whether this is the initial page (for live crawling)
 * @returns {promise} - A promise that resolves when the crawl is complete
 */
-async function crawlURL(url, addToAll = true) {
+async function crawlURL(url, addToAll = true, isInitialPage = false) {
     return new Promise(async (resolve, reject) => {
   
       // Check for race condition - if already crawling this URL, skip
@@ -199,11 +353,6 @@ async function crawlURL(url, addToAll = true) {
       
       // Acquire lock
       crawlLocks.add(url)
-      
-      // Show toast notification for crawling
-      if (typeof showNotification === 'function') {
-        showNotification(`Crawling: ${url}`, 'info', 2000)
-      }
   
       //Remove any old filter and search stuff
       document.querySelectorAll(".filter-icon").forEach(item => item.classList.remove("active"))
@@ -212,10 +361,18 @@ async function crawlURL(url, addToAll = true) {
       document.querySelectorAll(".view-items .view-row").forEach(item => item.classList.remove("hidden"))
   
       crawling.push(url)
+      
+      // Notification ID for this crawl
+      const notificationId = `crawl-${url}`
   
       // Helper function to attempt fetch with CORS bypass
       const fetchWithCorsProxy = async (url) => {
         return rateLimitedFetch(async () => {
+          // Show notification when actually starting
+          if (typeof showNotification === 'function') {
+            showNotification(`Crawling: ${url}`, 'info', 30000, notificationId)
+          }
+          
           const res = await fetch(CORS_BYPASS_URL + encodeURIComponent(url))
           if (!res.ok) throw new Error(`Network request failed with status ${res.status}`)
           const data = await res.json()
@@ -232,6 +389,11 @@ async function crawlURL(url, addToAll = true) {
       // Helper function to attempt direct fetch
       const fetchDirect = async (url) => {
         return rateLimitedFetch(async () => {
+          // Show notification when actually starting
+          if (typeof showNotification === 'function') {
+            showNotification(`Crawling: ${url}`, 'info', 30000, notificationId)
+          }
+          
           const res = await fetch(url)
           if (!res.ok) throw new Error(`HTTP ${res.status}`)
           return await res.text()
@@ -239,13 +401,78 @@ async function crawlURL(url, addToAll = true) {
       }
   
       // Try direct fetch first, fall back to CORS proxy if it fails
-      const fetchData = async (url) => {
+      const fetchData = async (url, isInitialPage = false) => {
+        const crawlMode = settings?.crawl?.crawlMode || 'smart'
+        
+        // Smart mode: analyze first, then decide
+        if (crawlMode === 'smart') {
+          // For the initial page, always use live crawling (it's already loaded)
+          if (isInitialPage) {
+            console.log(`Smart mode: using live crawl for initial page (already loaded): ${url}`)
+            try {
+              const html = await fetchLive(url, isInitialPage, notificationId)
+              console.log(`Smart mode: successfully extracted initial page content (${html.length} chars)`)
+              return { html, crawlMethod: 'live' }
+            } catch (liveError) {
+              console.error(`Failed to extract from initial page, falling back to fetch:`, liveError.message)
+              console.error('Full error:', liveError)
+              // Fall through to regular fetch logic below
+            }
+          }
+          
+          console.log(`Smart mode: analyzing ${url}...`)
+          
+          try {
+            // First fetch the HTML to analyze it
+            let html
+            try {
+              html = await fetchDirect(url)
+            } catch (directError) {
+              html = await fetchWithCorsProxy(url)
+            }
+            
+            // Analyze if it needs live crawling
+            if (shouldUseLiveCrawling(html)) {
+              console.log(`Smart mode: re-crawling ${url} with live mode`)
+              try {
+                const liveHtml = await fetchLive(url, isInitialPage, notificationId)
+                return { html: liveHtml, crawlMethod: 'live' }
+              } catch (liveError) {
+                console.warn(`Live crawling failed, using fetched HTML:`, liveError.message)
+                return { html, crawlMethod: 'fetch' } // Fall back to the already-fetched HTML
+              }
+            } else {
+              console.log(`Smart mode: using fetched HTML for ${url}`)
+              return { html, crawlMethod: 'fetch' } // Use the fetched HTML
+            }
+          } catch (error) {
+            console.error(`Smart mode failed for ${url}:`, error.message)
+            throw error
+          }
+        }
+        
+        // Live mode: always use live crawling
+        if (crawlMode === 'live') {
+          console.log(`Live mode: crawling ${url}${isInitialPage ? ' (initial page)' : ''}`)
+          
+          try {
+            const html = await fetchLive(url, isInitialPage, notificationId)
+            return { html, crawlMethod: 'live' }
+          } catch (liveError) {
+            console.error(`Live crawling failed for ${url}:`, liveError.message)
+            throw liveError
+          }
+        }
+        
+        // Fetch mode: regular fetch method (no live crawling)
         try {
-          return await fetchDirect(url)
+          const html = await fetchDirect(url)
+          return { html, crawlMethod: 'fetch' }
         } catch (directError) {
           // Silently fall back to CORS proxy
           try {
-            return await fetchWithCorsProxy(url)
+            const html = await fetchWithCorsProxy(url)
+            return { html, crawlMethod: 'fetch' }
           } catch (proxyError) {
             // If both fail, throw the proxy error
             throw proxyError
@@ -253,8 +480,9 @@ async function crawlURL(url, addToAll = true) {
         }
       }
   
-      fetchData(url)
-        .then(data => {
+      fetchData(url, isInitialPage)
+        .then(result => {
+          const { html: data, crawlMethod } = result
   
           let type = "html"
   
@@ -281,9 +509,12 @@ async function crawlURL(url, addToAll = true) {
   
           //Basic a tag - get link and add to crawl all list, but if already found add as an instance
           Array.from(doc.querySelectorAll("a")).filter(
-            element => element.getAttribute("href") !== null &&
-              element.getAttribute("href").indexOf("javascript:void(0);") === -1 &&
-              !element.getAttribute("href").startsWith("?")
+            element => {
+              const href = element.getAttribute("href")
+              return href !== null &&
+                !href.startsWith("javascript:") &&
+                !href.startsWith("?")
+            }
           ).forEach(element => {
             let link = createLinkObject(url, element)
             // Validate URL before adding
@@ -539,7 +770,8 @@ async function crawlURL(url, addToAll = true) {
             media,
             assets,
             doc,
-            data
+            data,
+            crawlMethod: crawlMethod || 'unknown'
           }
   
           if (addToAll) {
@@ -618,13 +850,9 @@ async function crawlURL(url, addToAll = true) {
           // Update overview after removing from crawling array
           updateOverview()
 
-          // Show completion toast for this URL
-          if (typeof showNotification === 'function') {
-            showNotification(`Crawl completed: ${url}`, 'success', 3000)
-            // Show next crawl item if there is one
-            if (crawling.length > 0) {
-              showNotification(`Crawling: ${crawling[0]}`, 'info', 2000)
-            }
+          // Replace the crawling notification with completion
+          if (typeof replaceNotification === 'function') {
+            replaceNotification(notificationId, `Crawl completed: ${url}`, 'success', 2000)
           }
 
           resolve(page)        }).catch(error => {
@@ -636,12 +864,9 @@ async function crawlURL(url, addToAll = true) {
           // Release lock
           crawlLocks.delete(url)
   
-          // Show error toast and next crawl item if there is one
-          if (typeof showNotification === 'function') {
-            showNotification(`Failed to crawl: ${url}`, 'error', 5000)
-            if (crawling.length > 0) {
-              showNotification(`Crawling: ${crawling[0]}`, 'info', 5000)
-            }
+          // Replace the crawling notification with error
+          if (typeof replaceNotification === 'function') {
+            replaceNotification(notificationId, `Failed to crawl: ${url}`, 'error', 5000)
           }
           
           const linkIndex = crawl.all.links.findIndex(i => i.href === url)

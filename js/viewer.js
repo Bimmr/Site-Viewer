@@ -1060,24 +1060,6 @@ function testURL(url, element) {
 */
 function updateOverview() {
 
-  //Update queue status
-  const queueCard = document.getElementById('queue-card')
-  const queueCount = document.getElementById('queue-count')
-  const currentlyCrawling = document.getElementById('currently-crawling')
-  
-  if (typeof fetchQueue !== 'undefined' && typeof crawling !== 'undefined') {
-    const queueLength = fetchQueue.length
-    const crawlingCount = crawling.length
-    
-    if (queueLength > 0 || crawlingCount > 0) {
-      queueCard.style.display = 'block'
-      queueCount.textContent = queueLength
-      currentlyCrawling.textContent = crawlingCount
-    } else {
-      queueCard.style.display = 'none'
-    }
-  }
-
   //Get count of view-rows in each view
   let targetCount = [
     document.querySelectorAll("#pages .view-row").length,
@@ -1167,31 +1149,106 @@ function updatePages() {
   //Iterate all links in the crawl object adding to the HTML string
   let html = ''
 
-  // Sort pages by URL path depth and alphabetically
+  // Sort pages by URL path hierarchically
   const sortedPages = getPages().sort((a, b) => {
-    // Split URLs by '/' to get path segments
-    const pathA = a.href.split('/').filter(segment => segment.length > 0)
-    const pathB = b.href.split('/').filter(segment => segment.length > 0)
+    // Extract pathnames without query parameters
+    const getPathname = (href) => {
+      try {
+        return new URL(href).pathname
+      } catch (e) {
+        return href.split('?')[0].split('#')[0].replace(/^https?:\/\/[^\/]+/, '')
+      }
+    }
     
-    // Compare each path segment
-    const minLength = Math.min(pathA.length, pathB.length)
+    const pathA = getPathname(a.href)
+    const pathB = getPathname(b.href)
+    
+    // Split by path segments
+    const segmentsA = pathA.split('/').filter(s => s.length > 0)
+    const segmentsB = pathB.split('/').filter(s => s.length > 0)
+    
+    // Compare each segment (case-insensitive to group properly)
+    const minLength = Math.min(segmentsA.length, segmentsB.length)
     for (let i = 0; i < minLength; i++) {
-      const comparison = pathA[i].localeCompare(pathB[i])
+      const comparison = segmentsA[i].toLowerCase().localeCompare(segmentsB[i].toLowerCase())
       if (comparison !== 0) return comparison
     }
     
     // If all segments match, shorter path comes first
-    return pathA.length - pathB.length
+    if (segmentsA.length !== segmentsB.length) {
+      return segmentsA.length - segmentsB.length
+    }
+    
+    // Finally, sort by full URL (including query params) for consistent ordering
+    return a.href.localeCompare(b.href)
   })
+
+  // Build a map to track actual parent-child relationships
+  const pageMap = new Map()
+  const pageMapWithParams = new Map() // Track pages that have query params
+  
+  sortedPages.forEach(link => {
+    try {
+      const url = new URL(link.href)
+      const pathname = url.pathname
+      const searchParams = url.searchParams
+      
+      // Store base pathname only if there are NO query params
+      if (!searchParams.toString()) {
+        pageMap.set(pathname, link)
+      } else {
+        // Track that this pathname exists but with params
+        pageMapWithParams.set(pathname, link)
+      }
+    } catch (e) {
+      const pathname = link.href.split('?')[0].split('#')[0].replace(/^https?:\/\/[^\/]+/, '')
+      pageMap.set(pathname, link)
+    }
+  })
+
+  // Function to calculate indent level based on actual parent chain
+  const findIndentLevel = (pathname, searchParams) => {
+    const segments = pathname.split('/').filter(s => s.length > 0)
+    let indentLevel = 0
+    
+    // First check if there's a parent with the same path but no query params
+    if (searchParams && searchParams.toString()) {
+      if (pageMap.has(pathname)) {
+        // The base path exists, so this query param version is a child
+        indentLevel = findIndentLevel(pathname, null) + 1
+        return indentLevel
+      }
+    }
+    
+    // Walk up the path checking for each potential parent
+    for (let i = segments.length - 1; i > 0; i--) {
+      const parentPath = '/' + segments.slice(0, i).join('/')
+      if (pageMap.has(parentPath)) {
+        // Found a parent, recursively get its indent level and add 1
+        indentLevel = findIndentLevel(parentPath, null) + 1
+        break
+      }
+    }
+    
+    return indentLevel
+  }
 
   sortedPages.forEach(link => {
     //Pages should only contain local HTML links but not anchors
 
-    // Calculate path depth for indentation (subtract domain parts)
-    const pathSegments = link.href.split('/').filter(segment => segment.length > 0)
-    // Remove protocol and domain (first 2 segments like "https:" and "domain.com")
-    const pathDepth = Math.max(0, pathSegments.length - 2)
-    const indentStyle = pathDepth > 0 ? `style="padding-left: ${pathDepth * 20}px;"` : ''
+    // Calculate indentation based on actual parent-child relationships
+    let pathname = ''
+    let searchParams = null
+    try {
+      const url = new URL(link.href)
+      pathname = url.pathname
+      searchParams = url.searchParams
+    } catch (e) {
+      pathname = link.href.split('?')[0].split('#')[0].replace(/^https?:\/\/[^\/]+/, '')
+    }
+    
+    const indentLevel = findIndentLevel(pathname, searchParams)
+    const indentStyle = indentLevel > 0 ? `style="padding-left: ${indentLevel * 20}px;"` : ''
 
     //Create string of tags and instances
     let linkTagsText = ''

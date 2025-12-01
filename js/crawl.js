@@ -1,41 +1,99 @@
 //Crawled Pages
 let crawl = { all: { media: [], links: [], assets: [] } }
-//Track whats being crawled
-let crawling = []
 //Cache for page hashes to optimize duplicate detection
 const pageHashCache = new Map()
 //Mutex lock to prevent race conditions
 const crawlLocks = new Set()
 
-// Rate limiting queue implementation with concurrency support
+// Separate queue systems for tabs (limited) and HTTP fetches (higher concurrency)
+const tabQueue = []
 const fetchQueue = []
+let activeTabs = 0
 let activeFetches = 0
 let lastFetchTime = 0
-let isProcessingQueue = false
+let isProcessingTabQueue = false
+let isProcessingFetchQueue = false
+
+const getMaxConcurrentTabs = () => {
+  return settings?.crawl?.maxConcurrentTabs || 5
+}
 
 const getMaxConcurrentFetches = () => {
-  return settings?.crawl?.maxConcurrentTabs || 5
+  return 20 // Higher limit for HTTP requests
+}
+
+const rateLimitedTab = async (fetchFn) => {
+  return new Promise((resolve, reject) => {
+    // Add to tab queue
+    tabQueue.push({ fetchFn, resolve, reject })
+    
+    // Start processing
+    processTabQueue()
+  })
 }
 
 const rateLimitedFetch = async (fetchFn) => {
   return new Promise((resolve, reject) => {
-    // Add to queue
+    // Add to fetch queue
     fetchQueue.push({ fetchFn, resolve, reject })
     
     // Start processing
-    processQueue()
+    processFetchQueue()
   })
 }
 
-const processQueue = async () => {
+const processTabQueue = async () => {
   // Prevent concurrent execution of queue processor
-  if (isProcessingQueue) {
+  if (isProcessingTabQueue) {
     return
   }
   
-  isProcessingQueue = true
+  isProcessingTabQueue = true
   
-  // Process multiple items concurrently up to the limit
+  // Process multiple items concurrently up to the tab limit
+  while (activeTabs < getMaxConcurrentTabs() && tabQueue.length > 0) {
+    const { fetchFn, resolve, reject } = tabQueue.shift()
+    
+    // Apply rate limiting before starting new tab
+    const now = Date.now()
+    const timeSinceLastFetch = now - lastFetchTime
+    const rateLimit = settings?.crawl?.rateLimitMs || 100
+    
+    if (timeSinceLastFetch < rateLimit) {
+      const delay = rateLimit - timeSinceLastFetch
+      await new Promise(r => setTimeout(r, delay))
+    }
+    
+    lastFetchTime = Date.now()
+    activeTabs++
+    
+    // Execute the fetch (don't await - let it run concurrently)
+    fetchFn()
+      .then(result => {
+        resolve(result)
+      })
+      .catch(error => {
+        reject(error)
+      })
+      .finally(() => {
+        activeTabs--
+        // Try to process more items (schedule it for next tick to avoid recursion)
+        setTimeout(() => processTabQueue(), 0)
+      })
+  }
+  
+  isProcessingTabQueue = false
+}
+
+const processFetchQueue = async () => {
+  // Prevent concurrent execution of queue processor
+  if (isProcessingFetchQueue) {
+    return
+  }
+  
+  isProcessingFetchQueue = true
+  
+  // Process multiple items concurrently up to the fetch limit
   while (activeFetches < getMaxConcurrentFetches() && fetchQueue.length > 0) {
     const { fetchFn, resolve, reject } = fetchQueue.shift()
     
@@ -63,11 +121,11 @@ const processQueue = async () => {
       .finally(() => {
         activeFetches--
         // Try to process more items (schedule it for next tick to avoid recursion)
-        setTimeout(() => processQueue(), 0)
+        setTimeout(() => processFetchQueue(), 0)
       })
   }
   
-  isProcessingQueue = false
+  isProcessingFetchQueue = false
 }
 
 /**
@@ -78,7 +136,7 @@ const processQueue = async () => {
  * @returns {Promise<string>} - HTML content after JavaScript execution
  */
 async function fetchLive(url, isInitialPage = false, notificationId = null) {
-  return rateLimitedFetch(async () => {
+  return rateLimitedTab(async () => {
     let tabId = null
     try {
       // Show notification when actually starting (only if notificationId provided)
@@ -177,47 +235,6 @@ function removeJSComments(str) {
  */
 function removeCSSComments(str) {
   return str.replace(/\/\*[\s\S]*?\*\//g, '')
-}
-
-/**
- * Check if a URL is valid and doesn't contain unresolved template variables
- * @param {string} url - URL to validate
- * @returns {boolean} - True if valid, false otherwise
- */
-/**
- * Validate if a URL is valid and not a template/variable
- * @param {string} url - URL to validate
- * @returns {boolean} - True if valid URL
- */
-function isValidURL(url) {
-  return true;
-  if (!url || typeof url !== 'string') return false
-  
-  try {
-    // Filter out template literals and JavaScript expressions
-    if (url.includes('${') || url.includes('%7B') || url.includes('%7D')) return false
-    if (url.includes('{') && url.includes('}')) return false
-    
-    // Filter out JavaScript ternary operators and logical expressions
-    if (url.includes('?') && url.includes(':') && (url.includes("'") || url.includes('"'))) return false
-    
-    // Filter out other variable patterns
-    if (url.match(/\$\w+/)) return false // $variable
-    if (url.match(/\{\{.*\}\}/)) return false // {{variable}}
-    if (url.match(/%[A-Z0-9]{2}%[A-Z0-9]{2}/)) return false // Multiple encoded special chars that suggest template syntax
-    
-    // Additional validation: try to parse as URL for http/https URLs
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-      const urlObj = new URL(url)
-      // Check for invalid characters in hostname
-      if (!urlObj.hostname || urlObj.hostname.includes(' ')) return false
-    }
-    
-    return true
-  } catch (error) {
-    showNotification('Invalid URL detected: ' + url, 'warning', 3000)
-    return false
-  }
 }
 
 /**
@@ -335,6 +352,19 @@ function findDuplicatePage(page, currentUrl) {
 
 
 /**
+ * Update all views after crawl completion or error
+ */
+function updateAllViews() {
+  updatePages()
+  updateAssets()
+  updateLinks()
+  updateFiles()
+  updateMedia()
+  updateOverview()
+  updateAll()
+}
+
+/**
 * Function to crawl the URL for images, links, scripts, and stylesheets
 * @param {string} url - The url to crawl
 * @param {boolean} addToAll - If true add to crawl all
@@ -352,8 +382,6 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
       
       // Acquire lock
       crawlLocks.add(url)
-  
-      crawling.push(url)
       
       // Set isCrawling flag on the link object
       const linkIndex = crawl.all.links.findIndex(i => normalizeUrl(i.href) === normalizeUrl(url))
@@ -530,8 +558,6 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
             }
           ).forEach(element => {
             let link = createLinkObject(url, element)
-            // Validate URL before adding
-            //if ((!isValidURL(link.href) || !isValidURL(link._href)) && !link.isBroken) {console.log("Invalid URL detected in <a> tag:", link); return}
             let found
             // Normalize URLs to prevent duplicates with/without trailing slashes
             if (!(found = links.find(i => normalizeUrl(i.href) === normalizeUrl(link.href) || normalizeUrl(i.href) === normalizeUrl(link._href)))) {
@@ -547,8 +573,6 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
           //Basic iframe tag - get link and add to crawl all list, but if already found add as an instance
           doc.querySelectorAll("iframe").forEach(element => {
             let link = createLinkObject(url, element)
-            // Validate URL before adding
-            if (!isValidURL(link.href) || !isValidURL(link._href)) return
             if ((link._href && (link._href.startsWith("?")))) return
             // Filter out about:blank
             const src = element.getAttribute("src")
@@ -569,9 +593,7 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
           //Basic img tag - get image and add to crawl all list, but if already found add as an instance
           doc.querySelectorAll("img").forEach(element => {
             let image = createImageObject(url, element)
-            // Validate URL before adding
-            if (!isValidURL(image.src)) return
-  
+
             let found
             if (isUrlImage(image.src))
               if (!(found = media.find(i => i.src === image.src)))
@@ -638,8 +660,6 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
             const match = imageUrlRegex.exec(element.style.cssText);
             if (match) {
               let src = match.groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
-              // Validate URL before adding
-              if (!isValidURL(src)) return
               let image = createImageObject(url, null, src)
               let found
               if (isUrlImage(image.src))
@@ -671,8 +691,6 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
                   const match = regex.exec(style);
                   if (match) {
                     let src = match.groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
-                    // Validate URL before adding
-                    if (!isValidURL(src)) return
                     let found
                     let image = createImageObject(url, null, src)
                     if (isUrlImage(image.src))
@@ -706,8 +724,6 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
                   const match = regex.exec(style);
                   if (match) {
                     let src = match.groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
-                    // Validate URL before adding
-                    if (!isValidURL(src)) return
                     let image = createImageObject(url, null, src)
                     let found
                     if (isUrlImage(image.src))
@@ -745,8 +761,6 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
                     return
                   }
                   
-                  // Validate URL before adding
-                  if (!isValidURL(link.href) || !isValidURL(link._href)) return
                   if ((link._href && (link._href.startsWith("?")))) return
                   let found
 
@@ -849,10 +863,6 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
             //Sort links
             crawl.all.links = crawl.all.links.sort(sortLinks)
           }
-  
-          //find and remove element from array
-          let index = crawling.indexOf(url)
-          if (index > -1) crawling.splice(index, 1)
           
           // Clear isCrawling flag
           const linkIndex = crawl.all.links.findIndex(i => normalizeUrl(i.href) === normalizeUrl(url))
@@ -863,33 +873,16 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
           // Release lock
           crawlLocks.delete(url)
   
-          //Perform updates
-          updatePages()
-          updateAssets()
-          updateLinks()
-          updateFiles()
-          updateMedia()
-
-          //Update checkboxes
-          updateAll()
-
-          // Update overview after removing from crawling array
-          updateOverview()
+          // Update all views
+          updateAllViews()
 
           // Replace the crawling notification with completion
           if (typeof replaceNotification === 'function') {
             replaceNotification(notificationId, `Crawl completed: ${url}`, 'success', 2000)
-          } else if (typeof showNotification === 'function') {
-            // Fallback: if replaceNotification doesn't exist, just show completion
-            showNotification(`Crawl completed: ${url}`, 'success', 2000)
           }
 
           resolve(page)        
         }).catch(error => {
-  
-          //find and remove element from array
-          let index = crawling.indexOf(url)
-          if (index > -1) crawling.splice(index, 1)
           
           // Release lock
           crawlLocks.delete(url)
@@ -922,16 +915,8 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
             }
           }
   
-          //Perform updates
-          updatePages()
-          updateAssets()
-          updateLinks()
-          updateFiles()
-          updateMedia()
-          updateOverview()
-  
-          //Update Checkboxes
-          updateAll()
+          // Update all views
+          updateAllViews()
   
           reject(error[0] ?? error)
         })
@@ -945,8 +930,6 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
 * @returns {Object} Link object with href, tags, instances, and potentially isBroken flag
 */
 function createLinkObject(url, element) {
-
-   
     // Return null if element is invalid
     if (!element) return null
 

@@ -673,33 +673,6 @@ hr {
   opacity: 0.8;
 }
 
-/* Queue card - Yellow/Gold */
-#queue-card {
-  border-top: 4px solid #FFC107;
-}
-
-#queue-card .title h2 {
-  color: #FFC107;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  font-size: 1.5em;
-  font-weight: 500;
-  margin-bottom: 10px;
-}
-
-#queue-card .title h2 i {
-  font-size: 1.3em;
-  opacity: 0.8;
-}
-
-#queue-card .title p {
-  text-align: center;
-  font-size: 1.2em;
-  margin: 5px 0;
-}
-
 /* Pages card - Blue */
 #overview .row:nth-of-type(3) .card:nth-child(1) {
   border-top: 4px solid #2196F3;

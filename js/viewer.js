@@ -1073,8 +1073,11 @@ function updateOverview() {
     document.querySelectorAll("#media .view-row").length
   ]
 
-  //Get all counters in overview
-  let countElements = document.querySelectorAll("#overview .count")
+  //Get all counters in overview (excluding the banner crawled count)
+  let countElements = Array.from(document.querySelectorAll("#overview .count")).filter(el => {
+    // Only include count elements that are in stat cards, not the banner
+    return el.closest('.stat-card') !== null
+  })
   let sidebarBadges = document.querySelectorAll(".sidebar-item .count-badge")
   
   for (let i = 0; i < countElements.length; i++) {
@@ -1084,7 +1087,7 @@ function updateOverview() {
 
     //Have a nice animation counting up to the new count
     const updateCount = () => {
-      const count = + element.innerText
+      const count = parseInt(element.innerText) || 0
       const speed = 5000
       const inc = target / speed;
       if (count < target) {

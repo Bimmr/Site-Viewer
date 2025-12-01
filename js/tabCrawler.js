@@ -23,9 +23,15 @@ async function getActiveTab() {
  */
 async function openTabForCrawling(url, isInitial = false) {
   try {
-    // If this is the initial crawl, try to find the tab with that URL
+    // If this is the initial crawl, try to use the stored tab ID
     if (isInitial) {
-      // First check if there's a tab with this exact URL
+      // Check if we have a stored initial tab ID from the popup
+      if (typeof window !== 'undefined' && window.initialTabId) {
+        console.log(`Using stored tab ${window.initialTabId} for initial crawl: ${url}`)
+        return window.initialTabId
+      }
+      
+      // Fallback: check if there's a tab with this exact URL
       const tabs = await chrome.tabs.query({ url: url })
       if (tabs && tabs.length > 0) {
         console.log(`Using existing tab ${tabs[0].id} for initial crawl: ${url}`)
@@ -42,10 +48,14 @@ async function openTabForCrawling(url, isInitial = false) {
       console.log(`No existing tab found for ${url}, will create new tab`)
     }
 
+    // Get the current window to ensure tab opens in it
+    const currentWindow = await chrome.windows.getCurrent()
+    
     // Create new tab in the current window (background tab)
     const tab = await chrome.tabs.create({
       url: url,
-      active: false  // Opens in background - user stays on current tab
+      active: false,  // Opens in background - user stays on current tab
+      windowId: currentWindow.id  // Ensure it opens in current window
     })
 
     // Track this tab so we can clean up later

@@ -190,6 +190,10 @@ document.addEventListener("DOMContentLoaded", function () {
   function startInitialCrawl() {
     if (window.tabURL)
       baseUrl = window.tabURL
+    
+    // Store the tabId globally so it can be used for initial crawl
+    if (window.tabId)
+      window.initialTabId = window.tabId
 
     let url = new URL(baseUrl)
     hostURL = url.origin

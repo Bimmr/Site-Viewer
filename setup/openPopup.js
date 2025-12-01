@@ -9,6 +9,7 @@ chrome.tabs.query(
     { active: true, currentWindow: true },
     currentTab => {
         popupWindow.tabURL = currentTab[0].url
+        popupWindow.tabId = currentTab[0].id
         popupWindow.extensionId = chrome.runtime.id
         popupWindow.tab = JSON.stringify(currentTab)
         popupWindow.version = chrome.runtime.getManifest().version

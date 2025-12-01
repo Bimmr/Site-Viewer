@@ -62,9 +62,8 @@ const processQueue = async () => {
       })
       .finally(() => {
         activeFetches--
-        // Try to process more items
-        isProcessingQueue = false
-        processQueue()
+        // Try to process more items (schedule it for next tick to avoid recursion)
+        setTimeout(() => processQueue(), 0)
       })
   }
   
@@ -82,8 +81,8 @@ async function fetchLive(url, isInitialPage = false, notificationId = null) {
   return rateLimitedFetch(async () => {
     let tabId = null
     try {
-      // Show notification when actually starting (not when queued)
-      if (typeof showNotification === 'function') {
+      // Show notification when actually starting (only if notificationId provided)
+      if (notificationId && typeof showNotification === 'function') {
         showNotification(`Crawling: ${url}`, 'info', 30000, notificationId)
       }
       
@@ -360,11 +359,13 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
       const linkIndex = crawl.all.links.findIndex(i => normalizeUrl(i.href) === normalizeUrl(url))
       if (linkIndex > -1) {
         crawl.all.links[linkIndex].isCrawling = true
-      }
-      
-      // Update pages view to show crawling icon
-      if (typeof updatePages === 'function') {
-        updatePages()
+        
+        // Update pages view to show crawling icon (debounced to avoid excessive updates)
+        if (typeof updatePages === 'function') {
+          // Use a small delay to batch updates when multiple crawls start at once
+          clearTimeout(window.updatePagesTimeout)
+          window.updatePagesTimeout = setTimeout(() => updatePages(), 50)
+        }
       }
       
       // Notification ID for this crawl
@@ -415,6 +416,7 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
           if (isInitialPage) {
             console.log(`Smart mode: using live crawl for initial page (already loaded): ${url}`)
             try {
+              // Pass notificationId to show notification when fetch actually starts
               const html = await fetchLive(url, isInitialPage, notificationId)
               console.log(`Smart mode: successfully extracted initial page content (${html.length} chars)`)
               return { html, crawlMethod: 'live' }
@@ -428,7 +430,7 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
           console.log(`Smart mode: analyzing ${url}...`)
           
           try {
-            // First fetch the HTML to analyze it (no notification yet - we're just analyzing)
+            // First fetch the HTML to analyze it (no notification during analysis)
             let html
             try {
               html = await fetchDirect(url, false)
@@ -440,18 +442,19 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
             if (shouldUseLiveCrawling(html)) {
               console.log(`Smart mode: re-crawling ${url} with live mode`)
               try {
+                // Show notification now that we've decided on live mode
                 const liveHtml = await fetchLive(url, isInitialPage, notificationId)
                 return { html: liveHtml, crawlMethod: 'live' }
               } catch (liveError) {
                 console.warn(`Live crawling failed, using fetched HTML:`, liveError.message)
+                // Note: notification will be shown via success completion message
+                // since we're using the already-fetched HTML
                 return { html, crawlMethod: 'fetch' } // Fall back to the already-fetched HTML
               }
             } else {
               console.log(`Smart mode: using fetched HTML for ${url}`)
-              // Show notification now that we've decided to use fetch
-              if (typeof showNotification === 'function') {
-                showNotification(`Crawling: ${url}`, 'info', 30000, notificationId)
-              }
+              // Note: notification will be shown via success completion message
+              // since the fetch already completed during analysis
               return { html, crawlMethod: 'fetch' } // Use the fetched HTML
             }
           } catch (error) {
@@ -475,12 +478,12 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
         
         // Fetch mode: regular fetch method (no live crawling)
         try {
-          const html = await fetchDirect(url)
+          const html = await fetchDirect(url, true)
           return { html, crawlMethod: 'fetch' }
         } catch (directError) {
           // Silently fall back to CORS proxy
           try {
-            const html = await fetchWithCorsProxy(url)
+            const html = await fetchWithCorsProxy(url, true)
             return { html, crawlMethod: 'fetch' }
           } catch (proxyError) {
             // If both fail, throw the proxy error
@@ -876,6 +879,9 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
           // Replace the crawling notification with completion
           if (typeof replaceNotification === 'function') {
             replaceNotification(notificationId, `Crawl completed: ${url}`, 'success', 2000)
+          } else if (typeof showNotification === 'function') {
+            // Fallback: if replaceNotification doesn't exist, just show completion
+            showNotification(`Crawl completed: ${url}`, 'success', 2000)
           }
 
           resolve(page)        
@@ -899,6 +905,12 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
           if (linkIndex > -1) {
             delete crawl.all.links[linkIndex].isCrawling
           }
+          
+          // Update pages view to show error icon instead of crawling icon
+          if (typeof updatePages === 'function') {
+            updatePages()
+          }
+          
           if (linkIndex > -1) {
             if (!isNaN(error.message)) {
               crawl.all.links[linkIndex].isWarning = true

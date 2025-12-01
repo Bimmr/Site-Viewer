@@ -1120,19 +1120,50 @@ function updateOverview() {
   //If crawled more than one page, show the crawl count with a hover popup list of all crawled pages
   if (Object.keys(crawl).length - 2 > 0) {
     let crawledHTML = '<ul>'
-    //Update Crawl counter
-    document.querySelector("#crawledSiteCount").innerHTML = '(+' + (Object.keys(crawl).length - 2) + ')'
-    //Update list of crawled pages, include both links and assets
+    let crawledPages = []
+    
+    //Collect all crawled pages
     crawl.all.links.forEach(item => {
       if (item.isCrawled)
-        crawledHTML += '<li>' + item.href + '</li>'
+        crawledPages.push(item.href)
     })
     crawl.all.assets.forEach(item => {
       if (item.isCrawled)
-        crawledHTML += '<li>' + item.link + '</li>'
+        crawledPages.push(item.link)
+    })
+    
+    //Show max 3 lines: if 3 or less show all, if 4+ show 2 + "..."
+    let displayText = ''
+    let counterText = ''
+    if (crawledPages.length > 0) {
+      if (crawledPages.length <= 3) {
+        // Show all pages if 3 or less
+        displayText = crawledPages.join('<br>')
+      } else {
+        // Show first 2 pages, counter will show "... (+X more)" on 3rd line
+        const visibleUrls = crawledPages.slice(0, 2)
+        const remaining = crawledPages.length - 2
+        displayText = visibleUrls.join('<br>')
+        counterText = `... <span class="count">(+${remaining} more)</span>`
+      }
+    }
+    
+    //Update banner text
+    document.querySelector("#crawledSiteText").innerHTML = displayText
+    
+    //Update counter (displayed on 3rd line with hover popup, styled like URLs)
+    document.querySelector("#crawledSiteCount").innerHTML = counterText
+    
+    //Update hover popup with full list
+    crawledPages.forEach(url => {
+      crawledHTML += '<li>' + url + '</li>'
     })
     crawledHTML += '</ul>'
     document.querySelector("#crawledLinks").innerHTML = crawledHTML
+  } else {
+    document.querySelector("#crawledSiteText").textContent = baseUrl
+    document.querySelector("#crawledSiteCount").innerHTML = ''
+    document.querySelector("#crawledLinks").innerHTML = ''
   }
 }
 

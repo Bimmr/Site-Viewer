@@ -78,31 +78,33 @@
       <!-- Overview View -->
       <div id="overview" class="view active">
         <div class="view-wrapper">
-          <div class="card">
-            <div class="title">
+          <div class="banner overview-banner">
+            <div class="banner-content">
               <h1>Crawled:</h1>
-              <h3><span id="crawledSiteText"></span></h3>
-              <div class="hover-popup-icon">
-                <span id="crawledSiteCount"></span>
-                <div class="hover-popup">
-                  <p id="crawledLinks"></p>
+              <h3>
+                <span id="crawledSiteText"></span>
+                <div class="hover-popup-icon">
+                  <span id="crawledSiteCount"></span>
+                  <div class="hover-popup">
+                    <p id="crawledLinks"></p>
+                  </div>
                 </div>
-              </div>
-              <div class="form-item" style="margin-top: 12px;">
-                <button class="crawlAllBtn">Crawl All Pages</button>
-              </div>
+              </h3>
+            </div>
+            <div class="banner-action">
+              <button class="crawlAllBtn">Crawl All Pages</button>
             </div>
           </div>
           <div class="row center-even">
-            <div class="col  card">
+            <div class="col card stat-card">
               <h2 class="card-title"><i class="fa fa-file-lines"></i>Found Pages</h2>
               <p id="pages-count" class="count">0</p>
             </div>
-            <div class="col  card">
+            <div class="col card stat-card">
               <h2 class="card-title"><i class="fa-solid fa-file-code"></i>Found Assets</h2>
               <p id="assets-count" class="count">0</p>
             </div>
-            <div class="col card">
+            <div class="col card stat-card">
               <h2 class="card-title"><i class="fas fa-link"></i>Found Links</h2>
               <p id="links-count" class="count">0</p>
             </div>
@@ -110,11 +112,11 @@
           </div>
           <div class="row center-even">
 
-            <div class="col card ">
+            <div class="col card stat-card">
               <h2 class="card-title"><i class="fa fa-folder-open"></i>Found Files</h2>
               <p id="files-count" class="count">0</p>
             </div>
-            <div class="col card ">
+            <div class="col card stat-card">
               <h2 class="card-title"><i class="fas fa-images"></i>Found Media</h2>
               <p id="media-count" class="count">0</p>
             </div>

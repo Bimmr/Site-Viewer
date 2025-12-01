@@ -560,16 +560,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
   //Filter/Searchbar gets typed in (debounced to avoid excessive filtering)
   document.querySelectorAll(".searchbar .form-item input").forEach(item => item.addEventListener("keyup", debounce(function () {
-    let view = item.parentNode.parentNode.parentNode
-    let search = item.value.toLowerCase()
-    view.querySelectorAll(".view-items .view-row").forEach(item => {
-      if (item.querySelector("p").innerHTML.toLowerCase().indexOf(search) >= 0)
-        item.classList.remove("hidden")
-      else
-        item.classList.add("hidden")
-    })
-
-  }, 500)))
+    const view = item.parentNode.parentNode.parentNode
+    const viewId = '#' + view.id
+    applySearchFilter(viewId, item.value)
+  }, 200)))
 
 
   //Track new items in views and indicate if new
@@ -1225,7 +1219,9 @@ function updatePages() {
           <div class="tools">
             <a class="download" href="`+ link.href + `" title="Download Page"><i class="fas fa-file-download"></i></a>` +
       '<a class="goto" target="_blank" href="' + link.href + '" title="Go to page"><i class="fas fa-external-link-alt"></i></a>'
-    if (link.isError)
+    if (link.isCrawling)
+      html += '<a class="crawling" title="Crawling in progress..."><i class="fas fa-spinner fa-spin"></i></a>'
+    else if (link.isError)
       html += '<a class="error crawl" target="_blank" href="' + link.href + '" title="Page doesn\'t exist or took to long to respond\nClick to retry"><i class="fas fa-times-circle"></i></a>'
     else if (link.isWarning)
       html += '<a class="warning crawl" target="_blank" href="' + link.href + '" title="Returned a status code of ' + link.statusCode + '\nClick to retry"><i class="fas fa-exclamation-circle"></i></a>'
@@ -1254,6 +1250,35 @@ function updatePages() {
   })
   //Add html to page using DocumentFragment for better performance
   renderToContainer(wrapper, html)
+  
+  // Reapply search filter if active
+  applySearchFilter('#pages')
+}
+
+/**
+ * Apply search filter to a view
+ * @param {string} viewSelector - CSS selector for the view (e.g., '#pages')
+ * @param {string} [searchTerm] - Optional search term. If not provided, uses the view's search input value
+ */
+function applySearchFilter(viewSelector, searchTerm) {
+  const view = document.querySelector(viewSelector)
+  if (!view) return
+  
+  const searchbar = view.querySelector('.searchbar')
+  const searchInput = searchbar?.querySelector('input')
+  
+  // Use provided search term or get from input
+  const search = (searchTerm !== undefined ? searchTerm : searchInput?.value || '').toLowerCase()
+  
+  // Apply filter to all rows
+  view.querySelectorAll('.view-items .view-row').forEach(row => {
+    const text = row.querySelector('p')?.innerHTML.toLowerCase() || ''
+    if (text.indexOf(search) >= 0) {
+      row.classList.remove('hidden')
+    } else {
+      row.classList.add('hidden')
+    }
+  })
 }
 
 /**
@@ -1543,6 +1568,9 @@ function updateAssets() {
     wrapper.innerHTML = html
   else
     wrapper.innerHTML = `<div class="empty-row">There are no items here.</div>`
+  
+  // Reapply search filter if active
+  applySearchFilter('#assets')
 
 }
 
@@ -1625,6 +1653,9 @@ function updateLinks() {
     wrapper.innerHTML = html
   else
     wrapper.innerHTML = `<div class="empty-row">There are no items here.</div>`
+  
+  // Reapply search filter if active
+  applySearchFilter('#links')
 }
 
 /* *
@@ -1688,6 +1719,9 @@ function updateFiles() {
     wrapper.innerHTML = html
   else
     wrapper.innerHTML = `<div class="empty-row">There are no items here.</div>`
+  
+  // Reapply search filter if active
+  applySearchFilter('#files')
 }
 
 /**
@@ -1758,6 +1792,9 @@ function updateMedia() {
     wrapper.innerHTML = html
   else
     wrapper.innerHTML = `<div class="empty-row">There are no items here.</div>`
+  
+  // Reapply search filter if active
+  applySearchFilter('#media')
 
 }
 

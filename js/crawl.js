@@ -354,13 +354,18 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
       // Acquire lock
       crawlLocks.add(url)
   
-      //Remove any old filter and search stuff
-      document.querySelectorAll(".filter-icon").forEach(item => item.classList.remove("active"))
-      document.querySelectorAll(".searchbar").forEach(item => item.classList.remove("active"))
-      document.querySelectorAll(".searchbar .form-item input").forEach(item => item.value = "")
-      document.querySelectorAll(".view-items .view-row").forEach(item => item.classList.remove("hidden"))
-  
       crawling.push(url)
+      
+      // Set isCrawling flag on the link object
+      const linkIndex = crawl.all.links.findIndex(i => normalizeUrl(i.href) === normalizeUrl(url))
+      if (linkIndex > -1) {
+        crawl.all.links[linkIndex].isCrawling = true
+      }
+      
+      // Update pages view to show crawling icon
+      if (typeof updatePages === 'function') {
+        updatePages()
+      }
       
       // Notification ID for this crawl
       const notificationId = `crawl-${url}`
@@ -517,14 +522,16 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
               const href = element.getAttribute("href")
               return href !== null &&
                 !href.startsWith("javascript:") &&
-                !href.startsWith("?")
+                !href.startsWith("?") &&
+                href !== "about:blank"
             }
           ).forEach(element => {
             let link = createLinkObject(url, element)
             // Validate URL before adding
             //if ((!isValidURL(link.href) || !isValidURL(link._href)) && !link.isBroken) {console.log("Invalid URL detected in <a> tag:", link); return}
             let found
-            if (!(found = links.find(i => i.href === link.href || i.href === link._href))) {
+            // Normalize URLs to prevent duplicates with/without trailing slashes
+            if (!(found = links.find(i => normalizeUrl(i.href) === normalizeUrl(link.href) || normalizeUrl(i.href) === normalizeUrl(link._href)))) {
               links.push(link)
             }
             else
@@ -540,8 +547,12 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
             // Validate URL before adding
             if (!isValidURL(link.href) || !isValidURL(link._href)) return
             if ((link._href && (link._href.startsWith("?")))) return
+            // Filter out about:blank
+            const src = element.getAttribute("src")
+            if (src === "about:blank" || link.href === "about:blank" || link._href === "about:blank") return
             let found
-            if (!(found = links.find(i => i.href === link.href || i.href === link._href))) {
+            // Normalize URLs to prevent duplicates with/without trailing slashes
+            if (!(found = links.find(i => normalizeUrl(i.href) === normalizeUrl(link.href) || normalizeUrl(i.href) === normalizeUrl(link._href)))) {
               links.push(link)
             }
             else
@@ -757,6 +768,7 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
                 assets.push(linkSheet)
               }
             })
+
           //Find and track all scripts as assets
           if (type == "html")
             doc.querySelectorAll('script').forEach(element => {
@@ -782,7 +794,8 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
   
             //For Links - add link to crawl all list or add to instance if already crawled
             page.links.forEach(link => {
-              const existingLink = crawl.all.links.find(i => i.href === link.href)
+              // Normalize URLs to prevent duplicates with/without trailing slashes
+              const existingLink = crawl.all.links.find(i => normalizeUrl(i.href) === normalizeUrl(link.href))
               if (!existingLink) {
                 crawl.all.links.push(link)
               } else {
@@ -812,7 +825,7 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
             crawl[url] = page
             
             // Clear any previous error/warning flags on successful crawl
-            const linkIndex = crawl.all.links.findIndex(i => i.href == url)
+            const linkIndex = crawl.all.links.findIndex(i => normalizeUrl(i.href) === normalizeUrl(url))
             if (linkIndex > -1) {
               delete crawl.all.links[linkIndex].isError
               delete crawl.all.links[linkIndex].isWarning
@@ -832,24 +845,30 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
   
             //Sort links
             crawl.all.links = crawl.all.links.sort(sortLinks)
-  
-            //Perform updates
-            updatePages()
-            updateAssets()
-            updateLinks()
-            updateFiles()
-            updateMedia()
-  
-            //Update Listeners
-            updateAll()
           }
   
           //find and remove element from array
           let index = crawling.indexOf(url)
           if (index > -1) crawling.splice(index, 1)
           
+          // Clear isCrawling flag
+          const linkIndex = crawl.all.links.findIndex(i => normalizeUrl(i.href) === normalizeUrl(url))
+          if (linkIndex > -1) {
+            delete crawl.all.links[linkIndex].isCrawling
+          }
+          
           // Release lock
           crawlLocks.delete(url)
+  
+          //Perform updates
+          updatePages()
+          updateAssets()
+          updateLinks()
+          updateFiles()
+          updateMedia()
+
+          //Update checkboxes
+          updateAll()
 
           // Update overview after removing from crawling array
           updateOverview()
@@ -859,7 +878,8 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
             replaceNotification(notificationId, `Crawl completed: ${url}`, 'success', 2000)
           }
 
-          resolve(page)        }).catch(error => {
+          resolve(page)        
+        }).catch(error => {
   
           //find and remove element from array
           let index = crawling.indexOf(url)
@@ -867,13 +887,18 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
           
           // Release lock
           crawlLocks.delete(url)
-  
+          
           // Replace the crawling notification with error
           if (typeof replaceNotification === 'function') {
             replaceNotification(notificationId, `Failed to crawl: ${url}`, 'error', 5000)
           }
           
-          const linkIndex = crawl.all.links.findIndex(i => i.href === url)
+          const linkIndex = crawl.all.links.findIndex(i => normalizeUrl(i.href) === normalizeUrl(url))
+          
+          // Clear isCrawling flag
+          if (linkIndex > -1) {
+            delete crawl.all.links[linkIndex].isCrawling
+          }
           if (linkIndex > -1) {
             if (!isNaN(error.message)) {
               crawl.all.links[linkIndex].isWarning = true
@@ -893,7 +918,7 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
           updateMedia()
           updateOverview()
   
-          //Update Listeners
+          //Update Checkboxes
           updateAll()
   
           reject(error[0] ?? error)

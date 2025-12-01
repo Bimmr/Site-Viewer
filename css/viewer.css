@@ -817,8 +817,21 @@ hr {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 5px;
   position: relative;
+}
+
+/* Override padding for .type in view-title to match other columns */
+#links .view-title .type, #popup-view-links .view-title .type,
+#assets .view-title .type, #popup-view-assets .view-title .type,
+#files .view-title .type, #popup-view-files .view-title .type {
+  padding: 1.5em 0;
+}
+
+/* Padding for .type in view-row */
+#links .view-row .type, #popup-view-links .view-row .type,
+#assets .view-row .type, #popup-view-assets .view-row .type,
+#files .view-row .type, #popup-view-files .view-row .type {
+  padding: 5px;
 }
 
 /* Icon Size */

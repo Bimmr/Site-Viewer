@@ -2,11 +2,51 @@
 const isUrlHTMLFile = url => {
   try {
     const pathname = new URL(url).pathname.split('/').pop();
-    return pathname.indexOf('.') <= 0 || url.includes(".html") || url.includes(".shtml") || url.includes(".htm") || url.includes(".aspx") || url.includes(".asp") || url.includes(".jsp") || url.includes(".php") || url.includes(".xhtml");
+    // No dot means it's a directory/page, or has explicit HTML extension
+    if (pathname.indexOf('.') <= 0) return true;
+    // Check for known HTML extensions
+    if (url.includes(".html") || url.includes(".shtml") || url.includes(".htm") || url.includes(".aspx") || url.includes(".asp") || url.includes(".jsp") || url.includes(".php") || url.includes(".xhtml")) return true;
+    // If there's a dot, check if it's actually a file extension (after the last segment)
+    // URLs like /@-Mr.Phoenix- have dots in the path but aren't files
+    const lastDotIndex = pathname.lastIndexOf('.');
+    const lastSlashOrStart = pathname.lastIndexOf('/') + 1;
+    // If the dot comes after any path separator, it might be a file extension
+    // But if there's no extension-like pattern (2-4 chars after dot at end), treat as page
+    if (lastDotIndex > lastSlashOrStart) {
+      const afterDot = pathname.substring(lastDotIndex + 1);
+      // Common file extensions are 2-4 characters and don't contain special chars
+      // If it doesn't look like a file extension, treat as HTML page
+      if (afterDot.length > 4 || afterDot.includes('-') || afterDot.includes('_') || afterDot.includes('@')) {
+        return true;
+      }
+      return false;
+    }
+    return true;
   } catch {
     return false
   }
 }
+
+// Normalize URL by removing trailing slash (except for root paths)
+const normalizeUrl = url => {
+  if (!url) return url;
+  try {
+    const urlObj = new URL(url);
+    // Don't remove trailing slash from root path (e.g., https://example.com/)
+    if (urlObj.pathname === '/' || urlObj.pathname === '') {
+      return url;
+    }
+    // Remove trailing slash from other paths
+    if (url.endsWith('/')) {
+      return url.slice(0, -1);
+    }
+    return url;
+  } catch {
+    // If URL parsing fails, just remove trailing slash if present
+    return url.endsWith('/') ? url.slice(0, -1) : url;
+  }
+}
+
 const isUrlPDFFile = url => url.includes('.pdf')
 const isUrlProtocol = url => isUrlProtocolMailto(url) || isUrlProtocolTel(url)
 const isUrlProtocolMailto = url => url.includes('mailto:')

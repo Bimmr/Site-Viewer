@@ -377,6 +377,11 @@ document.addEventListener("DOMContentLoaded", function () {
   })
 
   document.querySelector("#settings #recrawlBtn").addEventListener("click", event => {
+    // Show confirmation dialog
+    if (!confirm("Are you sure you want to recrawl? This will clear all current crawl data and start fresh from the base URL.")) {
+      return
+    }
+    
     // Clean up any existing intervals
     if (window.moreToCrawlInterval) {
       clearInterval(window.moreToCrawlInterval)
@@ -384,7 +389,6 @@ document.addEventListener("DOMContentLoaded", function () {
     }
     
     // Clean up crawling state
-    crawling.length = 0
     crawlLocks.clear()
     
     //Reset

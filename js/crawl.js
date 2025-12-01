@@ -366,10 +366,10 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
       const notificationId = `crawl-${url}`
   
       // Helper function to attempt fetch with CORS bypass
-      const fetchWithCorsProxy = async (url) => {
+      const fetchWithCorsProxy = async (url, showNotif = true) => {
         return rateLimitedFetch(async () => {
-          // Show notification when actually starting
-          if (typeof showNotification === 'function') {
+          // Show notification when actually starting (only if requested)
+          if (showNotif && typeof showNotification === 'function') {
             showNotification(`Crawling: ${url}`, 'info', 30000, notificationId)
           }
           
@@ -387,10 +387,10 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
       }
   
       // Helper function to attempt direct fetch
-      const fetchDirect = async (url) => {
+      const fetchDirect = async (url, showNotif = true) => {
         return rateLimitedFetch(async () => {
-          // Show notification when actually starting
-          if (typeof showNotification === 'function') {
+          // Show notification when actually starting (only if requested)
+          if (showNotif && typeof showNotification === 'function') {
             showNotification(`Crawling: ${url}`, 'info', 30000, notificationId)
           }
           
@@ -423,12 +423,12 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
           console.log(`Smart mode: analyzing ${url}...`)
           
           try {
-            // First fetch the HTML to analyze it
+            // First fetch the HTML to analyze it (no notification yet - we're just analyzing)
             let html
             try {
-              html = await fetchDirect(url)
+              html = await fetchDirect(url, false)
             } catch (directError) {
-              html = await fetchWithCorsProxy(url)
+              html = await fetchWithCorsProxy(url, false)
             }
             
             // Analyze if it needs live crawling
@@ -443,6 +443,10 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
               }
             } else {
               console.log(`Smart mode: using fetched HTML for ${url}`)
+              // Show notification now that we've decided to use fetch
+              if (typeof showNotification === 'function') {
+                showNotification(`Crawling: ${url}`, 'info', 30000, notificationId)
+              }
               return { html, crawlMethod: 'fetch' } // Use the fetched HTML
             }
           } catch (error) {

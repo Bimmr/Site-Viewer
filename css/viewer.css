@@ -485,6 +485,7 @@ hr {
   opacity: .25;
   transition: opacity 0.2s, color 0.3s;
   color: #fff;
+  position: relative;
 }
 
 .view-title .filter-icon.active {
@@ -496,19 +497,48 @@ hr {
   opacity: 1;
 }
 
-.view .multi-wrapper, .popup-view .multi-wrapper {
+.filter-icon .filter-count {
+  position: absolute;
+  top: -8px;
+  left: 100%;
+  margin-left: 4px;
+  background: var(--colourAccent);
+  color: #fff;
+  border-radius: 10px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: bold;
+  min-width: 18px;
+  text-align: center;
+  line-height: 1;
+}
+
+.view .multi-wrapper,
+.popup-view .multi-wrapper {
   transition: bottom .3s;
   display: flex;
   position: fixed;
   bottom: -100%;
   left: calc(50% + calc(var(--sidebarWidth) / 2));
   transform: translateX(-50%);
-  height: 50px
+  height: 50px;
+  width: calc(100% - var(--sidebarWidth));
+  justify-content: center;
+  pointer-events: none;
 }
 
-.view .multi-wrapper.active, .popup-view .multi-wrapper.active {
-  bottom: 0;
+.view .multi-wrapper.active, 
+.popup-view .multi-wrapper.active {
+  bottom: 10px;
+  display: flex;
+  flex-flow: row nowrap;
+  gap: 2px;
 }
+
+.multi-wrapper button {
+  pointer-events: auto;
+}
+
 
 /* Main View */
 

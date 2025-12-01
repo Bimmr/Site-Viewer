@@ -282,7 +282,16 @@ document.addEventListener("DOMContentLoaded", function () {
         window.moreToCrawlInterval = null
       }
       
-      // Clear queues - they're defined in crawl.js
+      // Remove isCrawling flag from items that were queued but not actively running
+      // Active crawls (in crawlLocks) will finish naturally
+      crawl.all.links.forEach(link => {
+        if (link.isCrawling && !crawlLocks.has(link.href)) {
+          delete link.isCrawling
+        }
+      })
+      
+      // Clear queues - prevents any new crawls from starting
+      // Items currently being processed will finish
       try {
         if (typeof tabQueue !== 'undefined') {
           tabQueue.length = 0
@@ -294,14 +303,22 @@ document.addEventListener("DOMContentLoaded", function () {
         console.warn('Could not clear queues:', e)
       }
       
-      // Clear crawl locks
-      crawlLocks.clear()
-      
       // Reset button
       button.textContent = 'CRAWL ALL PAGES'
       button.classList.remove('stop-crawling')
       
-      showNotification('Crawling stopped', 'info', 2000)
+      // Update pages view to reflect removed isCrawling flags
+      if (typeof updatePages === 'function') {
+        updatePages()
+      }
+      
+      const activeCount = crawlLocks.size
+      if (activeCount > 0) {
+        showNotification(`Crawling stopped - ${activeCount} page${activeCount > 1 ? 's' : ''} finishing`, 'info', 3000)
+      } else {
+        showNotification('Crawling stopped', 'info', 2000)
+      }
+      
       return
     }
     
@@ -455,26 +472,16 @@ document.addEventListener("DOMContentLoaded", function () {
     document.querySelector(".popup.active").classList.remove("active")
   }))
   
-  // Delete crawl data button handler
-  document.querySelector("#inspecter .popup-delete")?.addEventListener("click", async event => {
-    const popup = document.querySelector("#inspecter")
-    const urlElement = popup.querySelector(".card-title h3")
-    if (!urlElement) return
-    
-    const url = urlElement.textContent.split('\n')[0].trim()
-    
+  /**
+   * Delete crawl data for a specific URL
+   * @param {string} url - The URL to delete crawl data for
+   * @returns {boolean} - True if deleted, false if prevented
+   */
+  function deleteCrawlData(url) {
     // Prevent deleting the original URL
     if (url === baseUrl) {
-      showNotification('Cannot delete crawl data for the original URL', 'warning', 3000)
-      return
+      return false
     }
-    
-    if (!confirm(`Delete crawl data for this page?\n\n${url}\n\nThis will remove all content found on this page, but keep it as a discovered link.`)) {
-      return
-    }
-    
-    // Close the popup
-    popup.classList.remove("active")
     
     // Remove the page's crawled content but keep it as a link
     if (crawl[url]) {
@@ -503,30 +510,45 @@ document.addEventListener("DOMContentLoaded", function () {
       
       // Delete the crawled page data
       delete crawl[url]
-      
-      // Mark the link as not crawled anymore (so it can be crawled again)
-      const linkIndex = crawl.all.links.findIndex(link => link.href === url)
-      if (linkIndex > -1) {
-        crawl.all.links[linkIndex].isCrawled = false
-        // Clear any error/warning flags
-        delete crawl.all.links[linkIndex].isError
-        delete crawl.all.links[linkIndex].isWarning
-        delete crawl.all.links[linkIndex].statusCode
-        delete crawl.all.links[linkIndex].errorMessage
-        delete crawl.all.links[linkIndex].isDuplicate
-        delete crawl.all.links[linkIndex].duplicateOf
-      }
     }
     
-    // Update all views
-    updatePages()
-    updateAssets()
-    updateLinks()
-    updateFiles()
-    updateMedia()
-    updateOverview()
+    // Mark the link as not crawled anymore (so it can be crawled again)
+    const linkIndex = crawl.all.links.findIndex(link => link.href === url)
+    if (linkIndex > -1) {
+      crawl.all.links[linkIndex].isCrawled = false
+      // Clear any error/warning flags
+      delete crawl.all.links[linkIndex].isError
+      delete crawl.all.links[linkIndex].isWarning
+      delete crawl.all.links[linkIndex].statusCode
+      delete crawl.all.links[linkIndex].errorMessage
+      delete crawl.all.links[linkIndex].isDuplicate
+      delete crawl.all.links[linkIndex].duplicateOf
+    }
     
-    showNotification(`Crawl data deleted for: ${url}`, 'success', 3000)
+    return true
+  }
+  
+  // Delete crawl data button handler in popup
+  document.querySelector("#inspecter .popup-delete")?.addEventListener("click", async event => {
+    const popup = document.querySelector("#inspecter")
+    const urlElement = popup.querySelector(".card-title h3")
+    if (!urlElement) return
+    
+    const url = urlElement.textContent.split('\n')[0].trim()
+    
+    if (!confirm(`Delete crawl data for this page?\n\n${url}\n\nThis will remove all content found on this page, but keep it as a discovered link.`)) {
+      return
+    }
+    
+    // Close the popup
+    popup.classList.remove("active")
+    
+    // Delete the crawl data
+    if (deleteCrawlData(url)) {
+      // Update all views
+      updateAllViews()
+      showNotification(`Crawl data deleted for: ${url}`, 'success', 3000)
+    }
   })
   
   document.querySelectorAll(".popup .popup-outerWrapper").forEach(element => element.addEventListener("click", event => {
@@ -552,10 +574,12 @@ document.addEventListener("DOMContentLoaded", function () {
     //Check if the multi-wrapper needs to show
     const multiWrapper = document.querySelector(".view.active .multi-wrapper")
     const checkedCount = Array.from(view.querySelectorAll(".view-items .select input")).filter(i => i.checked).length
-    if (checkedCount >= 1)
+    if (checkedCount >= 1) {
       multiWrapper.classList.add("active")
-    else
+      togglePageButtons()
+    } else {
       multiWrapper.classList.remove("active")
+    }
   }))
 
   //Download all button with queue management
@@ -592,11 +616,101 @@ document.addEventListener("DOMContentLoaded", function () {
 
   //Crawl all button
   document.querySelectorAll(".crawlSelected").forEach(item => item.addEventListener("click", event => {
-    let items = document.querySelectorAll(".view.active .view-items .select input:checked")
+    let items = Array.from(document.querySelectorAll(".view.active .view-items .select input:checked")).filter(item => 
+      !item.parentNode.parentNode.classList.contains('hidden')
+    )
     items.forEach(item => item.parentNode.parentNode.querySelector("a.crawl i")?.click())
     const titleCheckbox = document.querySelector(".view.active .view-title .select input:checked")
     if (titleCheckbox) titleCheckbox.checked = false
   }))
+
+  //Delete crawl data button
+  document.querySelectorAll(".deleteCrawlSelected").forEach(item => item.addEventListener("click", async event => {
+    let items = Array.from(document.querySelectorAll(".view.active .view-items .select input:checked")).filter(item => {
+      const viewRow = item.parentNode.parentNode
+      return !viewRow.querySelector('.crawl') && !viewRow.classList.contains('hidden')
+    })
+    const totalItems = items.length
+    
+    if (totalItems === 0) {
+      showNotification('No items selected', 'warning')
+      return
+    }
+    
+    if (!confirm(`Are you sure you want to delete crawl data for ${totalItems} selected page(s)?`)) {
+      return
+    }
+    
+    let deletedCount = 0
+    let skippedCount = 0
+    
+    items.forEach(item => {
+      const viewRow = item.parentNode.parentNode
+      const url = viewRow.querySelector('.inspect')?.href
+     
+      // Use the shared delete function
+      if (deleteCrawlData(url)) {
+        deletedCount++
+      } else {
+        skippedCount++
+      }
+    })
+    
+    // Uncheck title checkbox
+    const titleCheckbox = document.querySelector(".view.active .view-title .select input:checked")
+    if (titleCheckbox) titleCheckbox.checked = false
+    
+    // Update all views
+    updateAllViews()
+    
+    if (deletedCount > 0) {
+      showNotification(`Deleted crawl data for ${deletedCount} page(s)`, 'success', 3000)
+    }
+    if (skippedCount > 0) {
+      showNotification(`Skipped ${skippedCount} page(s) (cannot delete base URL)`, 'warning', 3000)
+    }
+  }))
+
+  // Helper function to toggle buttons based on selected pages
+  /**
+   * Manages visibility of action buttons in the multi-wrapper based on selected pages
+   * - Download button: Always visible
+   * - Crawl button: Only visible if at least one selected page is uncrawled
+   * - Delete button: Only visible if at least one selected page is crawled
+   */
+  function togglePageButtons() {
+    const activeView = document.querySelector('.view.active')
+    if (!activeView || activeView.id !== 'pages') return
+
+    const rows = Array.from(activeView.querySelectorAll(".view-items .view-row"))
+    const row_data = rows.filter(row => row.querySelector(".select input")?.checked).map(row => { return {
+      isCrawled: row.querySelector(".crawl") ? false : true,
+      elm: row
+    }})
+    
+    if (row_data.length === 0) return
+        
+    const crawlBtn = document.querySelector("#pages .crawlSelected")
+    const deleteBtn = document.querySelector("#pages .deleteCrawlSelected")
+    
+    const uncrawledPages = row_data.filter(row => !row.isCrawled)
+    const crawledPages = row_data.filter(row => row.isCrawled)
+
+    // If the only selected page is the base URL, prevent delete
+    const baseUrlSelected = row_data.some(row => {
+        const url = row.elm.querySelector('.inspect')?.href
+        return url === baseUrl
+    })
+    const hasUncrawledPages = uncrawledPages.length > 0
+    const hasCrawledPages = crawledPages.length > 0
+    const onlyBaseCrawled = baseUrlSelected && crawledPages.length === 1
+
+    // Show crawl button only if there are uncrawled pages to crawl
+    crawlBtn.style.display = hasUncrawledPages ? 'inline-block' : 'none'
+    
+    // Show delete button only if there are crawled pages to delete
+    deleteBtn.style.display = hasCrawledPages && !onlyBaseCrawled ? 'inline-block' : 'none'
+  }
 
   //Filter Icons for links
   document.querySelectorAll(".filter-icon").forEach(item => item.addEventListener("click", event => {
@@ -608,6 +722,9 @@ document.addEventListener("DOMContentLoaded", function () {
     if (!state) {
       view.querySelector(".searchbar .form-item input").value = ""
       view.querySelectorAll(".view-items .view-row").forEach(item => item.classList.remove("hidden"))
+      // Clear the filter count badge
+      const filterCount = item.querySelector('.filter-count')
+      if (filterCount) filterCount.remove()
     }
   }))
 
@@ -642,10 +759,12 @@ document.addEventListener("DOMContentLoaded", function () {
     if (event.target.matches('.view .view-items .select input')) {
       const multiWrapper = document.querySelector(".view.active .multi-wrapper")
       const checkedCount = Array.from(document.querySelectorAll(".view.active .view-items .select input")).filter(i => i.checked).length
-      if (checkedCount >= 1)
+      if (checkedCount >= 1) {
         multiWrapper.classList.add("active")
-      else
+        togglePageButtons()
+      } else {
         multiWrapper.classList.remove("active")
+      }
     }
   })
 
@@ -1412,17 +1531,95 @@ function applySearchFilter(viewSelector, searchTerm) {
   const searchInput = searchbar?.querySelector('input')
   
   // Use provided search term or get from input
-  const search = (searchTerm !== undefined ? searchTerm : searchInput?.value || '').toLowerCase()
+  let search = (searchTerm !== undefined ? searchTerm : searchInput?.value || '').trim()
   
-  // Apply filter to all rows
+  // Check for inversion (!)
+  let invertFilter = false
+  if (search.startsWith('!')) {
+    invertFilter = true
+    search = search.substring(1).trim()
+  }
+  
+  // Check if this is a custom filter (starts with is:)
+  const isCustomFilter = search.match(/^is:(\w+)$/i)
+  let customFilterType = null
+  let textSearch = search.toLowerCase()
+  
+  if (isCustomFilter) {
+    customFilterType = isCustomFilter[1].toLowerCase()
+  }
+  
+  // Apply filter to all rows and count visible
+  let visibleCount = 0
   view.querySelectorAll('.view-items .view-row').forEach(row => {
-    const text = row.querySelector('p')?.innerHTML.toLowerCase() || ''
-    if (text.indexOf(search) >= 0) {
+    let shouldShow = false
+    
+    if (customFilterType) {
+      // Apply custom filters
+      switch (customFilterType) {
+        case 'crawled':
+          // Check if row has a crawl icon (uncrawled) or not (crawled)
+          const hasCrawlIcon = row.querySelector('.crawl') !== null
+          shouldShow = !hasCrawlIcon // Show rows without crawl icon (crawled)
+          break
+        case 'duplicate':
+          // Check if row has duplicate indicator in the info popup
+          const infoPopup = row.querySelector('.hover-popup')
+          const hasDuplicate = infoPopup?.innerHTML.includes('Duplicate of:') || false
+          shouldShow = hasDuplicate
+          break
+        case 'warning':
+          // Check if row has a warning icon
+          const hasWarning = row.querySelector('.warning') !== null
+          shouldShow = hasWarning
+          break
+        case 'error':
+          // Check if row has an error icon
+          const hasError = row.querySelector('.error') !== null
+          shouldShow = hasError
+          break
+        default:
+          // Unknown custom filter, show nothing
+          shouldShow = false
+      }
+    } else if (search) {
+      // Regular text search
+      const text = row.querySelector('p')?.innerHTML.toLowerCase() || ''
+      shouldShow = text.indexOf(textSearch) >= 0
+    } else {
+      // No search term, show all
+      shouldShow = true
+    }
+    
+    // Apply inversion if requested
+    if (invertFilter) {
+      shouldShow = !shouldShow
+    }
+    
+    if (shouldShow) {
       row.classList.remove('hidden')
+      visibleCount++
     } else {
       row.classList.add('hidden')
     }
   })
+  
+  // Update filter count badge
+  const filterIcon = view.querySelector('.filter-icon')
+  const originalSearch = (searchTerm !== undefined ? searchTerm : searchInput?.value || '').trim()
+  if (filterIcon && originalSearch) {
+    let filterCount = filterIcon.querySelector('.filter-count')
+    if (!filterCount) {
+      filterCount = document.createElement('span')
+      filterCount.className = 'filter-count'
+      filterIcon.appendChild(filterCount)
+    }
+    filterCount.textContent = visibleCount
+  } else if (filterIcon) {
+    // Remove badge if no search term
+    const filterCount = filterIcon.querySelector('.filter-count')
+    if (filterCount) filterCount.remove()
+  }
 }
 
 /**

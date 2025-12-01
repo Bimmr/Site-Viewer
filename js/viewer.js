@@ -272,22 +272,59 @@ document.addEventListener("DOMContentLoaded", function () {
   })
 
   document.querySelector(".crawlAllBtn").addEventListener("click", event => {
+    const button = event.target
+    
+    // Check if we're stopping a crawl
+    if (button.classList.contains('stop-crawling')) {
+      // Stop crawling
+      if (window.moreToCrawlInterval) {
+        clearInterval(window.moreToCrawlInterval)
+        window.moreToCrawlInterval = null
+      }
+      
+      // Clear queues - they're defined in crawl.js
+      try {
+        if (typeof tabQueue !== 'undefined') {
+          tabQueue.length = 0
+        }
+        if (typeof fetchQueue !== 'undefined') {
+          fetchQueue.length = 0
+        }
+      } catch (e) {
+        console.warn('Could not clear queues:', e)
+      }
+      
+      // Clear crawl locks
+      crawlLocks.clear()
+      
+      // Reset button
+      button.textContent = 'CRAWL ALL PAGES'
+      button.classList.remove('stop-crawling')
+      
+      showNotification('Crawling stopped', 'info', 2000)
+      return
+    }
+    
     // Prevent multiple intervals from being created
     if (window.moreToCrawlInterval) {
       showNotification('Crawl already in progress', 'info')
       return
     }
 
+    // Change button to "Stop Crawling"
+    button.textContent = 'STOP CRAWLING'
+    button.classList.add('stop-crawling')
+
     clickAllCrawlIcons()
 
     function clickAllCrawlIcons() {
       // Only click crawl icons for pages that:
       // 1. Are not already crawled (isCrawled = false)
-      // 2. Are not currently being crawled (not in crawling array)
+      // 2. Are not currently being crawled (not in crawlLocks)
       // 3. Are not in error/warning state (haven't failed)
       const uncrawledPages = getPages().filter(link => 
         !link.isCrawled && 
-        !crawling.includes(link.href) &&
+        !crawlLocks.has(link.href) &&
         !link.isError &&
         !link.isWarning
       )
@@ -305,9 +342,11 @@ document.addEventListener("DOMContentLoaded", function () {
     // Store interval globally for proper cleanup
     window.moreToCrawlInterval = setInterval(() => {
       try {
-        if (crawling.length === 0) {
+        if (crawlLocks.size === 0) {
           if (!getPages().some(link => !link.isCrawled)) {
-            document.querySelector(".crawlAllBtn").classList.add("hidden")
+            button.classList.add("hidden")
+            button.textContent = 'CRAWL ALL PAGES'
+            button.classList.remove('stop-crawling')
             clearInterval(window.moreToCrawlInterval)
             window.moreToCrawlInterval = null
           }
@@ -317,6 +356,8 @@ document.addEventListener("DOMContentLoaded", function () {
         }
       } catch (error) {
         showNotification('Error during crawl check', 'error', 3000)
+        button.textContent = 'CRAWL ALL PAGES'
+        button.classList.remove('stop-crawling')
         clearInterval(window.moreToCrawlInterval)
         window.moreToCrawlInterval = null
       }
@@ -396,6 +437,10 @@ document.addEventListener("DOMContentLoaded", function () {
     pageHashCache.clear() // Clear hash cache on recrawl
     lastCounts = { pages: 1, assets: 1, links: 1, files: 1, media: 1 }
     document.querySelector("#crawledSiteCount").innerHTML = ''
+    document.querySelector("#crawledSiteText").innerHTML = baseUrl
+
+    // Update all views to reflect cleared data
+    updateAllViews()
 
     //Recrawl
     crawlURL(baseUrl)

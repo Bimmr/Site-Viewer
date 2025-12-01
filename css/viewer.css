@@ -602,12 +602,24 @@ hr {
   letter-spacing: 0.5px;
 }
 
-#overview .banner-action .crawlAllBtn:hover {
+#overview .banner-action .crawlAllBtn:hover:not(.stop-crawling) {
   background: rgba(255, 255, 255, 0.1);
   color: white;
   border-color: white;
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+
+#overview .banner-action .crawlAllBtn.stop-crawling {
+  background: #dc3545 !important;
+  color: white !important;
+  border-color: #dc3545 !important;
+}
+
+#overview .banner-action .crawlAllBtn.stop-crawling:hover {
+  background: #c82333 !important;
+  border-color: #c82333 !important;
+  transform: translateY(-2px);
 }
 
 #overview .overview-banner .hover-popup-icon {

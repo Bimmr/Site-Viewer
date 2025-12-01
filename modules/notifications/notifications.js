@@ -3,6 +3,9 @@
  * Manages toast notifications with ID-based tracking, positioning, and dismissal
  */
 
+// Maximum number of visible notifications
+const MAX_NOTIFICATIONS = 5
+
 /**
  * Show a toast notification to the user
  * @param {string} message - The message to display
@@ -28,6 +31,13 @@ function showNotification(message, type = 'info', duration = 2000, id = null, in
       container = document.createElement('div')
       container.className = 'notification-container'
       document.body.appendChild(container)
+    }
+    
+    // Enforce max notification limit - remove oldest if at limit
+    if (container.children.length >= MAX_NOTIFICATIONS) {
+      const oldestNotification = container.children[0]
+      const oldestId = oldestNotification.dataset.notificationId
+      dismissNotification(oldestId, true)
     }
     
     // Create notification

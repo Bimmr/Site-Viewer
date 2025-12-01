@@ -315,7 +315,11 @@
           <div class="card settings-card">
             <h3 class="card-title"><i class="fas fa-gauge-high"></i> Crawl Rate Limiting</h3>
             <p>Set the delay (in milliseconds) between crawl requests to avoid overwhelming servers.</p>
-            <p><small>Lower values = faster crawling but may trigger rate limits. Recommended: 100-500ms</small></p>
+            <div class="settings-warning">
+              <i class="fas fa-triangle-exclamation"></i>
+              <span>Lower values = faster crawling but may trigger rate limits. Recommended: 100-500ms</span>
+            </div>
+            
             <br>
             <div class="form-item split">
               <div class="border">
@@ -328,7 +332,10 @@
           <div class="card settings-card">
             <h3 class="card-title"><i class="fas fa-globe"></i> CORS Proxy Configuration</h3>
             <p>Configure the CORS bypass proxy URLs used for cross-origin requests.</p>
-            <p><small>Change these if the default proxy is unavailable or you want to use your own.</small></p>
+            <div class="settings-note">
+              <i class="fas fa-circle-info"></i>
+              <span>Change these if the default proxy is unavailable or you want to use your own.</span>
+            </div>
             <br>
             <div class="form-item split">
               <div class="border">
@@ -346,8 +353,8 @@
             <p>Do you want to crawl the on page assets. These would be anything in <i>&lt;script&gt;</i> or
               <i>&lt;style&gt;</i> tags.
             </p>
-            <div class="settings-warning">
-              <i class="fas fa-triangle-exclamation"></i>
+            <div class="settings-note">
+              <i class="fas fa-circle-info"></i>
               <span>You will need to recrawl after changing these for them to take effect</span>
             </div><br>
             <div class="form-item split even">
@@ -366,8 +373,12 @@
           <div class="card settings-card needsManageDownloads">
             <h3 class="card-title"><i class="fas fa-link"></i> Combine Into HTML File</h3>
             <p>When downloading a HTML File do you want to combine all the images and assets into the HTML file?</p>
-            <p style="margin-top: 5px;"><strong>This feature is still in testing and may not work as intended.</strong>
-            </p><br>
+            
+            <div class="settings-warning">
+              <i class="fas fa-triangle-exclamation"></i>
+              <span>This feature is still in testing and may not work as intended.</span>
+            </div>
+            <br>
             <div class="form-item">
               <input type="checkbox" id="combine-enabled">
               <label for="combine-enabled">Combine items into a single html page</label>

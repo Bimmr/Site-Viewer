@@ -1954,12 +1954,34 @@ function updateLinks() {
       html += `<input type="checkbox">`
     html += `</div>
         <div class="type">`
-    if (link.isBroken)
+    
+    // Determine link type for title attribute
+    let linkType = ''
+    if (link.isBroken) {
       html += getFAIcon('broken-link')
-    else if (link.tags.tag == 'a')
-      html += getFAIcon(link.href)
-    else
+      linkType = 'broken-link'
+    } else if (link.tags.tag === 'iframe') {
       html += getFAIcon(link.tags.tag)
+      linkType = 'iframe'
+    } else {
+      const protocol = getUrlProtocol(link.href)
+      if (protocol) {
+        html += getFAIcon(link.href)
+        linkType = `protocol:${protocol}`
+      } else if (isUrlAnchor(link.href)) {
+        html += getFAIcon(link.href)
+        linkType = 'anchor'
+      } else {
+        html += getFAIcon(link.href)
+        linkType = 'link'
+      }
+    }
+    
+    // Add title attribute to the type div
+    const typeIcon = html.substring(html.lastIndexOf('<div class="type">') + 18)
+    html = html.substring(0, html.lastIndexOf('<div class="type">') + 18)
+    html += typeIcon.replace('<i class=', `<i title="${linkType}" class=`)
+    
     html += `</div>
             <div class="link">`+
       '<p>' + link.href + '</p>' +

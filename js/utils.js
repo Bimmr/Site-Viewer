@@ -49,8 +49,12 @@ const normalizeUrl = url => {
 
 const isUrlPDFFile = url => url.includes('.pdf')
 const isUrlProtocol = url => /^[a-z][a-z0-9+.-]*:/i.test(url) && !url.match(/^https?:/i)
-const isUrlProtocolMailto = url => url.includes('mailto:')
-const isUrlProtocolTel = url => url.includes('tel:')
+const getUrlProtocol = url => {
+  const match = url.match(/^([a-z][a-z0-9+.-]*):/i)
+  if (!match) return null
+  const protocol = match[1].toLowerCase()
+  return (protocol === 'http' || protocol === 'https') ? null : protocol
+}
 const isUrlLocal = url => (url.toLowerCase().includes(hostURL.toLowerCase()) && url.toLowerCase().indexOf(hostURL.toLowerCase()) === 0) || (!url.match(httpRegex) && !isUrlProtocol(url))
 const isUrlAnchor = url => {
   if (!url.includes("#")) return false
@@ -95,11 +99,14 @@ function getFAIcon(value, getIndex = false) {
         new URL(value)
 
 
-        if (isUrlProtocolTel(value))
+        const protocol = getUrlProtocol(value)
+        if (protocol === 'tel')
             icon = ['<i class="fas fa-phone"></i>', 11]
-        else if (isUrlProtocolMailto(value))
+        else if (protocol === 'mailto')
             icon = ['<i class="fas fa-envelope"></i>', 12]
-        else if (isUrlProtocol(value))
+        else if (protocol === 'fax')
+            icon = ['<i class="fas fa-fax"></i>', 11]
+        else if (protocol)
             icon = ['<i class="fas fa-globe"></i>', 10]
         else if (isUrlAnchor(value))
             icon = ['<i class="fas fa-anchor"></i>', 1]

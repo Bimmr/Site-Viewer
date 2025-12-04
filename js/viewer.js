@@ -2079,6 +2079,8 @@ function updateMedia() {
   crawl.all.media.forEach(file => {
 
     let isImage = isUrlImage(file.src)
+    let isVideo = isUrlVideo(file.src)
+    let isAudio = isUrlAudio(file.src)
 
     //Create string of tags and instances
     let imageTagsText = ''
@@ -2102,15 +2104,20 @@ function updateMedia() {
     if (isImage) {
       const altText = file.instances && file.instances[0] && file.instances[0].alt ? file.instances[0].alt : ''
       html += '<img class="expand-image" src="' + file.src + '" alt="' + altText + '" title="' + altText + '">'
+    } else if (isVideo) {
+      html += '<video controls style="max-width: 100%; max-height: 100px;"><source src="' + file.src + '"></video>'
+    } else if (isAudio) {
+      html += '<audio controls style="width: 100%;"><source src="' + file.src + '"></audio>'
+    } else {
+      html += getFAIcon(file.src)
     }
-    else html += getFAIcon(file.src)
     html += `</div>
           <div class="link">`+
       '<p>' + file.src + '</p>' +
       `</div>
        <div class="tools">
-         <a class="goto" target="_blank" href="` + file.src + `" title="Open Image"><i class="fas fa-external-link-alt"></i></a>
-         <a class="download" href="`+ file.src + `" title="Download Image"><i class="fas fa-file-download"></i></a>
+         <a class="goto" target="_blank" href="` + file.src + `" title="Open Media"><i class="fas fa-external-link-alt"></i></a>
+         <a class="download" href="`+ file.src + `" title="Download Media"><i class="fas fa-file-download"></i></a>
          <div class="info">
          <div class="hover-popup-icon">
             <span class="fa-stack fa-1x">

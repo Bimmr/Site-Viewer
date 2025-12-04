@@ -1578,6 +1578,12 @@ function applySearchFilter(viewSelector, searchTerm) {
           const hasError = row.querySelector('.error') !== null
           shouldShow = hasError
           break
+        case 'iframe':
+          // Check if row is an iframe by looking at the type icon
+          const typeDiv = row.querySelector('.type')
+          const hasIframeIcon = typeDiv?.innerHTML.includes('fa-window-restore') || false
+          shouldShow = hasIframeIcon
+          break
         default:
           // Unknown custom filter, show nothing
           shouldShow = false

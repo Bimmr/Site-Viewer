@@ -48,7 +48,7 @@ const normalizeUrl = url => {
 }
 
 const isUrlPDFFile = url => url.includes('.pdf')
-const isUrlProtocol = url => isUrlProtocolMailto(url) || isUrlProtocolTel(url)
+const isUrlProtocol = url => /^[a-z][a-z0-9+.-]*:/i.test(url) && !url.match(/^https?:/i)
 const isUrlProtocolMailto = url => url.includes('mailto:')
 const isUrlProtocolTel = url => url.includes('tel:')
 const isUrlLocal = url => (url.toLowerCase().includes(hostURL.toLowerCase()) && url.toLowerCase().indexOf(hostURL.toLowerCase()) === 0) || (!url.match(httpRegex) && !isUrlProtocol(url))

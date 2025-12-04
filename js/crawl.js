@@ -554,7 +554,7 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
               return href !== null &&
                 !href.startsWith("javascript:") &&
                 !href.startsWith("?") &&
-                href !== "about:blank"
+                !href.startsWith("about:blank")
             }
           ).forEach(element => {
             let link = createLinkObject(url, element)
@@ -572,11 +572,11 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
           })
           //Basic iframe tag - get link and add to crawl all list, but if already found add as an instance
           doc.querySelectorAll("iframe").forEach(element => {
-            let link = createLinkObject(url, element)
-            if ((link._href && (link._href.startsWith("?")))) return
-            // Filter out about:blank
             const src = element.getAttribute("src")
-            if (src === "about:blank" || link.href === "about:blank" || link._href === "about:blank") return
+            // Filter out about:blank and invalid sources
+            if (!src || src.startsWith("about:blank") || src.startsWith("?")) return
+            
+            let link = createLinkObject(url, element)
             let found
             // Normalize URLs to prevent duplicates with/without trailing slashes
             if (!(found = links.find(i => normalizeUrl(i.href) === normalizeUrl(link.href) || normalizeUrl(i.href) === normalizeUrl(link._href)))) {

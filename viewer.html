@@ -152,7 +152,7 @@
         </div>
         <div class="multi-wrapper">
           <div class="form-item">
-            <button type="button" class="testSelected">Test Selected</button>
+            <button class="downloadSelected">Download Selected</button>
           </div>
           <div class="form-item">
             <button type="button" class="crawlSelected">Crawl Selected</button>
@@ -366,6 +366,28 @@
               </div>
             </div>
           </div>
+          <div class="card settings-card">
+            <h3 class="card-title"><i class="fas fa-code"></i> Crawl the On Page Assets</h3>
+            <p>Do you want to crawl the on page assets. These would be anything in <i>&lt;script&gt;</i> or
+              <i>&lt;style&gt;</i> tags.
+            </p>
+            <div class="settings-note">
+              <i class="fas fa-circle-info"></i>
+              <span>You will need to recrawl after changing these for them to take effect</span>
+            </div><br>
+            <div class="form-item split even">
+              <div>
+                <input type="checkbox" id="crawl-onPageScripts" checked>
+                <label for="crawl-onPageScripts">Crawl &lt;script&gt; tags</label>
+              </div>
+              <div>
+                <input type="checkbox" id="crawl-onPageStyles" checked>
+                <label for="crawl-onPageStyles">Crawl &lt;style&gt; tags</label>
+              </div>
+              <div></div>
+              <div></div>
+            </div>
+          </div>
 
           <div class="card settings-card">
             <h3 class="card-title"><i class="fas fa-gauge-high"></i> Crawl Rate Limiting</h3>
@@ -404,28 +426,7 @@
               </div>
             </div>
           </div>
-          <div class="card settings-card">
-            <h3 class="card-title"><i class="fas fa-code"></i> Crawl the On Page Assets</h3>
-            <p>Do you want to crawl the on page assets. These would be anything in <i>&lt;script&gt;</i> or
-              <i>&lt;style&gt;</i> tags.
-            </p>
-            <div class="settings-note">
-              <i class="fas fa-circle-info"></i>
-              <span>You will need to recrawl after changing these for them to take effect</span>
-            </div><br>
-            <div class="form-item split even">
-              <div>
-                <input type="checkbox" id="crawl-onPageScripts" checked>
-                <label for="crawl-onPageScripts">Crawl &lt;script&gt; tags</label>
-              </div>
-              <div>
-                <input type="checkbox" id="crawl-onPageStyles" checked>
-                <label for="crawl-onPageStyles">Crawl &lt;style&gt; tags</label>
-              </div>
-              <div></div>
-              <div></div>
-            </div>
-          </div>
+          
           <div class="card settings-card needsManageDownloads">
             <h3 class="card-title"><i class="fas fa-download"></i> Download Options</h3>
             <p>Configure how files are downloaded and organized.</p>

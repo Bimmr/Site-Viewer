@@ -1,5 +1,4 @@
-
-//Track lastHTML to show what has changed
+// Track last counts to detect changes
 let lastCounts = { pages: 1, assets: 1, links: 1, files: 1, media: 1 }
 
 // Download queue management
@@ -10,13 +9,13 @@ const DOWNLOAD_QUEUE = {
 }
 
 // Constants for magic numbers
-const BLOB_CLEANUP_DELAY = 2000 // ms
-const TEXT_FRAGMENT_MAX_LENGTH = 50 // characters
+const BLOB_CLEANUP_DELAY = 2000
+const TEXT_FRAGMENT_MAX_LENGTH = 50
 
 /**
- * Helper function to create a URL with text fragment for scroll-to-text functionality
+ * Creates a URL with text fragment for scroll-to-text functionality
  * @param {string} baseUrl - The base URL
- * @param {string} text - The text to create a fragment for (e.g., link text, alt text, title)
+ * @param {string} text - The text to create a fragment for
  * @returns {string} URL with text fragment appended
  */
 function createTextFragmentUrl(baseUrl, text) {
@@ -28,9 +27,9 @@ function createTextFragmentUrl(baseUrl, text) {
 }
 
 /**
- * Create DocumentFragment from HTML string for better performance
+ * Creates a DocumentFragment from HTML string for better performance
  * @param {string} htmlString - HTML string to convert
- * @returns {DocumentFragment} - Document fragment containing the HTML elements
+ * @returns {DocumentFragment} Document fragment containing the HTML elements
  */
 function createFragment(htmlString) {
   const template = document.createElement('template')
@@ -39,7 +38,7 @@ function createFragment(htmlString) {
 }
 
 /**
- * Efficiently render HTML to a container using DocumentFragment
+ * Efficiently renders HTML to a container using DocumentFragment
  * @param {HTMLElement} container - Target container element
  * @param {string} htmlString - HTML string to render
  */
@@ -55,7 +54,7 @@ function renderToContainer(container, htmlString) {
 }
 
 /**
- * Process the download queue with concurrent limit
+ * Processes the download queue with concurrent limit
  */
 function processDownloadQueue() {
   while (DOWNLOAD_QUEUE.active < DOWNLOAD_QUEUE.maxConcurrent && DOWNLOAD_QUEUE.queue.length > 0) {
@@ -70,7 +69,7 @@ function processDownloadQueue() {
 }
 
 /**
- * Queue a download to prevent overwhelming the browser
+ * Queues a download to prevent overwhelming the browser
  * @param {Function} downloadFn - Function that returns a Promise for the download
  */
 function queueDownload(downloadFn) {
@@ -78,7 +77,7 @@ function queueDownload(downloadFn) {
   processDownloadQueue()
 }
 
-//Settings
+// Application settings
 let settings = {
   crawl: {
     onPageScripts: true,
@@ -86,7 +85,7 @@ let settings = {
     rateLimitMs: 100,
     corsProxyUrl: 'https://api.allorigins.win/get?url=',
     corsProxyRawUrl: 'https://api.allorigins.win/raw?url=',
-    crawlMode: 'smart', // 'fetch', 'live', or 'smart'
+    crawlMode: 'smart',
     liveWaitTime: 5000,
     maxConcurrentTabs: 10
   },
@@ -102,7 +101,7 @@ let settings = {
   }
 }
 
-//When DOM is loaded set up the listeners and events
+// Initialize event listeners and setup when DOM is loaded
 document.addEventListener("DOMContentLoaded", function () {
 
   // Remove preload class after initial render to enable transitions
@@ -888,17 +887,16 @@ document.addEventListener("DOMContentLoaded", function () {
 })
 
 /**
-* Function to run AFTER each view and popup-view is updated
-*/
+ * Runs after each view and popup-view is updated
+ */
 function updateAll() {
-  // Reset title checkboxes
   document.querySelectorAll(".view .view-title .select input").forEach(item => item.checked = false)
 }
 
 /**
-* Handle download logic for a URL
-* @param {string} url - The URL to download
-*/
+ * Handles download logic for a URL
+ * @param {string} url - The URL to download
+ */
 function handleDownload(url) {
   //If combining images and assets into one file
   if (isUrlHTMLFile(url) && settings.combine.enabled) {
@@ -1154,9 +1152,9 @@ function handleDownload(url) {
   }
 
 /**
- * Test a URL to see if it is valid, if not return the status code
- * @param {string} url 
- * @param {object} element 
+ * Tests a URL to see if it is valid and returns the status code
+ * @param {string} url - The URL to test
+ * @param {HTMLElement} element - The DOM element to update with test results
  */
 function testURL(url, element) {
   element.classList.remove("test")
@@ -1224,8 +1222,8 @@ function testURL(url, element) {
 }
 
 /**
-* Function to update the Overview view
-*/
+ * Updates the Overview view with current counts and statistics
+ */
 function updateOverview() {
 
   //Get count of view-rows in each view
@@ -1339,8 +1337,8 @@ function updateOverview() {
 }
 
 /**
-* Function to update the Pages view
-*/
+ * Updates the Pages view with crawled pages
+ */
 function updatePages() {
   //Hide Multi-wrapper if view is updated
   document.querySelector("#pages .multi-wrapper").classList.remove("active")
@@ -1519,9 +1517,9 @@ function updatePages() {
 }
 
 /**
- * Apply search filter to a view
+ * Applies search filter to a view
  * @param {string} viewSelector - CSS selector for the view (e.g., '#pages')
- * @param {string} [searchTerm] - Optional search term. If not provided, uses the view's search input value
+ * @param {string} [searchTerm] - Optional search term. If not provided, uses the view's search input
  */
 function applySearchFilter(viewSelector, searchTerm) {
   const view = document.querySelector(viewSelector)
@@ -1530,17 +1528,14 @@ function applySearchFilter(viewSelector, searchTerm) {
   const searchbar = view.querySelector('.searchbar')
   const searchInput = searchbar?.querySelector('input')
   
-  // Use provided search term or get from input
   let search = (searchTerm !== undefined ? searchTerm : searchInput?.value || '').trim()
   
-  // Check for inversion (!)
   let invertFilter = false
   if (search.startsWith('!')) {
     invertFilter = true
     search = search.substring(1).trim()
   }
   
-  // Check if this is a custom filter (starts with is:)
   const isCustomFilter = search.match(/^is:(\w+)$/i)
   let customFilterType = null
   let textSearch = search.toLowerCase()
@@ -1549,55 +1544,44 @@ function applySearchFilter(viewSelector, searchTerm) {
     customFilterType = isCustomFilter[1].toLowerCase()
   }
   
-  // Apply filter to all rows and count visible
   let visibleCount = 0
   view.querySelectorAll('.view-items .view-row').forEach(row => {
     let shouldShow = false
     
     if (customFilterType) {
-      // Apply custom filters
       switch (customFilterType) {
         case 'crawled':
-          // Check if row has a crawl icon (uncrawled) or not (crawled)
           const hasCrawlIcon = row.querySelector('.crawl') !== null
-          shouldShow = !hasCrawlIcon // Show rows without crawl icon (crawled)
+          shouldShow = !hasCrawlIcon
           break
         case 'duplicate':
-          // Check if row has duplicate indicator in the info popup
           const infoPopup = row.querySelector('.hover-popup')
           const hasDuplicate = infoPopup?.innerHTML.includes('Duplicate of:') || false
           shouldShow = hasDuplicate
           break
         case 'warning':
-          // Check if row has a warning icon
           const hasWarning = row.querySelector('.warning') !== null
           shouldShow = hasWarning
           break
         case 'error':
-          // Check if row has an error icon
           const hasError = row.querySelector('.error') !== null
           shouldShow = hasError
           break
         case 'iframe':
-          // Check if row is an iframe by looking at the type icon
           const typeDiv = row.querySelector('.type')
           const hasIframeIcon = typeDiv?.innerHTML.includes('fa-window-restore') || false
           shouldShow = hasIframeIcon
           break
         default:
-          // Unknown custom filter, show nothing
           shouldShow = false
       }
     } else if (search) {
-      // Regular text search
       const text = row.querySelector('p')?.innerHTML.toLowerCase() || ''
       shouldShow = text.indexOf(textSearch) >= 0
     } else {
-      // No search term, show all
       shouldShow = true
     }
     
-    // Apply inversion if requested
     if (invertFilter) {
       shouldShow = !shouldShow
     }
@@ -1610,7 +1594,6 @@ function applySearchFilter(viewSelector, searchTerm) {
     }
   })
   
-  // Update filter count badge
   const filterIcon = view.querySelector('.filter-icon')
   const originalSearch = (searchTerm !== undefined ? searchTerm : searchInput?.value || '').trim()
   if (filterIcon && originalSearch) {
@@ -1622,14 +1605,13 @@ function applySearchFilter(viewSelector, searchTerm) {
     }
     filterCount.textContent = visibleCount
   } else if (filterIcon) {
-    // Remove badge if no search term
     const filterCount = filterIcon.querySelector('.filter-count')
     if (filterCount) filterCount.remove()
   }
 }
 
 /**
- * Build tags HTML for popup hover
+ * Builds tags HTML for popup hover
  * @param {Object} item - Link or file object
  * @param {string} originalUrl - Original URL before formatting
  * @returns {string} HTML string for tags section
@@ -1649,7 +1631,7 @@ function buildTagsHTML(item, originalUrl) {
 }
 
 /**
- * Build test status icons for links
+ * Builds test status icons for links
  * @param {Object} link - Link object
  * @param {string} href - Link URL
  * @returns {string} HTML string for test icons
@@ -1672,7 +1654,7 @@ function buildTestIconsHTML(link, href) {
 }
 
 /**
- * Build view row HTML for popup link/asset
+ * Builds view row HTML for popup link/asset
  * @param {Object} link - Link object
  * @param {string} category - Category ('links', 'files', 'assets')
  * @returns {string} HTML string for view row
@@ -1851,8 +1833,8 @@ function setupPopup(url) {
 }
 
 /**
-* Function to update the Assets view
-*/
+ * Updates the Assets view with scripts and stylesheets
+ */
 function updateAssets() {
   //Hide Multi-wrapper if view is updated
   document.querySelector("#assets .multi-wrapper").classList.remove("active")
@@ -1922,8 +1904,8 @@ function updateAssets() {
 }
 
 /**
-* Function to update the Links view
-*/
+ * Updates the Links view with external links and anchors
+ */
 function updateLinks() {
   //Hide Multi-wrapper if view is updated
   let wrapper = document.querySelector("#links .view-items")
@@ -2027,9 +2009,9 @@ function updateLinks() {
   applySearchFilter('#links')
 }
 
-/* *
-* Function to update the Files view
-*/
+/**
+ * Updates the Files view with downloadable files
+ */
 function updateFiles() {
   //Hide Multi-wrapper if view is updated
   document.querySelector("#files .multi-wrapper").classList.remove("active")
@@ -2094,8 +2076,8 @@ function updateFiles() {
 }
 
 /**
-* Function to update Image View
-*/
+ * Updates the Media view with images, videos, and audio
+ */
 function updateMedia() {
   //Hide Multi-wrapper if view is updated
   document.querySelector("#media .multi-wrapper").classList.remove("active")
@@ -2174,15 +2156,13 @@ function updateMedia() {
 
 }
 
-// Helper function to check if a URL is a duplicate page
 const isDuplicatePage = (url) => {
   const page = crawl.all.links.find(link => link.href === url)
   return page && page.isDuplicate
 }
 
 /**
- * Helper function to filter and format instances, excluding duplicates
- * Groups instances by foundOn URL and shows count suffix for multiple occurrences
+ * Filters and formats instances, excluding duplicates and grouping by URL
  * @param {Array} instances - Array of instance objects
  * @param {Function} getTextFn - Function to extract text for fragment URL
  * @returns {string} Formatted HTML string of instances

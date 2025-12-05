@@ -1,11 +1,13 @@
-//Crawled Pages
+// Crawled page data storage
 let crawl = { all: { media: [], links: [], assets: [] } }
-//Cache for page hashes to optimize duplicate detection
+
+// Cache for page hashes to optimize duplicate detection
 const pageHashCache = new Map()
-//Mutex lock to prevent race conditions
+
+// Mutex lock to prevent race conditions
 const crawlLocks = new Set()
 
-// Separate queue systems for tabs (limited) and HTTP fetches (higher concurrency)
+// Queue systems for tabs (limited concurrency) and HTTP fetches (higher concurrency)
 const tabQueue = []
 const fetchQueue = []
 let activeTabs = 0
@@ -19,42 +21,28 @@ const getMaxConcurrentTabs = () => {
 }
 
 const getMaxConcurrentFetches = () => {
-  return 20 // Higher limit for HTTP requests
+  return 20
 }
 
 const rateLimitedTab = async (fetchFn) => {
   return new Promise((resolve, reject) => {
-    // Add to tab queue
     tabQueue.push({ fetchFn, resolve, reject })
-    
-    // Start processing
     processTabQueue()
   })
 }
 
 const rateLimitedFetch = async (fetchFn) => {
   return new Promise((resolve, reject) => {
-    // Add to fetch queue
     fetchQueue.push({ fetchFn, resolve, reject })
-    
-    // Start processing
     processFetchQueue()
   })
 }
 
 const processTabQueue = async () => {
-  // Prevent concurrent execution of queue processor
-  if (isProcessingTabQueue) {
-    return
-  }
-  
-  isProcessingTabQueue = true
-  
-  // Process multiple items concurrently up to the tab limit
+  if (isProcessingTabQueue) return
   while (activeTabs < getMaxConcurrentTabs() && tabQueue.length > 0) {
     const { fetchFn, resolve, reject } = tabQueue.shift()
     
-    // Apply rate limiting before starting new tab
     const now = Date.now()
     const timeSinceLastFetch = now - lastFetchTime
     const rateLimit = settings?.crawl?.rateLimitMs || 100
@@ -67,17 +55,11 @@ const processTabQueue = async () => {
     lastFetchTime = Date.now()
     activeTabs++
     
-    // Execute the fetch (don't await - let it run concurrently)
     fetchFn()
-      .then(result => {
-        resolve(result)
-      })
-      .catch(error => {
-        reject(error)
-      })
+      .then(result => resolve(result))
+      .catch(error => reject(error))
       .finally(() => {
         activeTabs--
-        // Try to process more items (schedule it for next tick to avoid recursion)
         setTimeout(() => processTabQueue(), 0)
       })
   }
@@ -86,18 +68,13 @@ const processTabQueue = async () => {
 }
 
 const processFetchQueue = async () => {
-  // Prevent concurrent execution of queue processor
-  if (isProcessingFetchQueue) {
-    return
-  }
+  if (isProcessingFetchQueue) return
   
   isProcessingFetchQueue = true
   
-  // Process multiple items concurrently up to the fetch limit
   while (activeFetches < getMaxConcurrentFetches() && fetchQueue.length > 0) {
     const { fetchFn, resolve, reject } = fetchQueue.shift()
     
-    // Apply rate limiting before starting new fetch
     const now = Date.now()
     const timeSinceLastFetch = now - lastFetchTime
     const rateLimit = settings?.crawl?.rateLimitMs || 100
@@ -110,17 +87,11 @@ const processFetchQueue = async () => {
     lastFetchTime = Date.now()
     activeFetches++
     
-    // Execute the fetch (don't await - let it run concurrently)
     fetchFn()
-      .then(result => {
-        resolve(result)
-      })
-      .catch(error => {
-        reject(error)
-      })
+      .then(result => resolve(result))
+      .catch(error => reject(error))
       .finally(() => {
         activeFetches--
-        // Try to process more items (schedule it for next tick to avoid recursion)
         setTimeout(() => processFetchQueue(), 0)
       })
   }
@@ -129,61 +100,52 @@ const processFetchQueue = async () => {
 }
 
 /**
- * Fetch page content by opening in a tab (live crawling)
+ * Fetches page content by opening in a tab for live JavaScript execution
  * @param {string} url - URL to crawl
  * @param {boolean} isInitialPage - Whether this is the first page (use current tab)
  * @param {string} notificationId - ID of the crawling notification to dismiss when done
- * @returns {Promise<string>} - HTML content after JavaScript execution
+ * @returns {Promise<string>} HTML content after JavaScript execution
  */
 async function fetchLive(url, isInitialPage = false, notificationId = null) {
   return rateLimitedTab(async () => {
     let tabId = null
     try {
-      // Show notification when actually starting (only if notificationId provided)
       if (notificationId && typeof showNotification === 'function') {
         showNotification(`Crawling: ${url}`, 'info', 30000, notificationId)
       }
       
-      // Check if tab crawling is supported
       if (typeof isTabCrawlingSupported !== 'function' || !(await isTabCrawlingSupported())) {
         throw new Error('Tab crawling not supported - missing permissions or APIs')
       }
 
-      // Open tab (in background if not initial page)
       tabId = await openTabForCrawling(url, isInitialPage)
       
-      // Wait for load + JS execution (skip wait for initial page as it's already loaded)
       if (!isInitialPage) {
         const waitTime = settings?.crawl?.liveWaitTime || 5000
         try {
           await waitForPageLoad(tabId, waitTime)
         } catch (loadError) {
-          // Page load timeout or error
           await closeTab(tabId)
           throw new Error(`Page load failed: ${loadError.message}`)
         }
       }
       
-      // Extract content with error handling
       let html
       try {
         html = await extractPageContent(tabId)
       } catch (extractError) {
-        // Content extraction failed (CSP, permissions, etc.)
         if (tabId && !isInitialPage) {
           await closeTab(tabId)
         }
         throw new Error(`Content extraction failed: ${extractError.message}`)
       }
       
-      // Close tab if not initial page
       if (!isInitialPage) {
         await closeTab(tabId)
       }
       
       return html
     } catch (error) {
-      // Clean up tab on error
       if (tabId && !isInitialPage) {
         try {
           await closeTab(tabId)
@@ -192,7 +154,6 @@ async function fetchLive(url, isInitialPage = false, notificationId = null) {
         }
       }
       
-      // Log specific error types for debugging
       if (error.message.includes('not supported')) {
         console.error('Live crawling disabled: Missing permissions. Please reload the extension.')
       } else if (error.message.includes('timeout')) {
@@ -207,71 +168,64 @@ async function fetchLive(url, isInitialPage = false, notificationId = null) {
 }
 
 /**
- * Remove HTML comments from string
+ * Removes HTML comments from a string
  * @param {string} str - String to process
- * @returns {string} - String without HTML comments
+ * @returns {string} String without HTML comments
  */
 function removeHTMLComments(str) {
   return str.replace(/<!--[\s\S]*?-->/g, '')
 }
 
 /**
- * Remove JavaScript comments from string
+ * Removes JavaScript comments from a string
  * @param {string} str - String to process
- * @returns {string} - String without JS comments
+ * @returns {string} String without JS comments
  */
 function removeJSComments(str) {
-  // Remove single-line comments
   str = str.replace(/\/\/.*$/gm, '')
-  // Remove multi-line comments
   str = str.replace(/\/\*[\s\S]*?\*\//g, '')
   return str
 }
 
 /**
- * Remove CSS comments from string
+ * Removes CSS comments from a string
  * @param {string} str - String to process
- * @returns {string} - String without CSS comments
+ * @returns {string} String without CSS comments
  */
 function removeCSSComments(str) {
   return str.replace(/\/\*[\s\S]*?\*\//g, '')
 }
 
 /**
- * Generate a simple hash from page content for duplicate detection
- * @param {object} page - Page object with content
- * @returns {string} - Hash string
+ * Generates a simple hash from page content for duplicate detection
+ * @param {Object} page - Page object with content
+ * @returns {string} Hash string
  */
 function generatePageHash(page) {
-  // Create a hash based on multiple content characteristics
   const content = [
     page.title || '',
     page.description || '',
     page.links.length,
     page.media.length,
     page.assets.length,
-    // Sample of link hrefs for better comparison (first 15)
     page.links.slice(0, 15).map(l => l.href).sort().join('|'),
-    // Sample of media sources (first 10)
     page.media.slice(0, 10).map(m => m.src).sort().join('|'),
-    // Sample of asset links (first 10)
     page.assets.slice(0, 10).map(a => a.link).sort().join('|')
   ].join(':::')
   
-  // Simple string hash function
   let hash = 0
   for (let i = 0; i < content.length; i++) {
     const char = content.charCodeAt(i)
     hash = ((hash << 5) - hash) + char
-    hash = hash & hash // Convert to 32bit integer
+    hash = hash & hash
   }
   return hash.toString(36)
 }
 
 /**
- * Analyze HTML to determine if page needs live crawling (framework detection)
+ * Analyzes HTML to determine if page needs live crawling (framework detection)
  * @param {string} html - Raw HTML content
- * @returns {boolean} - True if live crawling is recommended
+ * @returns {boolean} True if live crawling is recommended
  */
 function shouldUseLiveCrawling(html) {
   let score = 0
@@ -330,29 +284,26 @@ function shouldUseLiveCrawling(html) {
 }
 
 /**
- * Check if a page is a duplicate of an already crawled page
- * @param {object} page - Page object to check
+ * Checks if a page is a duplicate of an already crawled page
+ * @param {Object} page - Page object to check
  * @param {string} currentUrl - Current URL being checked
- * @returns {string|null} - URL of duplicate page if found, null otherwise
+ * @returns {string|null} URL of duplicate page if found, null otherwise
  */
 function findDuplicatePage(page, currentUrl) {
   const currentHash = generatePageHash(page)
   
-  // Check hash cache for duplicates
   for (const [url, hash] of pageHashCache) {
     if (url !== currentUrl && hash === currentHash) {
       return url
     }
   }
   
-  // Store hash in cache
   pageHashCache.set(currentUrl, currentHash)
   return null
 }
 
-
 /**
- * Update all views after crawl completion or error
+ * Updates all views after crawl completion or error
  */
 function updateAllViews() {
   updatePages()
@@ -365,12 +316,12 @@ function updateAllViews() {
 }
 
 /**
-* Function to crawl the URL for images, links, scripts, and stylesheets
-* @param {string} url - The url to crawl
-* @param {boolean} addToAll - If true add to crawl all
-* @param {boolean} isInitialPage - Whether this is the initial page (for live crawling)
-* @returns {promise} - A promise that resolves when the crawl is complete
-*/
+ * Crawls a URL for images, links, scripts, and stylesheets
+ * @param {string} url - The URL to crawl
+ * @param {boolean} addToAll - If true, add to crawl.all
+ * @param {boolean} isInitialPage - Whether this is the initial page (for live crawling)
+ * @returns {Promise<Object>} Promise that resolves with the crawled page object
+ */
 async function crawlURL(url, addToAll = true, isInitialPage = false) {
     return new Promise(async (resolve, reject) => {
   
@@ -924,13 +875,12 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
   }
 
 /**
-* Function to create a link object from an element
-* @param {string} url - The url location of where this element was
-* @param {Element} element - The element to create the link from
-* @returns {Object} Link object with href, tags, instances, and potentially isBroken flag
-*/
+ * Creates a link object from an element
+ * @param {string} url - The URL location where this element was found
+ * @param {Element} element - The element to create the link from
+ * @returns {Object|null} Link object with href, tags, instances, and potentially isBroken flag
+ */
 function createLinkObject(url, element) {
-    // Return null if element is invalid
     if (!element) return null
 
     //Create the link object
@@ -966,10 +916,11 @@ function createLinkObject(url, element) {
   }
   
   /**
-  * Function to create an asset object from a link
-  * @param {string} url - The url location of where this element was
-  * @param {string} link - The link to the asset
-  */
+   * Creates an asset object from a link
+   * @param {string} url - The URL location where this asset was found
+   * @param {string} link - The link to the asset
+   * @returns {Object} Asset object with link, tags, and instances
+   */
   function createAssetObject(url, link) {
     //Create the asset object
     let asset = {
@@ -998,11 +949,12 @@ function createLinkObject(url, element) {
   }
   
   /**
-  * Function to create an Image Object from an element/link
-  * @param {string} url - The url location of where this element was
-  * @param {Element} element - The element to create the image from (Optional)
-  * @param {string} link - The link to the image - Will only use if element is null
-  */
+   * Creates an image object from an element or link
+   * @param {string} url - The URL location where this element was found
+   * @param {Element} element - The element to create the image from (optional)
+   * @param {string} src - The link to the image (used if element is null)
+   * @returns {Object} Image object with src, tags, and instances
+   */
   function createImageObject(url, element, src) {
   
     //Create the image object

@@ -1,21 +1,20 @@
-// Functions to check if the url is a specific type
+/**
+ * Determines if a URL points to an HTML file or page
+ * @param {string} url - The URL to check
+ * @returns {boolean} True if the URL is an HTML file/page
+ */
 const isUrlHTMLFile = url => {
   try {
     const pathname = new URL(url).pathname.split('/').pop();
-    // No dot means it's a directory/page, or has explicit HTML extension
     if (pathname.indexOf('.') <= 0) return true;
-    // Check for known HTML extensions
     if (url.includes(".html") || url.includes(".shtml") || url.includes(".htm") || url.includes(".aspx") || url.includes(".asp") || url.includes(".jsp") || url.includes(".php") || url.includes(".xhtml")) return true;
-    // If there's a dot, check if it's actually a file extension (after the last segment)
-    // URLs like /@-Mr.Phoenix- have dots in the path but aren't files
+    
     const lastDotIndex = pathname.lastIndexOf('.');
     const lastSlashOrStart = pathname.lastIndexOf('/') + 1;
-    // If the dot comes after any path separator, it might be a file extension
-    // But if there's no extension-like pattern (2-4 chars after dot at end), treat as page
+    
     if (lastDotIndex > lastSlashOrStart) {
       const afterDot = pathname.substring(lastDotIndex + 1);
-      // Common file extensions are 2-4 characters and don't contain special chars
-      // If it doesn't look like a file extension, treat as HTML page
+      // Extensions longer than 4 chars or with special chars are likely not file extensions
       if (afterDot.length > 4 || afterDot.includes('-') || afterDot.includes('_') || afterDot.includes('@')) {
         return true;
       }
@@ -27,35 +26,50 @@ const isUrlHTMLFile = url => {
   }
 }
 
-// Normalize URL by removing trailing slash (except for root paths)
+/**
+ * Normalizes a URL by removing trailing slashes (except for root paths)
+ * @param {string} url - The URL to normalize
+ * @returns {string} Normalized URL
+ */
 const normalizeUrl = url => {
   if (!url) return url;
   try {
     const urlObj = new URL(url);
-    // Don't remove trailing slash from root path (e.g., https://example.com/)
     if (urlObj.pathname === '/' || urlObj.pathname === '') {
       return url;
     }
-    // Remove trailing slash from other paths
     if (url.endsWith('/')) {
       return url.slice(0, -1);
     }
     return url;
   } catch {
-    // If URL parsing fails, just remove trailing slash if present
     return url.endsWith('/') ? url.slice(0, -1) : url;
   }
 }
 
+// URL type checking utilities
 const isUrlPDFFile = url => url.includes('.pdf')
 const isUrlProtocol = url => /^[a-z][a-z0-9+.-]*:/i.test(url) && !url.match(/^https?:/i)
+
+/**
+ * Extracts the protocol from a URL (excluding http/https)
+ * @param {string} url - The URL to parse
+ * @returns {string|null} The protocol name (lowercase) or null
+ */
 const getUrlProtocol = url => {
   const match = url.match(/^([a-z][a-z0-9+.-]*):/i)
   if (!match) return null
   const protocol = match[1].toLowerCase()
   return (protocol === 'http' || protocol === 'https') ? null : protocol
 }
+
 const isUrlLocal = url => (url.toLowerCase().includes(hostURL.toLowerCase()) && url.toLowerCase().indexOf(hostURL.toLowerCase()) === 0) || (!url.match(httpRegex) && !isUrlProtocol(url))
+
+/**
+ * Checks if a URL is an anchor link on the same site
+ * @param {string} url - The URL to check
+ * @returns {boolean} True if the URL is an anchor on the current site
+ */
 const isUrlAnchor = url => {
   if (!url.includes("#")) return false
   try {
@@ -78,10 +92,10 @@ const isUrlData = url => url.includes(".json") || url.includes(".xml") || url.in
 
 
 /**
-* Function to create HTML Element from string
-* @param {string} htmlString - HTML string to turn into html element
-* @returns {HTMLElement} - HTML element
-*/
+ * Creates an HTML element from a string
+ * @param {string} htmlString - HTML string to convert
+ * @returns {HTMLElement} The created HTML element
+ */
 function createElementFromHTML(htmlString) {
     const template = document.createElement('template');
     template.innerHTML = htmlString.trim();
@@ -89,9 +103,9 @@ function createElementFromHTML(htmlString) {
 }
 
 /**
- * Function to get the icon and sort order based on either a URL or a tag
- * @param {string} value - either a tag or a URL
- * @returns {Object} Object with icon (HTML string) and sortOrder (number) properties
+ * Returns the appropriate icon and sort order for a URL or tag type
+ * @param {string} value - A URL or tag name (e.g., 'page', 'broken-link')
+ * @returns {{icon: string, sortOrder: number}} Object containing icon HTML and sort order
  */
 function getFAIcon(value) {
     // Protocol icons mapping
@@ -153,25 +167,21 @@ function getFAIcon(value) {
     return { icon: '<i class="fas fa-file-alt"></i>', sortOrder: 100 }
 }
 /**
-* Function to sort links depending on file type, and than alphabetically
-* @param {string} a - first link to compare
-* @param {string} b - second link to compare
-* @returns {number} -1 if a is before b, 1 if a is after b, alphabetically if they are equal
-*/
+ * Sorts links by type, error status, crawl status, and alphabetically
+ * @param {Object} a - First link object to compare
+ * @param {Object} b - Second link object to compare
+ * @returns {number} -1 if a comes before b, 1 if after, 0 if equal
+ */
 function sortLinks(a, b) {
-    // Get href for comparison (default to empty string if undefined)
     const aUrl = a.href || ''
     const bUrl = b.href || ''
     
-    // Check if items are local HTML pages (should appear first)
     const aIsLocalPage = isUrlLocal(aUrl) && isUrlHTMLFile(aUrl) && !isUrlAnchor(aUrl)
     const bIsLocalPage = isUrlLocal(bUrl) && isUrlHTMLFile(bUrl) && !isUrlAnchor(bUrl)
     
-    // Local pages always come first
     if (aIsLocalPage && !bIsLocalPage) return -1
     if (!aIsLocalPage && bIsLocalPage) return 1
     
-    // Get icon indices for comparison
     const aIndex = a.tags.tag === 'a' && b.tags.tag === 'a' 
         ? getFAIcon(aUrl).sortOrder 
         : getFAIcon(a.tags.tag).sortOrder
@@ -181,21 +191,17 @@ function sortLinks(a, b) {
 
     if (aIndex !== bIndex) return aIndex - bIndex
 
-    // Sort by error status
     if (a.isError !== b.isError) return a.isError ? -1 : 1
-    
-    // Sort by crawled status
     if (a.isCrawled !== b.isCrawled) return a.isCrawled ? -1 : 1
     
-    // Sort alphabetically by href
     return aUrl.localeCompare(bUrl)
 }
 /**
-* Function to debounce calls to avoid excessive invocations
-* @param {function} fn - function to call
-* @param {number} ms - delay in ms
-* @returns {function} - debounced function
-*/
+ * Debounces function calls to avoid excessive invocations
+ * @param {Function} fn - The function to debounce
+ * @param {number} ms - Delay in milliseconds
+ * @returns {Function} Debounced function
+ */
 function debounce(fn, ms) {
     let timer = 0;
     return function (...args) {
@@ -204,14 +210,12 @@ function debounce(fn, ms) {
     };
 }
 
-// Alias for backward compatibility
-const delay = debounce
-
+const delay = debounce // Alias for backward compatibility
 
 /**
- * Function to get the value of a key from the storage
- * @param {any} key - the key to get the value from
- * @returns {Promise} - a promise that resolves to the value
+ * Retrieves a value from Chrome storage
+ * @param {string|string[]} key - The key(s) to retrieve
+ * @returns {Promise<Object>} Promise that resolves to the stored values
  */
 function storageGet(key) {
     if (!(key instanceof Array))
@@ -234,6 +238,11 @@ function storageSet(key, value) {
     chrome.storage.local.set({ [key]: value });
 }
 
+/**
+ * Converts a URL to a base64 data URL
+ * @param {string} url - The URL to convert
+ * @returns {Promise<string>} Promise that resolves to the data URL
+ */
 function toDataURL(url) {
     return new Promise(async (resolve, reject) => {
         try {
@@ -263,12 +272,23 @@ function toDataURL(url) {
     })
 }
 
+/**
+ * Resolves a relative or absolute href to a full URL
+ * @param {string} href - The href to resolve
+ * @returns {string} The resolved full URL
+ */
 const getLocation = href => {
     const link = document.createElement("a");
     link.href = href;
     return link.href; // Return the resolved href string, not the element
 }
 
+/**
+ * Formats a link relative to a base URL and handles chrome extension URLs
+ * @param {string} url - The base URL
+ * @param {string} link - The link to format
+ * @returns {string} The formatted absolute URL
+ */
 const formatLink = (url, link) => {
     const chromeExtensionProtocol = 'chrome-extension:'
     const chromeExtensionId = window.extensionId

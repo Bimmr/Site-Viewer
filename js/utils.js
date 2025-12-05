@@ -89,91 +89,68 @@ function createElementFromHTML(htmlString) {
 }
 
 /**
- * Function to get the icon based of either a URL or a tag
- * @param {string} tag - either a tag or a URL
+ * Function to get the icon and sort order based on either a URL or a tag
+ * @param {string} value - either a tag or a URL
+ * @returns {Object} Object with icon (HTML string) and sortOrder (number) properties
  */
-function getFAIcon(value, getIndex = false) {
-    let icon
-    try {
-        //Urls
-        new URL(value)
-
-
-        const protocol = getUrlProtocol(value)
-        if (protocol === 'tel')
-            icon = ['<i class="fas fa-phone"></i>', 11]
-        else if (protocol === 'mailto')
-            icon = ['<i class="fas fa-envelope"></i>', 12]
-        else if (protocol === 'fax')
-            icon = ['<i class="fas fa-fax"></i>', 11]
-        else if (protocol)
-            icon = ['<i class="fas fa-globe"></i>', 10]
-        else if (isUrlAnchor(value))
-            icon = ['<i class="fas fa-anchor"></i>', 1]
-        else if (isUrlPDFFile(value))
-            icon = ['<i class="fas fa-file-pdf"></i>', 20]
-        else if (isUrlDocument(value))
-            icon = ['<i class="fas fa-file-word"></i>', 21]
-        else if (isUrlArchive(value))
-            icon = ['<i class="fas fa-file-archive"></i>', 22]
-        else if (isUrlData(value))
-            icon = ['<i class="fas fa-file-code"></i>', 23]
-        else if (isUrlImage(value))
-            icon = ['<i class="fas fa-image"></i>', 24]
-        else if (isUrlVideo(value))
-            icon = ['<i class="fas fa-file-video"></i>', 25]
-        else if (isUrlAudio(value))
-            icon = ['<i class="fas fa-file-audio"></i>', 26]
-        else if (isUrlStyleSheet(value))
-            icon = ['<i class="fab fa-css3-alt"></i>', 30]
-        else if (isUrlScript(value))
-            icon = ['<i class="fab fa-js-square"></i>', 31]
-        else if (isUrlFont(value))
-            icon = ['<i class="fas fa-font"></i>', 32]
-        else if (isUrlHTMLFile(value))
-            icon = ['<i class="fas fa-link"></i>', 90]
-
-
-    } catch (e) { }
-    //Tags
-    switch (value) {
-        case 'page':
-            icon = ['<i class="fas fa-file-lines"></i>', 1]
-            break;
-        case 'iframe':
-            icon = ['<i class="fas fa-window-restore"></i>', 20]
-            break;
-        case 'img':
-            icon = ['<i class="fas fa-image"></i>', 21]
-            break;
-        case 'video':
-            icon = ['<i class="fas fa-file-video"></i>', 22]
-            break;
-        case 'audio':
-            icon = ['<i class="fas fa-file-audio"></i>', 23]
-            break;
-        case 'link':
-            icon = ['<i class="fab fa-css3-alt"></i>', 30]
-            break;
-        case 'style':
-            icon = ['<i class="fab fa-css3-alt"></i>', 30]
-            break;
-        case 'script':
-            icon = ['<i class="fab fa-js-square"></i>', 31]
-            break;
-        case 'broken-link':
-            icon = ['<i class="fas fa-unlink"></i>', 100]
-            break;
+function getFAIcon(value) {
+    // Protocol icons mapping
+    const protocolIcons = {
+        'tel': { icon: '<i class="fas fa-phone"></i>', sortOrder: 11 },
+        'mailto': { icon: '<i class="fas fa-envelope"></i>', sortOrder: 12 },
+        'fax': { icon: '<i class="fas fa-fax"></i>', sortOrder: 11 }
     }
-
-    if (!icon)
-        icon = ['<i class="fas fa-file-alt"></i>', 100]
-
-
-    if (getIndex)
-        return icon[1]
-    else
-        return icon[0]
+    
+    // Tag icons mapping
+    const tagIcons = {
+        'page': { icon: '<i class="fas fa-file-lines"></i>', sortOrder: 1 },
+        'iframe': { icon: '<i class="fas fa-window-restore"></i>', sortOrder: 20 },
+        'img': { icon: '<i class="fas fa-image"></i>', sortOrder: 21 },
+        'video': { icon: '<i class="fas fa-file-video"></i>', sortOrder: 22 },
+        'audio': { icon: '<i class="fas fa-file-audio"></i>', sortOrder: 23 },
+        'link': { icon: '<i class="fab fa-css3-alt"></i>', sortOrder: 30 },
+        'style': { icon: '<i class="fab fa-css3-alt"></i>', sortOrder: 30 },
+        'script': { icon: '<i class="fab fa-js-square"></i>', sortOrder: 31 },
+        'broken-link': { icon: '<i class="fas fa-unlink"></i>', sortOrder: 100 }
+    }
+    
+    // URL type checks with icons (order matters - most specific first)
+    const urlChecks = [
+        { check: isUrlAnchor, icon: '<i class="fas fa-anchor"></i>', sortOrder: 1 },
+        { check: isUrlPDFFile, icon: '<i class="fas fa-file-pdf"></i>', sortOrder: 20 },
+        { check: isUrlDocument, icon: '<i class="fas fa-file-word"></i>', sortOrder: 21 },
+        { check: isUrlArchive, icon: '<i class="fas fa-file-archive"></i>', sortOrder: 22 },
+        { check: isUrlData, icon: '<i class="fas fa-file-code"></i>', sortOrder: 23 },
+        { check: isUrlImage, icon: '<i class="fas fa-image"></i>', sortOrder: 24 },
+        { check: isUrlVideo, icon: '<i class="fas fa-file-video"></i>', sortOrder: 25 },
+        { check: isUrlAudio, icon: '<i class="fas fa-file-audio"></i>', sortOrder: 26 },
+        { check: isUrlStyleSheet, icon: '<i class="fab fa-css3-alt"></i>', sortOrder: 30 },
+        { check: isUrlScript, icon: '<i class="fab fa-js-square"></i>', sortOrder: 31 },
+        { check: isUrlFont, icon: '<i class="fas fa-font"></i>', sortOrder: 32 },
+        { check: isUrlHTMLFile, icon: '<i class="fas fa-link"></i>', sortOrder: 90 }
+    ]
+    
+    // Check if it's a tag
+    if (tagIcons[value]) return tagIcons[value]
+    
+    // Try to parse as URL
+    try {
+        new URL(value)
+        
+        // Check for specific protocols
+        const protocol = getUrlProtocol(value)
+        if (protocol) {
+            return protocolIcons[protocol] || { icon: '<i class="fas fa-globe"></i>', sortOrder: 10 }
+        }
+        
+        // Check URL type
+        for (const { check, icon, sortOrder } of urlChecks) {
+            if (check(value)) return { icon, sortOrder }
+        }
+    } catch (e) { }
+    
+    // Default fallback
+    return { icon: '<i class="fas fa-file-alt"></i>', sortOrder: 100 }
 }
 /**
 * Function to sort links depending on file type, and than alphabetically
@@ -196,11 +173,11 @@ function sortLinks(a, b) {
     
     // Get icon indices for comparison
     const aIndex = a.tags.tag === 'a' && b.tags.tag === 'a' 
-        ? getFAIcon(aUrl, true) 
-        : getFAIcon(a.tags.tag, true)
+        ? getFAIcon(aUrl).sortOrder 
+        : getFAIcon(a.tags.tag).sortOrder
     const bIndex = b.tags.tag === 'a' && a.tags.tag === 'a'
-        ? getFAIcon(bUrl, true)
-        : getFAIcon(b.tags.tag, true)
+        ? getFAIcon(bUrl).sortOrder
+        : getFAIcon(b.tags.tag).sortOrder
 
     if (aIndex !== bIndex) return aIndex - bIndex
 

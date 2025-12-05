@@ -1698,11 +1698,11 @@ function buildPopupLinkRow(link, category) {
   // Determine the icon to display
   let iconHTML
   if (link.isBroken) {
-    iconHTML = getFAIcon('broken-link')
+    iconHTML = getFAIcon('broken-link').icon
   } else if (isLocalPage && !isAsset) {
-    iconHTML = getFAIcon('page')
+    iconHTML = getFAIcon('page').icon
   } else {
-    iconHTML = getFAIcon(href)
+    iconHTML = getFAIcon(href).icon
   }
   
   return `
@@ -1748,7 +1748,7 @@ function buildPopupMediaRow(file) {
   
   const imageHTML = isImage 
     ? `<img src="${file.src}" alt="${altText}" title="${altText}">` 
-    : getFAIcon(file.src)
+    : getFAIcon(file.src).icon
   
   return `
     <div class="view-row">
@@ -1884,7 +1884,7 @@ function updateAssets() {
             <input type="checkbox">
           </div>
           <div class="type">`+
-      getFAIcon(link.link) +
+      getFAIcon(link.link).icon +
       `</div>
           <div class="link">
             <p>` + link.link + `</p>
@@ -1958,21 +1958,21 @@ function updateLinks() {
     // Determine link type for title attribute
     let linkType = ''
     if (link.isBroken) {
-      html += getFAIcon('broken-link')
+      html += getFAIcon('broken-link').icon
       linkType = 'broken-link'
     } else if (link.tags.tag === 'iframe') {
-      html += getFAIcon(link.tags.tag)
+      html += getFAIcon(link.tags.tag).icon
       linkType = 'iframe'
     } else {
       const protocol = getUrlProtocol(link.href)
       if (protocol) {
-        html += getFAIcon(link.href)
+        html += getFAIcon(link.href).icon
         linkType = `protocol:${protocol}`
       } else if (isUrlAnchor(link.href)) {
-        html += getFAIcon(link.href)
+        html += getFAIcon(link.href).icon
         linkType = 'anchor'
       } else {
-        html += getFAIcon(link.href)
+        html += getFAIcon(link.href).icon
         linkType = 'link'
       }
     }
@@ -2059,7 +2059,7 @@ function updateFiles() {
             <input type="checkbox">
           </div>
           <div class="type">`+
-      getFAIcon(link.href) +
+      getFAIcon(link.href).icon +
       `</div>
             <div class="link">`+
       '<p>' + link.href + '</p>' +
@@ -2137,7 +2137,7 @@ function updateMedia() {
     } else if (isAudio) {
       html += '<audio controls style="width: 100%;"><source src="' + file.src + '"></audio>'
     } else {
-      html += getFAIcon(file.src)
+      html += getFAIcon(file.src).icon
     }
     html += `</div>
           <div class="link">`+

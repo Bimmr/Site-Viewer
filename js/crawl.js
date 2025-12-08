@@ -100,6 +100,26 @@ const processFetchQueue = async () => {
 }
 
 /**
+ * Checks the HTTP status of a URL without fetching the full content
+ * @param {string} url 
+ * @returns {Promise<number>} HTTP status code
+ */
+async function checkUrlStatus(url){
+  try {
+    const response = await fetch(url, { method: 'HEAD' })
+    return response.status
+  } catch (error) {
+    // If head fails try get with minimal data
+    try {
+      const response = await fetch(url)
+      return response.status
+    } catch (getError) {
+      throw new Error(`Unable to reach ${url}: ${getError.message}`)
+    }
+  }
+}
+
+/**
  * Fetches page content by opening in a tab for live JavaScript execution
  * @param {string} url - URL to crawl
  * @param {boolean} isInitialPage - Whether this is the first page (use current tab)
@@ -110,6 +130,18 @@ async function fetchLive(url, isInitialPage = false, notificationId = null) {
   return rateLimitedTab(async () => {
     let tabId = null
     try {
+
+      if (!isInitialPage){
+        try{
+          const status = await checkUrlStatus(url)
+          if (status >= 400)
+            throw new Error(`URL returned status ${status}`)
+          
+        } catch (statusError) {
+          throw statusError
+        }
+      }
+
       if (notificationId && typeof showNotification === 'function') {
         showNotification(`Crawling: ${url}`, 'info', 30000, notificationId)
       }

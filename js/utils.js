@@ -5,6 +5,22 @@
  */
 const isUrlHTMLFile = url => {
   try {
+
+    // Check for the extensions that aren't the at the end of the URL
+    if (isUrlPDFFile(url)
+        || isUrlImage(url) 
+        || isUrlVideo(url)
+        || isUrlAudio(url) 
+        || isUrlStyleSheet(url) 
+        || isUrlScript(url) 
+        || isUrlFont(url) 
+        || isUrlDocument(url) 
+        || isUrlArchive(url) 
+        || isUrlData(url)
+    ) {
+      return false;
+    }
+
     const pathname = new URL(url).pathname.split('/').pop();
     if (pathname.indexOf('.') <= 0) return true;
     if (url.includes(".html") || url.includes(".shtml") || url.includes(".htm") || url.includes(".aspx") || url.includes(".asp") || url.includes(".jsp") || url.includes(".php") || url.includes(".xhtml")) return true;

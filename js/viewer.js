@@ -1286,6 +1286,16 @@ function updateOverview() {
     updateCount()
   }
 
+  // Show or hide the Crawl All button based on uncrawled pages
+  const crawlAllBtn = document.querySelector("#overview .crawlAllBtn")
+  if (crawlAllBtn && !crawlAllBtn.classList.contains("stop-crawling")) {
+    const hasUncrawledPages = getPages().some(link => !link.isCrawled)
+    if (hasUncrawledPages)
+      crawlAllBtn.classList.remove("hidden")
+    else
+      crawlAllBtn.classList.add("hidden")
+  }
+
   //If crawled more than one page, show the crawl count with a hover popup list of all crawled pages
   if (Object.keys(crawl).length - 2 > 0) {
     let crawledHTML = '<ul>'

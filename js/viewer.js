@@ -180,8 +180,8 @@ document.addEventListener("DOMContentLoaded", function () {
     // Crawl base url after settings are loaded
     startInitialCrawl()
   }).catch(error => {
-    showNotification('Failed to load settings', 'error', 3000)
-    // Still start crawl even if settings fail to load (will use defaults)
+    // No error notification needed - missing settings on first use is normal
+    // Just use defaults and start crawl
     startInitialCrawl()
   })
 

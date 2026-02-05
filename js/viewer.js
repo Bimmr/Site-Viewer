@@ -449,7 +449,7 @@ document.addEventListener("DOMContentLoaded", function () {
     crawlLocks.clear()
     
     //Reset
-    crawl = { all: { media: [], links: [], assets: [] } }
+    crawl = { all: { media: [], links: [], assets: [], issues: [] } }
     pageHashCache.clear() // Clear hash cache on recrawl
     lastCounts = { pages: 1, assets: 1, links: 1, files: 1, media: 1 }
     document.querySelector("#crawledSiteCount").innerHTML = ''
@@ -501,6 +501,11 @@ document.addEventListener("DOMContentLoaded", function () {
       crawl.all.assets.forEach(asset => {
         asset.instances = asset.instances.filter(instance => instance.foundOn !== url)
       })
+      
+      // Remove all issues found on this page
+      if (crawl.all.issues) {
+        crawl.all.issues = crawl.all.issues.filter(issue => issue.location !== url)
+      }
       
       // Clean up items with no remaining instances
       crawl.all.links = crawl.all.links.filter(link => link.instances.length > 0)
@@ -734,6 +739,14 @@ document.addEventListener("DOMContentLoaded", function () {
     applySearchFilter(viewId, item.value)
   }, 200)))
 
+  // Issues view uses custom filtering, add specific handler
+  const issuesSearch = document.querySelector("#issues .searchbar input")
+  if (issuesSearch) {
+    issuesSearch.addEventListener("input", debounce(() => {
+      updateIssues()
+    }, 300))
+  }
+
 
   //Track new items in views and indicate if new
   window.viewObserver = new MutationObserver(function (mutations) {
@@ -782,6 +795,7 @@ document.addEventListener("DOMContentLoaded", function () {
   document.body.addEventListener('click', event => {
     if (event.target.matches('.expand-image')) {
       document.querySelector(".expanded-image").src = event.target.src
+      document.querySelector(".expanded-image-title").textContent = event.target.alt ? `Alt: ${event.target.alt}` : 'No alt text'
       document.querySelector("#expander").classList.add("active")
     }
   })
@@ -1232,7 +1246,8 @@ function updateOverview() {
     document.querySelectorAll("#assets .view-row").length,
     document.querySelectorAll("#links .view-row").length,
     document.querySelectorAll("#files .view-row").length,
-    document.querySelectorAll("#media .view-row").length
+    document.querySelectorAll("#media .view-row").length,
+    (crawl.all.issues || []).length
   ]
 
   //Get all counters in overview (excluding the banner crawled count)
@@ -1878,7 +1893,7 @@ function setupPopup(url) {
   `
 
   // Categorize and build HTML for links and assets
-  const html = { links: '', files: '', assets: '', media: '' }
+  const html = { links: '', files: '', assets: '', media: '', issues: '' }
   const items = [...page.links, ...page.assets]
   
   // Sort items using the sortLinks function before displaying
@@ -1894,8 +1909,11 @@ function setupPopup(url) {
     html.media += buildPopupMediaRow(file)
   })
 
+  // Build HTML for issues (no page column in popup)
+  html.issues = buildPopupIssuesHtml(page.issues || [], url)
+
   // Render all sections with empty state fallback
-  const sections = ['links', 'files', 'assets', 'media']
+  const sections = ['links', 'files', 'assets', 'media', 'issues']
   sections.forEach(section => {
     const content = html[section] || '<div class="empty-row">There are no items here.</div>'
     popup.querySelector(`#popup-view-${section} .view-items`).innerHTML = content
@@ -2228,6 +2246,174 @@ function updateMedia() {
 
 }
 
+const escapeHtml = (value) => {
+  if (value === null || value === undefined) return ''
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+const escapeAttr = (value) => escapeHtml(value)
+
+/**
+ * Updates the Issues view with current data
+ */
+function updateIssues() {
+
+  const container = document.querySelector("#issues .view-items")
+  const searchInput = document.querySelector("#issues .searchbar input")
+  const filter = searchInput?.value || ''
+  
+  const issues = getIssues(filter)
+  
+  // Update count badge - find the Issues sidebar item by text content
+  const issuesSidebarItem = Array.from(document.querySelectorAll('.sidebar-item')).find(item => {
+    const pTag = item.querySelector('p')
+    return pTag && pTag.textContent === 'Issues'
+  })
+  if (issuesSidebarItem) {
+    const countBadge = issuesSidebarItem.querySelector('.count-badge')
+    if (countBadge) {
+      countBadge.textContent = (crawl.all.issues || []).length
+    }
+  }
+  
+  // Handle empty state
+  if (issues.length === 0) {
+    if ((crawl.all.issues || []).length === 0) {
+      container.innerHTML = '<div class="empty-row">No issues detected.</div>'
+    } else {
+      container.innerHTML = '<div class="empty-row">No issues match your filter.</div>'
+    }
+    return
+  }
+  
+  // Sort by severity (error > warning > info), then by type
+  const severityOrder = { error: 0, warning: 1, info: 2 }
+  const sortedIssues = issues.sort((a, b) => {
+    if (severityOrder[a.severity] !== severityOrder[b.severity]) {
+      return severityOrder[a.severity] - severityOrder[b.severity]
+    }
+    return a.type.localeCompare(b.type)
+  })
+  
+  // Group by issue description
+  const groupedIssues = new Map()
+  sortedIssues.forEach(issue => {
+    const key = issue.message
+    if (!groupedIssues.has(key)) {
+      groupedIssues.set(key, [])
+    }
+    groupedIssues.get(key).push(issue)
+  })
+
+  const getGroupSeverity = (items) => {
+    let best = items[0].severity
+    items.forEach(item => {
+      if (severityOrder[item.severity] < severityOrder[best]) {
+        best = item.severity
+      }
+    })
+    return best
+  }
+
+  const groupEntries = Array.from(groupedIssues.entries()).map(([message, items]) => {
+    return {
+      message,
+      items,
+      severity: getGroupSeverity(items),
+      type: items[0].type,
+      category: items[0].category
+    }
+  }).sort((a, b) => {
+    if (severityOrder[a.severity] !== severityOrder[b.severity]) {
+      return severityOrder[a.severity] - severityOrder[b.severity]
+    }
+    if (a.type !== b.type) {
+      return a.type.localeCompare(b.type)
+    }
+    return a.message.localeCompare(b.message)
+  })
+
+  // Build HTML
+  let html = ''
+  groupEntries.forEach(group => {
+    const severityIcon = group.severity === 'error' ? 'fa-circle-xmark' :
+                        group.severity === 'warning' ? 'fa-triangle-exclamation' :
+                        'fa-circle-info'
+
+    const groupMessage = escapeHtml(group.message)
+    const groupType = escapeHtml(group.type)
+
+    html += `
+      <div class="view-row issue-group severity-${group.severity}" data-category="${group.category}">
+        <div class="severity ${group.severity}">
+          <i class="fas ${severityIcon}"></i>
+        </div>
+        <div class="issue-group-header">
+          <p><span class="issue-badge ${group.type}">${groupType}</span> ${groupMessage} <span class="issue-count">(${group.items.length})</span></p>
+        </div>
+        <div class="message"></div>
+        <div class="page"></div>
+        <div class="tools"></div>
+      </div>
+    `
+
+    group.items.forEach(issue => {
+      const issueSeverityIcon = issue.severity === 'error' ? 'fa-circle-xmark' :
+                          issue.severity === 'warning' ? 'fa-triangle-exclamation' :
+                          'fa-circle-info'
+
+      const displayUrl = issue.location.length > 60 
+        ? '...' + issue.location.substring(issue.location.length - 57)
+        : issue.location
+
+      const safeMessage = escapeHtml(issue.message)
+      const safeElement = escapeHtml(issue.element)
+      const safeElementTitle = escapeAttr(issue.elementFull || issue.element)
+      const safeContext = issue.context ? escapeHtml(issue.context) : ''
+      const safeLocation = escapeAttr(issue.location)
+      const safeDisplayUrl = escapeHtml(displayUrl)
+
+      const fragmentText = issue.fragmentText || ''
+      const findOnPageUrl = fragmentText ? createTextFragmentUrl(issue.location, fragmentText) : issue.location
+      const canFindOnPage = fragmentText.length > 0
+
+      html += `
+        <div class="view-row issue-child severity-${issue.severity}" data-category="${issue.category}">
+          <div class="severity ${issue.severity}">
+            <i class="fas ${issueSeverityIcon}"></i>
+          </div>
+          <div class="element" title="${safeElementTitle}">
+            ${safeElement}
+          </div>
+          <div class="message">
+            <p>${safeContext || '<em>No additional details</em>'}</p>
+          </div>
+          <div class="page">
+            <span class="page-link" title="${safeLocation}">${safeDisplayUrl}</span>
+          </div>
+          <div class="tools">
+            <a class="goto" href="${issue.location}" target="_blank" title="Open page">
+              <i class="fas fa-external-link-alt"></i>
+            </a>
+            ${canFindOnPage
+              ? `<a class="find-on-page" href="${findOnPageUrl}" target="_blank" title="Find on page">
+                  <i class="fas fa-search"></i>
+                </a>`
+              : ''}
+          </div>
+        </div>
+      `
+    })
+  })
+
+  renderToContainer(container, html)
+}
+
 const isDuplicatePage = (url) => {
   const page = crawl.all.links.find(link => link.href === url)
   return page && page.isDuplicate
@@ -2282,3 +2468,183 @@ const formatInstances = (instances, getTextFn) => {
 const getPages = () => crawl.all.links.filter(link => isUrlLocal(link.href) && isUrlHTMLFile(link.href) && !isUrlAnchor(link.href) && !isUrlScript(link.href) && !isUrlStyleSheet(link.href) && !link.isBroken)
 const getLinks = () => crawl.all.links.filter(link => (isUrlHTMLFile(link.href) && !isUrlLocal(link.href)) || isUrlAnchor(link.href) || isUrlProtocol(link.href) || link.isBroken)
 const getFiles = () => crawl.all.links.filter(link => !isUrlHTMLFile(link.href) && !isUrlProtocol(link.href) && !link.isBroken)
+
+/**
+ * Gets all issues with optional filtering
+ * @param {string} filter - Optional filter string
+ * @returns {Array} Filtered issues array
+ */
+function getIssues(filter = '') {
+  let issues = crawl.all.issues || []
+  
+  if (!filter || filter.trim().length === 0) {
+    return issues
+  }
+  
+  filter = filter.toLowerCase().trim()
+  
+  // Parse filter tokens
+  const tokens = filter.split(/\s+/)
+  
+  return issues.filter(issue => {
+    // Check each token
+    return tokens.every(token => {
+      const isNegation = token.startsWith('!')
+      const searchTerm = isNegation ? token.substring(1) : token
+      
+      // Special filters
+      if (searchTerm.startsWith('severity:')) {
+        const severity = searchTerm.split(':')[1]
+        const matches = issue.severity === severity
+        return isNegation ? !matches : matches
+      }
+      
+      if (searchTerm.startsWith('type:')) {
+        const type = searchTerm.split(':')[1]
+        const matches = issue.type === type
+        return isNegation ? !matches : matches
+      }
+      
+      if (searchTerm.startsWith('category:')) {
+        const category = searchTerm.split(':')[1]
+        const matches = issue.category === category
+        return isNegation ? !matches : matches
+      }
+      
+      if (searchTerm.startsWith('page:')) {
+        const page = searchTerm.split(':')[1]
+        const matches = issue.location.toLowerCase().includes(page)
+        return isNegation ? !matches : matches
+      }
+      
+      // Text search across message, element, location
+      const textMatches = 
+        issue.message.toLowerCase().includes(searchTerm) ||
+        issue.element.toLowerCase().includes(searchTerm) ||
+        issue.location.toLowerCase().includes(searchTerm) ||
+        issue.category.toLowerCase().includes(searchTerm)
+      
+      return isNegation ? !textMatches : textMatches
+    })
+  })
+}
+
+/**
+ * Builds Issues HTML for the popup inspector (no page column)
+ * @param {Array} issues - Issues for the current page
+ * @param {string} pageUrl - URL of the inspected page
+ * @returns {string} HTML string
+ */
+function buildPopupIssuesHtml(issues, pageUrl) {
+  if (!issues || issues.length === 0) {
+    return '<div class="empty-row">No issues detected.</div>'
+  }
+
+  const severityOrder = { error: 0, warning: 1, info: 2 }
+  const sortedIssues = issues.slice().sort((a, b) => {
+    if (severityOrder[a.severity] !== severityOrder[b.severity]) {
+      return severityOrder[a.severity] - severityOrder[b.severity]
+    }
+    return a.type.localeCompare(b.type)
+  })
+
+  const groupedIssues = new Map()
+  sortedIssues.forEach(issue => {
+    const key = issue.message
+    if (!groupedIssues.has(key)) {
+      groupedIssues.set(key, [])
+    }
+    groupedIssues.get(key).push(issue)
+  })
+
+  const getGroupSeverity = (items) => {
+    let best = items[0].severity
+    items.forEach(item => {
+      if (severityOrder[item.severity] < severityOrder[best]) {
+        best = item.severity
+      }
+    })
+    return best
+  }
+
+  const groupEntries = Array.from(groupedIssues.entries()).map(([message, items]) => {
+    return {
+      message,
+      items,
+      severity: getGroupSeverity(items),
+      type: items[0].type,
+      category: items[0].category
+    }
+  }).sort((a, b) => {
+    if (severityOrder[a.severity] !== severityOrder[b.severity]) {
+      return severityOrder[a.severity] - severityOrder[b.severity]
+    }
+    if (a.type !== b.type) {
+      return a.type.localeCompare(b.type)
+    }
+    return a.message.localeCompare(b.message)
+  })
+
+  let html = ''
+  groupEntries.forEach(group => {
+    const severityIcon = group.severity === 'error' ? 'fa-circle-xmark' :
+                        group.severity === 'warning' ? 'fa-triangle-exclamation' :
+                        'fa-circle-info'
+    const groupMessage = escapeHtml(group.message)
+    const groupType = escapeHtml(group.type)
+
+    html += `
+      <div class="view-row issue-group severity-${group.severity}" data-category="${group.category}">
+        <div class="severity ${group.severity}">
+          <i class="fas ${severityIcon}"></i>
+        </div>
+        <div class="issue-group-header">
+          <p><span class="issue-badge ${group.type}">${groupType}</span> ${groupMessage} <span class="issue-count">(${group.items.length})</span></p>
+        </div>
+        <div class="message"></div>
+        <div class="tools"></div>
+      </div>
+    `
+
+    group.items.forEach(issue => {
+      const issueSeverityIcon = issue.severity === 'error' ? 'fa-circle-xmark' :
+                          issue.severity === 'warning' ? 'fa-triangle-exclamation' :
+                          'fa-circle-info'
+
+      const safeMessage = escapeHtml(issue.message)
+      const safeElement = escapeHtml(issue.element)
+      const safeElementTitle = escapeAttr(issue.elementFull || issue.element)
+      const safeContext = issue.context ? escapeHtml(issue.context) : ''
+
+      const fragmentText = issue.fragmentText || ''
+      const findOnPageUrl = fragmentText ? createTextFragmentUrl(pageUrl, fragmentText) : pageUrl
+      const canFindOnPage = fragmentText.length > 0
+
+      html += `
+        <div class="view-row issue-child severity-${issue.severity}" data-category="${issue.category}">
+          <div class="severity ${issue.severity}">
+            <i class="fas ${issueSeverityIcon}"></i>
+          </div>
+          <div class="element" title="${safeElementTitle}">
+            ${safeElement}
+          </div>
+          <div class="message">
+            <p>${safeContext || '<em>No additional details</em>'}</p>
+          </div>
+          <div class="tools">
+            <a class="goto" href="${pageUrl}" target="_blank" title="Open page">
+              <i class="fas fa-external-link-alt"></i>
+            </a>
+            ${canFindOnPage
+              ? `<a class="find-on-page" href="${findOnPageUrl}" target="_blank" title="Find on page">
+                  <i class="fas fa-search"></i>
+                </a>`
+              : ''}
+          </div>
+        </div>
+      `
+    })
+  })
+
+  return html
+}

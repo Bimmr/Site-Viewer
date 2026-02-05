@@ -681,7 +681,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const activeView = document.querySelector('.view.active')
     if (!activeView || activeView.id !== 'pages') return
 
-    const rows = Array.from(activeView.querySelectorAll(".view-items .view-row"))
+    const rows = Array.from(activeView.querySelectorAll(".view-items .view-row:not(.hidden)"))
     const row_data = rows.filter(row => row.querySelector(".select input")?.checked).map(row => { return {
       isCrawled: row.querySelector(".crawl") ? false : true,
       elm: row
@@ -1528,65 +1528,111 @@ function applySearchFilter(viewSelector, searchTerm) {
   const searchbar = view.querySelector('.searchbar')
   const searchInput = searchbar?.querySelector('input')
   
-  let search = (searchTerm !== undefined ? searchTerm : searchInput?.value || '').trim()
+  const originalSearch = (searchTerm !== undefined ? searchTerm : searchInput?.value || '').trim()
   
-  let invertFilter = false
-  if (search.startsWith('!')) {
-    invertFilter = true
-    search = search.substring(1).trim()
+  // Split by pipe "|" for OR groups, then split each group by comma "," for AND terms
+  // Example: "term1, term2 | term3" means (term1 AND term2) OR (term3)
+  const orGroups = originalSearch.split('|').map(group => group.trim()).filter(group => group.length > 0)
+  
+  // If no search terms, show all
+  if (orGroups.length === 0) {
+    view.querySelectorAll('.view-items .view-row').forEach(row => {
+      row.classList.remove('hidden')
+    })
+    const filterIcon = view.querySelector('.filter-icon')
+    if (filterIcon) {
+      const filterCount = filterIcon.querySelector('.filter-count')
+      if (filterCount) filterCount.remove()
+    }
+    return
   }
   
-  const isCustomFilter = search.match(/^is:(\w+)$/i)
-  let customFilterType = null
-  let textSearch = search.toLowerCase()
-  
-  if (isCustomFilter) {
-    customFilterType = isCustomFilter[1].toLowerCase()
-  }
-  
-  let visibleCount = 0
-  view.querySelectorAll('.view-items .view-row').forEach(row => {
-    let shouldShow = false
+  // Helper function to evaluate a single search term against a row
+  const evaluateTerm = (row, searchTerm) => {
+    let search = searchTerm.trim()
+    let invertFilter = false
+    
+    if (search.startsWith('!')) {
+      invertFilter = true
+      search = search.substring(1).trim()
+    }
+    
+    const isCustomFilter = search.match(/^is:(\w+)$/i)
+    let customFilterType = null
+    let textSearch = search.toLowerCase()
+    
+    if (isCustomFilter) {
+      customFilterType = isCustomFilter[1].toLowerCase()
+    }
+    
+    let termMatches = false
     
     if (customFilterType) {
       switch (customFilterType) {
         case 'crawled':
           const hasCrawlIcon = row.querySelector('.crawl') !== null
-          shouldShow = !hasCrawlIcon
+          termMatches = !hasCrawlIcon
           break
         case 'duplicate':
           const infoPopup = row.querySelector('.hover-popup')
           const hasDuplicate = infoPopup?.innerHTML.includes('Duplicate of:') || false
-          shouldShow = hasDuplicate
+          termMatches = hasDuplicate
           break
         case 'warning':
           const hasWarning = row.querySelector('.warning') !== null
-          shouldShow = hasWarning
+          termMatches = hasWarning
           break
         case 'error':
           const hasError = row.querySelector('.error') !== null
-          shouldShow = hasError
+          termMatches = hasError
           break
         case 'iframe':
           const typeDiv = row.querySelector('.type')
           const hasIframeIcon = typeDiv?.innerHTML.includes('fa-window-restore') || false
-          shouldShow = hasIframeIcon
+          termMatches = hasIframeIcon
           break
         default:
-          shouldShow = false
+          termMatches = false
       }
     } else if (search) {
       const text = row.querySelector('p')?.innerHTML.toLowerCase() || ''
-      shouldShow = text.indexOf(textSearch) >= 0
+      termMatches = text.indexOf(textSearch) >= 0
     } else {
-      shouldShow = true
+      termMatches = true
     }
     
     if (invertFilter) {
-      shouldShow = !shouldShow
+      termMatches = !termMatches
     }
     
-    if (shouldShow) {
+    return termMatches
+  }
+  
+  let visibleCount = 0
+  view.querySelectorAll('.view-items .view-row').forEach(row => {
+    // Row matches if ANY OR group matches (where each group requires ALL AND terms to match)
+    let matchesAnyGroup = false
+    
+    for (const orGroup of orGroups) {
+      const andTerms = orGroup.split(',').map(term => term.trim()).filter(term => term.length > 0)
+      
+      // Check if ALL terms in this AND group match
+      let matchesAllTermsInGroup = true
+      for (const andTerm of andTerms) {
+        if (!evaluateTerm(row, andTerm)) {
+          matchesAllTermsInGroup = false
+          break
+        }
+      }
+      
+      // If this OR group matches, the row should be shown
+      if (matchesAllTermsInGroup) {
+        matchesAnyGroup = true
+        break
+      }
+    }
+    
+    if (matchesAnyGroup) {
       row.classList.remove('hidden')
       visibleCount++
     } else {
@@ -1594,8 +1640,24 @@ function applySearchFilter(viewSelector, searchTerm) {
     }
   })
   
+  // Show/hide "No items found" message
+  const viewItems = view.querySelector('.view-items')
+  let noItemsMsg = viewItems?.querySelector('.no-items-found')
+  
+  if (visibleCount === 0 && originalSearch) {
+    if (!noItemsMsg) {
+      noItemsMsg = document.createElement('div')
+      noItemsMsg.className = 'no-items-found empty-row'
+      noItemsMsg.textContent = 'No items found'
+      viewItems.appendChild(noItemsMsg)
+    }
+  } else {
+    if (noItemsMsg) {
+      noItemsMsg.remove()
+    }
+  }
+  
   const filterIcon = view.querySelector('.filter-icon')
-  const originalSearch = (searchTerm !== undefined ? searchTerm : searchInput?.value || '').trim()
   if (filterIcon && originalSearch) {
     let filterCount = filterIcon.querySelector('.filter-count')
     if (!filterCount) {

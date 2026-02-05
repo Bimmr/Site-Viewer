@@ -63,6 +63,12 @@
           <span class="count-badge">0</span>
           <span class="newContent"><i class="fas fa-star-of-life"></i></span>
         </li>
+        <li class="sidebar-item">
+          <i class="fa-solid fa-triangle-exclamation fa-2x"></i>
+          <p>Issues</p>
+          <span class="count-badge">0</span>
+          <span class="newContent"><i class="fas fa-star-of-life"></i></span>
+        </li>
       </ul>
       <span class="sidebar-split"></span>
       <ul class="sidebar-menu">
@@ -119,6 +125,12 @@
             <div class="col card stat-card">
               <h2 class="card-title"><i class="fas fa-images"></i>Found Media</h2>
               <p id="media-count" class="count">0</p>
+            </div>
+          </div>
+          <div class="row center-even">
+            <div class="col card stat-card">
+              <h2 class="card-title"><i class="fa-solid fa-triangle-exclamation"></i>Issues Found</h2>
+              <p id="issues-count" class="count">0</p>
             </div>
           </div>
         </div>
@@ -309,6 +321,39 @@
         <div class="multi-wrapper">
           <div class="form-item">
             <button type="button" class="downloadSelected">Download Selected</button>
+          </div>
+        </div>
+      </div>
+
+
+      <!-- Issues View -->
+      <div id="issues" class="view view-withTitle">
+        <div class="view-wrapper">
+          <div class="view-title">
+            <div class="severity">
+            </div>
+            <div class="element">
+              <p>Element</p>
+            </div>
+            <div class="message">
+              <p>Details</p>
+              <a title="Toggle Filter" href="#" class="filter-icon"><i class="fa fa-search"></i></a>
+            </div>
+            <div class="page">
+              <p>Found On Page</p>
+            </div>
+            <div class="tools">
+              <p>Issue Tools</p>
+            </div>
+          </div>
+          <div class="view-items">
+            <div class="empty-row">No issues detected.</div>
+          </div>
+        </div>
+        <div class="searchbar">
+          <div class="form-item" style="margin: 0;width: 100%">
+            <span class="icon"><i class="fas fa-search"></i></span>
+            <input type="search" required="required" title="Search or use filters:&#10;severity:error - Show errors only&#10;severity:warning - Show warnings&#10;severity:info - Show info&#10;type:accessibility - Accessibility issues&#10;type:seo - SEO issues&#10;category:missing-alt - Specific category&#10;!text - Exclude text" placeholder="Search issues...">
           </div>
         </div>
       </div>
@@ -512,6 +557,9 @@
               <div class="popup-nav-item">
                 <p>Media</p>
               </div>
+              <div class="popup-nav-item">
+                <p>Issues</p>
+              </div>
             </div>
             <div class="popup-content">
               <div class="popup-view active" id="popup-view-links">
@@ -560,6 +608,15 @@
                   </div>
                 </div>
               </div>
+              <div class="popup-view" id="popup-view-issues">
+                <div class="view-wrapper">
+                  <div class="view-items">
+                    <div class="view-row">
+                      <div class="empty-row">No issues detected.</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -571,6 +628,8 @@
           <div class="popup-wrapper">
             <span title="Close Popup" class="card-title-icon popup-close"><i
                 class="far fa-window-close tool-icon"></i></span>
+
+            <h2 class="expanded-image-title"></h2>
 
             <div class="popup-imageWrapper">
               <img class="expanded-image" src="https://bimmr.com/imgs/projects/Signs.png" alt="">

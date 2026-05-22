@@ -527,8 +527,8 @@ hr {
   pointer-events: none;
 }
 
-.view .multi-wrapper.active, 
-.popup-view .multi-wrapper.active {
+.view.active .multi-wrapper.active, 
+.popup-view.active .multi-wrapper.active {
   bottom: 10px;
   display: flex;
   flex-flow: row nowrap;

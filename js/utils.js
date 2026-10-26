@@ -217,6 +217,30 @@ function getFAIcon(value) {
     // Default fallback
     return { icon: '<i class="fas fa-file-alt"></i>', sortOrder: 100 }
 }
+// Cached URL checks for sortLinks, they're slow and a sort runs them many times per link
+const sortKeyCache = new WeakMap()
+
+/**
+ * Gets the URL-based parts of a link's sort order
+ * @param {Object} link - Link object
+ * @returns {{href: string, isLocalPage: boolean, urlOrder: number, tagOrder: number}} Sort key
+ */
+function getSortKey(link) {
+    const href = link.href || ''
+    let key = sortKeyCache.get(link)
+    if (!key || key.href !== href || key.tag !== link.tags.tag) {
+        key = {
+            href,
+            tag: link.tags.tag,
+            isLocalPage: isUrlLocal(href) && isUrlHTMLFile(href) && !isUrlAnchor(href),
+            urlOrder: getFAIcon(href).sortOrder,
+            tagOrder: getFAIcon(link.tags.tag).sortOrder
+        }
+        sortKeyCache.set(link, key)
+    }
+    return key
+}
+
 /**
  * Sorts links by type, error status, crawl status, and alphabetically
  * @param {Object} a - First link object to compare
@@ -224,21 +248,17 @@ function getFAIcon(value) {
  * @returns {number} -1 if a comes before b, 1 if after, 0 if equal
  */
 function sortLinks(a, b) {
-    const aUrl = a.href || ''
-    const bUrl = b.href || ''
-    
-    const aIsLocalPage = isUrlLocal(aUrl) && isUrlHTMLFile(aUrl) && !isUrlAnchor(aUrl)
-    const bIsLocalPage = isUrlLocal(bUrl) && isUrlHTMLFile(bUrl) && !isUrlAnchor(bUrl)
-    
-    if (aIsLocalPage && !bIsLocalPage) return -1
-    if (!aIsLocalPage && bIsLocalPage) return 1
-    
-    const aIndex = a.tags.tag === 'a' && b.tags.tag === 'a' 
-        ? getFAIcon(aUrl).sortOrder 
-        : getFAIcon(a.tags.tag).sortOrder
-    const bIndex = b.tags.tag === 'a' && a.tags.tag === 'a'
-        ? getFAIcon(bUrl).sortOrder
-        : getFAIcon(b.tags.tag).sortOrder
+    const aKey = getSortKey(a)
+    const bKey = getSortKey(b)
+    const aUrl = aKey.href
+    const bUrl = bKey.href
+
+    if (aKey.isLocalPage && !bKey.isLocalPage) return -1
+    if (!aKey.isLocalPage && bKey.isLocalPage) return 1
+
+    const bothAnchors = a.tags.tag === 'a' && b.tags.tag === 'a'
+    const aIndex = bothAnchors ? aKey.urlOrder : aKey.tagOrder
+    const bIndex = bothAnchors ? bKey.urlOrder : bKey.tagOrder
 
     if (aIndex !== bIndex) return aIndex - bIndex
 

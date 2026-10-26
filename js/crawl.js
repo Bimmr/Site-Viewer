@@ -161,14 +161,15 @@ async function checkUrlStatus(url){
  * @param {string} url - URL to crawl
  * @param {boolean} isInitialPage - Whether this is the first page (use current tab)
  * @param {string} notificationId - ID of the crawling notification to dismiss when done
+ * @param {boolean} isStatusKnown - Whether the page was already fetched successfully, so the status check can be skipped
  * @returns {Promise<string>} HTML content after JavaScript execution
  */
-async function fetchLive(url, isInitialPage = false, notificationId = null) {
+async function fetchLive(url, isInitialPage = false, notificationId = null, isStatusKnown = false) {
   return rateLimitedTab(async () => {
     let tabId = null
     try {
 
-      if (!isInitialPage){
+      if (!isInitialPage && !isStatusKnown){
         const status = await checkUrlStatus(url)
         if (status >= 400)
           throw createHttpStatusError(status)
@@ -669,9 +670,50 @@ function detectIssues(doc, url) {
 }
 
 /**
+ * Parses crawled page data into a document whose relative URLs resolve against the crawled page
+ * @param {string} data - Page HTML
+ * @param {string} url - URL the page was crawled from
+ * @returns {{doc: Document, baseHref: string}} Parsed document and the URL relative links resolve against
+ */
+function parsePageDocument(data, url) {
+  const doc = (new DOMParser()).parseFromString(data, "text/html")
+
+  // Without a base the parsed doc resolves relative URLs against viewer.html instead of the crawled page
+  let baseElement = doc.querySelector("base[href]")
+  let baseHref = url
+  try {
+    if (baseElement) baseHref = new URL(baseElement.getAttribute("href"), url).href
+  } catch (e) { }
+  if (!baseElement) {
+    baseElement = doc.createElement("base")
+    doc.head.prepend(baseElement)
+  }
+  baseElement.setAttribute("href", baseHref)
+
+  return { doc, baseHref }
+}
+
+// Timer for the pending batched view update
+let viewUpdateTimer = null
+
+/**
+ * Schedules a single update of all views, so many crawls finishing together only re-render once
+ */
+function scheduleViewUpdate() {
+  if (viewUpdateTimer) return
+  viewUpdateTimer = setTimeout(() => {
+    viewUpdateTimer = null
+    updateAllViews()
+  }, 250)
+}
+
+/**
  * Updates all views after crawl completion or error
  */
 function updateAllViews() {
+  clearTimeout(viewUpdateTimer)
+  viewUpdateTimer = null
+
   updatePages()
   updateAssets()
   updateLinks()
@@ -790,7 +832,8 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
               console.log(`Smart mode: re-crawling ${url} with live mode`)
               try {
                 // Show notification now that we've decided on live mode
-                const liveHtml = await fetchLive(url, isInitialPage, notificationId)
+                // The analysis fetch already succeeded, so skip the status check
+                const liveHtml = await fetchLive(url, isInitialPage, notificationId, true)
                 return { html: liveHtml, crawlMethod: 'live' }
               } catch (liveError) {
                 console.warn(`Live crawling failed, using fetched HTML:`, liveError.message)
@@ -861,25 +904,54 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
           console.log("Crawled: " + url + " (" + type + ")")
   
           // Get doc from fetched page data
-          let doc = (new DOMParser()).parseFromString(data, "text/html")
-
-          // Without a base the parsed doc resolves relative URLs against viewer.html instead of the crawled page
-          let baseElement = doc.querySelector("base[href]")
-          let baseHref = url
-          try {
-            if (baseElement) baseHref = new URL(baseElement.getAttribute("href"), url).href
-          } catch (e) { }
-          if (!baseElement) {
-            baseElement = doc.createElement("base")
-            doc.head.prepend(baseElement)
-          }
-          baseElement.setAttribute("href", baseHref)
+          const { doc, baseHref } = parsePageDocument(data, url)
 
           //Init lists
           let links = []
           let media = []
           let assets = []
-  
+
+          // Lookups so de-duplicating doesn't scan the lists for every element
+          const linksByHref = new Map()
+          const mediaBySrc = new Map()
+
+          /**
+           * Adds a link to the page's links, or adds it as an instance if it was already found
+           * Normalized URLs prevent duplicates with/without trailing slashes
+           * @param {Object} link - Link object from createLinkObject
+           * @param {Object} extraTags - Tags to add to this instance
+           */
+          const addLink = (link, extraTags = {}) => {
+            const found = linksByHref.get(normalizeUrl(link.href)) || linksByHref.get(normalizeUrl(link._href))
+            if (found) {
+              found.instances.push({
+                foundOn: url,
+                title: link.instances[0].title,
+                tags: { isNewTab: link.instances[0].tags.isNewTab, ...extraTags }
+              })
+            } else {
+              Object.assign(link.instances[0].tags, extraTags)
+              linksByHref.set(normalizeUrl(link.href), link)
+              links.push(link)
+            }
+          }
+
+          /**
+           * Adds media to the page's media, or adds it as an instance if it was already found
+           * @param {Object} file - Media object from createImageObject
+           * @param {Object} extraTags - Tags to add to this instance
+           */
+          const addMedia = (file, extraTags = {}) => {
+            Object.assign(file.instances[0].tags, extraTags)
+            const found = mediaBySrc.get(file.src)
+            if (found) {
+              found.instances.push(file.instances[0])
+            } else {
+              mediaBySrc.set(file.src, file)
+              media.push(file)
+            }
+          }
+
           //Basic a tag - get link and add to crawl all list, but if already found add as an instance
           Array.from(doc.querySelectorAll("a")).filter(
             element => {
@@ -890,125 +962,49 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
                 !href.startsWith("about:blank") &&
                 !isUrlTemplate(href)
             }
-          ).forEach(element => {
-            let link = createLinkObject(url, element)
-            let found
-            // Normalize URLs to prevent duplicates with/without trailing slashes
-            if (!(found = links.find(i => normalizeUrl(i.href) === normalizeUrl(link.href) || normalizeUrl(i.href) === normalizeUrl(link._href)))) {
-              links.push(link)
-            }
-            else
-              found.instances.push({
-                foundOn: url,
-                title: link.instances[0].title,
-                tags: { isNewTab: link.instances[0].tags.isNewTab }
-              })
-          })
+          ).forEach(element => addLink(createLinkObject(url, element)))
+
           //Basic iframe tag - get link and add to crawl all list, but if already found add as an instance
           doc.querySelectorAll("iframe").forEach(element => {
             const src = element.getAttribute("src")
             // Filter out about:blank and invalid sources
             if (!src || src.startsWith("about:blank") || src.startsWith("?")) return
-            
-            let link = createLinkObject(url, element)
-            let found
-            // Normalize URLs to prevent duplicates with/without trailing slashes
-            if (!(found = links.find(i => normalizeUrl(i.href) === normalizeUrl(link.href) || normalizeUrl(i.href) === normalizeUrl(link._href)))) {
-              links.push(link)
-            }
-            else
-              found.instances.push({
-                foundOn: url,
-                title: link.instances[0].title,
-                tags: { isNewTab: link.instances[0].tags.isNewTab }
-              })
+
+            addLink(createLinkObject(url, element))
           })
-  
+
           //Basic img tag - get image and add to crawl all list, but if already found add as an instance
           doc.querySelectorAll("img").forEach(element => {
             let image = createImageObject(url, element)
-
-            let found
             if (isUrlImage(image.src))
-              if (!(found = media.find(i => i.src === image.src)))
-                media.push(image)
-              else
-                found.instances.push({
-                  foundOn: url,
-                  alt: image.instances[0].alt,
-                  tags: { isNewTab: image.instances[0].tags.isNewTab }
-                })
+              addMedia(image)
           })
-  
+
           //Basic video tag - get video and add to crawl all list, but if already found add as an instance
           doc.querySelectorAll("video").forEach(element => {
-  
-            if (element.poster && element.poster.length > 0) {
-              let image = createImageObject(url, null, element.poster)
-              let foundImage
-              if (!(foundImage = media.find(i => i.src === image.src)))
-                media.push(image)
-              else
-                foundImage.instances.push({
-                  foundOn: url,
-                  alt: image.instances[0].alt,
-                  tags: { isNewTab: image.instances[0].tags.isNewTab }
-                })
-            }
-  
-            if (element.querySelector("source")) {
-              let video = createImageObject(url, null, element.querySelector("source").src)
-              let foundVideo
-              if (!(foundVideo = media.find(i => i.src === video.src)))
-                media.push(video)
-              else
-                foundVideo.instances.push({
-                  foundOn: url,
-                  alt: video.instances[0].alt,
-                  tags: { isNewTab: video.instances[0].tags.isNewTab }
-                })
-            }
+            if (element.poster && element.poster.length > 0)
+              addMedia(createImageObject(url, null, element.poster))
+
+            if (element.querySelector("source"))
+              addMedia(createImageObject(url, null, element.querySelector("source").src))
           })
-  
-  
+
           //Basic audio tag - get audio and add to crawl all list, but if already found add as an instance
           doc.querySelectorAll("audio").forEach(element => {
-            if (element.querySelector("source")) {
-              let audio = createImageObject(url, null, element.querySelector("source").src)
-              let foundAudio
-              if (!(foundAudio = media.find(i => i.src === audio.src)))
-                media.push(audio)
-              else
-                foundAudio.instances.push({
-                  foundOn: url,
-                  alt: audio.instances[0].alt,
-                  tags: { isNewTab: audio.instances[0].tags.isNewTab }
-                })
-            }
+            if (element.querySelector("source"))
+              addMedia(createImageObject(url, null, element.querySelector("source").src))
           })
-  
-  
+
           //Background Image styles - get image and add to crawl all list, but if already found add as an instance
           doc.querySelectorAll('*[style*="background"]').forEach(element => {
-            const imageUrlRegex = getImageUrlRegex();
-            const match = imageUrlRegex.exec(element.style.cssText);
+            const match = getImageUrlRegex().exec(element.style.cssText);
             if (match) {
               let src = match.groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
               let image = createImageObject(url, null, src)
-              let found
-              if (isUrlImage(image.src))
-                if (!(found = media.find(i => i.src === image.src))) {
-                  image.instances[0].alt = element.alt || element.title
-                  image.instances[0].tags.isBackground = true
-                  image.instances[0].tags.isInline = true
-                  media.push(image)
-                }
-                else
-                  found.instances.push({
-                    foundOn: url,
-                    alt: image.instances[0].alt || element.title,
-                    tags: { isBackground: true, isInline: true }
-                  })
+              if (isUrlImage(image.src)) {
+                image.instances[0].alt = element.title
+                addMedia(image, { isBackground: true, isInline: true })
+              }
             }
           })
   
@@ -1017,29 +1013,17 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
             doc.querySelectorAll('style').forEach(element => {
               // Remove CSS comments before parsing
               const cleanContent = removeCSSComments(element.innerHTML)
-              const imageUrlRegex = getImageUrlRegex();
-              const matches = cleanContent.match(imageUrlRegex);
+              const matches = cleanContent.match(getImageUrlRegex());
               if (matches)
                 matches.forEach(style => {
-                  const regex = getImageUrlRegex();
-                  const match = regex.exec(style);
+                  const match = getImageUrlRegex().exec(style);
                   if (match) {
                     let src = match.groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
-                    let found
                     let image = createImageObject(url, null, src)
-                    if (isUrlImage(image.src))
-                    if (!(found = media.find(i => i.src === image.src))) {
-                      image.instances[0].alt = element.alt || element.title
-                      image.instances[0].tags.isBackground = true
-                      image.instances[0].tags.isInStyleTag = true
-                      media.push(image)
+                    if (isUrlImage(image.src)) {
+                      image.instances[0].alt = element.title
+                      addMedia(image, { isBackground: true, isInStyleTag: true })
                     }
-                    else
-                      found.instances.push({
-                        foundOn: url,
-                        alt: image.instances[0].alt || element.title,
-                        tags: { isBackground: true, isInStyleTag: true }
-                      })
                   }
                 })
             })
@@ -1059,20 +1043,10 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
                   if (match) {
                     let src = match.groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
                     let image = createImageObject(url, null, src)
-                    let found
-                    if (isUrlImage(image.src))
-                    if (!(found = media.find(i => i.src === image.src))) {
-                      image.instances[0].alt = element.alt || element.title
-                      image.instances[0].tags.isBackground = true
-                      image.instances[0].tags.isInScriptTag = true
-                      media.push(image)
+                    if (isUrlImage(image.src)) {
+                      image.instances[0].alt = element.title
+                      addMedia(image, { isBackground: true, isInScriptTag: true })
                     }
-                    else
-                      found.instances.push({
-                        foundOn: url,
-                        alt: image.instances[0].alt || element.title,
-                        tags: { isBackground: true, isInScriptTag: true }
-                      })
                   }
                 })
   
@@ -1107,18 +1081,8 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
                   }
                   
                   if ((link._href && (link._href.startsWith("?")))) return
-                  let found
 
-                  if (!(found = links.find(i => i.href === link.href) || (link.href.length === 1 && link.href[0] === '/'))) {
-                    link.instances[0].tags.isInScriptTag = true
-                    links.push(link)
-                  }
-                  else
-                    found.instances.push({
-                      foundOn: url,
-                      title: link.instances[0].title,
-                      tags: { isNewTab: link.instances[0].tags.isNewTab, isInScriptTag: true }
-                    })
+                  addLink(link, { isInScriptTag: true })
                 })
             })
   
@@ -1147,7 +1111,7 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
             links: links.sort(sortLinks),
             media,
             assets,
-            doc,
+            // Only the raw data is kept, parsed documents use far more memory (see parsePageDocument)
             data,
             crawlMethod: crawlMethod || 'unknown'
           }
@@ -1163,34 +1127,34 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
               crawl.all.issues.push(issue)
             })
   
-            //For Links - add link to crawl all list or add to instance if already crawled
-            page.links.forEach(link => {
-              // Normalize URLs to prevent duplicates with/without trailing slashes
-              const existingLink = crawl.all.links.find(i => normalizeUrl(i.href) === normalizeUrl(link.href))
-              if (!existingLink) {
-                crawl.all.links.push(link)
-              } else {
-                existingLink.instances = [...existingLink.instances, ...link.instances]
-              }
-            })
-            //For images - add link to crawl all list or add to instance if already crawled
-            page.media.forEach(file => {
-              const existingMedia = crawl.all.media.find(i => i.src === file.src)
-              if (!existingMedia) {
-                crawl.all.media.push(file)
-              } else {
-                existingMedia.instances = [...existingMedia.instances, ...file.instances]
-              }
-            })
-            //For assets - add link to crawl all list or add to instance if already crawled
-            page.assets.forEach(asset => {
-              const existingAsset = crawl.all.assets.find(i => i.link === asset.link)
-              if (!existingAsset) {
-                crawl.all.assets.push(asset)
-              } else {
-                existingAsset.instances = [...existingAsset.instances, ...asset.instances]
-              }
-            })
+            /**
+             * Adds items to a crawl all list, or adds their instances if the item is already in it
+             * Builds a lookup once so merging doesn't scan the whole list for every item
+             * @param {Array} allItems - List in crawl.all
+             * @param {Array} pageItems - Items found on this page
+             * @param {Function} getKey - Returns the key items are matched by
+             */
+            const mergeIntoAll = (allItems, pageItems, getKey) => {
+              const existingByKey = new Map()
+              allItems.forEach(item => {
+                const key = getKey(item)
+                if (!existingByKey.has(key)) existingByKey.set(key, item)
+              })
+              pageItems.forEach(item => {
+                const existing = existingByKey.get(getKey(item))
+                if (existing) {
+                  existing.instances.push(...item.instances)
+                } else {
+                  existingByKey.set(getKey(item), item)
+                  allItems.push(item)
+                }
+              })
+            }
+
+            // Normalize URLs to prevent duplicates with/without trailing slashes
+            mergeIntoAll(crawl.all.links, page.links, link => normalizeUrl(link.href))
+            mergeIntoAll(crawl.all.media, page.media, file => file.src)
+            mergeIntoAll(crawl.all.assets, page.assets, asset => asset.link)
   
             //Add crawled page to crawl object
             crawl[url] = page
@@ -1226,9 +1190,9 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
           
           // Release lock
           crawlLocks.delete(url)
-  
+
           // Update all views
-          updateAllViews()
+          scheduleViewUpdate()
 
           // Replace the crawling notification with completion
           if (typeof replaceNotification === 'function') {
@@ -1253,11 +1217,6 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
             delete crawl.all.links[linkIndex].isCrawling
           }
           
-          // Update pages view to show error icon instead of crawling icon
-          if (typeof updatePages === 'function') {
-            updatePages()
-          }
-          
           if (linkIndex > -1) {
             if (error.httpStatus) {
               crawl.all.links[linkIndex].isWarning = true
@@ -1270,8 +1229,8 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
           }
   
           // Update all views
-          updateAllViews()
-  
+          scheduleViewUpdate()
+
           reject(error[0] ?? error)
         })
     })

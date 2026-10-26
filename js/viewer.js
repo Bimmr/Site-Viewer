@@ -333,17 +333,22 @@ document.addEventListener("DOMContentLoaded", function () {
       // 1. Are not already crawled (isCrawled = false)
       // 2. Are not currently being crawled (not in crawlLocks)
       // 3. Are not in error/warning state (haven't failed)
-      const uncrawledPages = getPages().filter(link => 
-        !link.isCrawled && 
+      const uncrawledPages = getPages().filter(link =>
+        !link.isCrawled &&
         !crawlLocks.has(link.href) &&
         !link.isError &&
         !link.isWarning
       )
-      
+
+      // Look up crawl icons by URL instead of searching the DOM for every page
+      const crawlIcons = new Map()
+      document.querySelectorAll("#pages .crawl").forEach(icon => {
+        if (!crawlIcons.has(icon.href)) crawlIcons.set(icon.href, icon)
+      })
+
       uncrawledPages.forEach(link => {
         // Find the corresponding crawl icon in the DOM and click it
-        const crawlIcon = Array.from(document.querySelectorAll("#pages .crawl"))
-          .find(icon => icon.href === link.href)
+        const crawlIcon = crawlIcons.get(link.href)
         if (crawlIcon) {
           crawlIcon.querySelector('i')?.click()
         }
@@ -925,7 +930,7 @@ function handleDownload(url) {
           convertAll(page);
 
           async function convertAll(page) {
-            let pageDoc = page.doc.cloneNode(true)
+            let pageDoc = parsePageDocument(page.data, url).doc
             if (settings.combine.assets) {
               pageDoc = await convertAllScripts(pageDoc)
               pageDoc = await convertAllStyles(pageDoc)
@@ -1243,17 +1248,25 @@ function testURL(url, element) {
 /**
  * Updates the Overview view with current counts and statistics
  */
+// Frame of the running overview count animation, so a new update can cancel it
+let overviewAnimationFrame = null
+
 function updateOverview() {
 
-  //Get count of view-rows in each view
+  // Count from the crawl data, matching what each view renders
+  const pages = getPages()
   let targetCount = [
-    document.querySelectorAll("#pages .view-row").length,
-    document.querySelectorAll("#assets .view-row").length,
-    document.querySelectorAll("#links .view-row").length,
-    document.querySelectorAll("#files .view-row").length,
-    document.querySelectorAll("#media .view-row").length,
+    pages.length,
+    crawl.all.assets.length,
+    getLinks().length,
+    getFiles().length,
+    crawl.all.media.length,
     (crawl.all.issues || []).length
   ]
+
+  // Pages badge shows crawled/total, with a tooltip if any crawled pages had problems
+  const crawledPages = pages.filter(link => link.isCrawled)
+  const problemPageCount = crawledPages.filter(link => link.isError || link.isWarning).length
 
   //Get all counters in overview (excluding the banner crawled count)
   let countElements = Array.from(document.querySelectorAll("#overview .count")).filter(el => {
@@ -1261,55 +1274,36 @@ function updateOverview() {
     return el.closest('.stat-card') !== null
   })
   let sidebarBadges = document.querySelectorAll(".sidebar-item .count-badge")
-  
-  for (let i = 0; i < countElements.length; i++) {
-    const element = countElements[i]
-    const badge = sidebarBadges[i]
-    const target = targetCount[i]
 
-    //Have a nice animation counting up to the new count
-    const updateCount = () => {
-      const count = parseInt(element.innerText) || 0
-      const speed = 5000
-      const inc = target / speed;
-      if (count < target) {
-        const newCount = Math.ceil(count + inc)
-        element.innerText = newCount
-        if (badge) {
-          // For pages badge (index 0), show crawled/total format
-          if (i === 0) {
-            const crawledPages = getPages().filter(link => link.isCrawled)
-            const errorPages = crawledPages.filter(link => link.isError || link.isWarning)
-            const validCrawledPages = crawledPages.length - errorPages.length
-            badge.innerText = `${validCrawledPages}/${newCount}`
-            if (errorPages.length > 0) {
-              badge.title = `${errorPages.length} page(s) had errors or warnings`
-            }
-          } else {
-            badge.innerText = newCount
-          }
-        }
-        setTimeout(updateCount, 1)
-      } else {
-        element.innerText = target
-        if (badge) {
-          // For pages badge (index 0), show crawled/total format
-          if (i === 0) {
-            const crawledPages = getPages().filter(link => link.isCrawled).length
-            badge.innerText = `${crawledPages}/${target}`
-          } else {
-            badge.innerText = target
-          }
-        }
-      }
-    }
-    updateCount()
+  if (sidebarBadges[0])
+    sidebarBadges[0].title = problemPageCount > 0 ? `${problemPageCount} page(s) had errors or warnings` : ''
+
+  const setCount = (i, value) => {
+    countElements[i].textContent = value
+    const badge = sidebarBadges[i]
+    if (badge)
+      badge.textContent = i === 0 ? `${crawledPages.length}/${value}` : value
   }
+
+  //Have a nice animation counting to the new counts
+  cancelAnimationFrame(overviewAnimationFrame)
+  const startCounts = countElements.map(element => parseInt(element.textContent) || 0)
+  const startTime = performance.now()
+  const duration = 400
+
+  const animate = now => {
+    const progress = Math.min((now - startTime) / duration, 1)
+    countElements.forEach((element, i) => {
+      setCount(i, Math.round(startCounts[i] + (targetCount[i] - startCounts[i]) * progress))
+    })
+    overviewAnimationFrame = progress < 1 ? requestAnimationFrame(animate) : null
+  }
+  overviewAnimationFrame = requestAnimationFrame(animate)
 
   // Show or hide the Crawl All button based on uncrawled pages
   const crawlAllBtn = document.querySelector("#overview .crawlAllBtn")
   if (crawlAllBtn && !crawlAllBtn.classList.contains("stop-crawling")) {
-    const hasUncrawledPages = getPages().some(link => !link.isCrawled)
+    const hasUncrawledPages = crawledPages.length < pages.length
     if (hasUncrawledPages)
       crawlAllBtn.classList.remove("hidden")
     else
@@ -2414,9 +2408,15 @@ function updateIssues() {
   renderToContainer(container, html)
 }
 
+// URLs of duplicate pages, cached for one synchronous render so formatInstances doesn't scan all links per instance
+let duplicatePagesCache = null
+
 const isDuplicatePage = (url) => {
-  const page = crawl.all.links.find(link => link.href === url)
-  return page && page.isDuplicate
+  if (!duplicatePagesCache) {
+    duplicatePagesCache = new Set(crawl.all.links.filter(link => link.isDuplicate).map(link => link.href))
+    queueMicrotask(() => duplicatePagesCache = null)
+  }
+  return duplicatePagesCache.has(url)
 }
 
 /**

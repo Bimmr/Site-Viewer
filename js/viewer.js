@@ -1039,14 +1039,14 @@ function handleDownload(url) {
 
               styles.forEach(style => {
                 stylePromises.push(new Promise(resolveStyle => {
-                  if (style.innerHTML.match(imageUrlRegex)) {
+                  const imageMatches = style.innerHTML.match(getImageUrlRegex())
+                  if (imageMatches) {
                     let imagePromises = []
-                    style.innerHTML.match(imageUrlRegex).forEach(image => {
+                    imageMatches.forEach(image => {
                       matchedStyles.push(style)
-                      let src = imageUrlRegex.exec(image).groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
+                      let src = getImageUrlRegex().exec(image).groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
                       imagePromises.push(new Promise((resolveImage, rejectImage) => {
                         let img = createImageObject(baseUrl, null, src)
-                        imageUrlRegex.lastIndex = 0
                         toDataURL(img.src).then(dataUrl => {
                           let srcToReplace = img._src || img.src
                           resolveImage([srcToReplace, dataUrl])
@@ -1099,9 +1099,9 @@ function handleDownload(url) {
                     let isImageTag = image.tagName.toLowerCase() === "img"
                     let src = image.src || image.getAttribute("data-src")
                     
-                    if (!isImageTag && image.style.cssText.match(imageUrlRegex)) {
-                      src = imageUrlRegex.exec(image.style.cssText).groups.image
-                      imageUrlRegex.lastIndex = 0;
+                    const backgroundMatch = isImageTag ? null : getImageUrlRegex().exec(image.style.cssText)
+                    if (backgroundMatch) {
+                      src = backgroundMatch.groups.image
                     }
                     
                     if (!src) {

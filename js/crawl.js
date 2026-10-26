@@ -141,7 +141,10 @@ const processFetchQueue = async () => {
 async function checkUrlStatus(url){
   try {
     const response = await fetch(url, { method: 'HEAD' })
-    return response.status
+    // Some servers don't support HEAD, retry those with GET
+    if (response.status !== 405 && response.status !== 501)
+      return response.status
+    throw new Error(`HEAD not supported (${response.status})`)
   } catch (error) {
     // If head fails try get with minimal data
     try {
@@ -166,14 +169,9 @@ async function fetchLive(url, isInitialPage = false, notificationId = null) {
     try {
 
       if (!isInitialPage){
-        try{
-          const status = await checkUrlStatus(url)
-          if (status >= 400)
-            throw new Error(`URL returned status ${status}`)
-          
-        } catch (statusError) {
-          throw statusError
-        }
+        const status = await checkUrlStatus(url)
+        if (status >= 400)
+          throw createHttpStatusError(status)
       }
 
       if (notificationId && typeof showNotification === 'function') {
@@ -227,7 +225,10 @@ async function fetchLive(url, isInitialPage = false, notificationId = null) {
       } else if (error.message.includes('blocked')) {
         console.warn('Tab blocked by popup blocker:', url)
       }
-      
+
+      // Keep HTTP status errors intact so they're reported as warnings
+      if (error.httpStatus) throw error
+
       throw new Error(`Live crawl failed: ${error.message}`)
     }
   })
@@ -244,13 +245,26 @@ function removeHTMLComments(str) {
 
 /**
  * Removes JavaScript comments from a string
+ * String literals are matched first and kept, so URLs like "https://..." aren't treated as comments
  * @param {string} str - String to process
  * @returns {string} String without JS comments
  */
 function removeJSComments(str) {
-  str = str.replace(/\/\/.*$/gm, '')
-  str = str.replace(/\/\*[\s\S]*?\*\//g, '')
-  return str
+  return str.replace(
+    /("(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`)|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g,
+    (match, stringLiteral) => stringLiteral ? match : ''
+  )
+}
+
+/**
+ * Creates an error for a response with an HTTP error status
+ * @param {number} status - HTTP status code
+ * @returns {Error} Error with an httpStatus property
+ */
+function createHttpStatusError(status) {
+  const error = new Error(`HTTP ${status}`)
+  error.httpStatus = Number(status)
+  return error
 }
 
 /**
@@ -467,7 +481,7 @@ function detectIssues(doc, url) {
   })
   
   // 3. Form inputs without labels
-  doc.querySelectorAll('input[type="text"], input[type="email"], input[type="password"], input[type="tel"], textarea, select').forEach(input => {
+  doc.querySelectorAll('input:not([type="hidden"], [type="submit"], [type="button"], [type="reset"], [type="image"]), textarea, select').forEach(input => {
     const id = input.getAttribute('id')
     const ariaLabel = input.getAttribute('aria-label')
     const ariaLabelledby = input.getAttribute('aria-labelledby')
@@ -477,7 +491,7 @@ function detectIssues(doc, url) {
     // Check if there's an associated label
     let hasLabel = false
     if (id) {
-      hasLabel = doc.querySelector(`label[for="${id}"]`) !== null
+      hasLabel = doc.querySelector(`label[for="${CSS.escape(id)}"]`) !== null
     }
     // Check if wrapped in label
     if (!hasLabel && input.closest('label')) {
@@ -714,7 +728,7 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
           if (!res.ok) throw new Error(`Network request failed with status ${res.status}`)
           const data = await res.json()
           if (data.status && data.status.http_code !== 200) {
-            throw new Error(data.status.http_code)
+            throw createHttpStatusError(data.status.http_code)
           }
           if (!data.contents) {
             throw new Error('No content received from the URL')
@@ -732,7 +746,7 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
           }
           
           const res = await fetch(url)
-          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          if (!res.ok) throw createHttpStatusError(res.status)
           return await res.text()
         })
       }
@@ -766,6 +780,8 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
             try {
               html = await fetchDirect(url, false)
             } catch (directError) {
+              // The server responded, so the proxy would only get the same status
+              if (directError.httpStatus) throw directError
               html = await fetchWithCorsProxy(url, false)
             }
             
@@ -812,6 +828,8 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
           const html = await fetchDirect(url, true)
           return { html, crawlMethod: 'fetch' }
         } catch (directError) {
+          // The server responded, so the proxy would only get the same status
+          if (directError.httpStatus) throw directError
           // Silently fall back to CORS proxy
           try {
             const html = await fetchWithCorsProxy(url, true)
@@ -995,7 +1013,7 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
           })
   
           //Find Background Images hidden in style tags - get image and add to crawl all list, but if already found add as an instance
-          if (!isUrlHTMLFile(url) || (isUrlHTMLFile(url) && settings.crawl.onPageStyles))
+          if (!isUrlHTMLFile(url) || (isUrlHTMLFile(url) && settings?.crawl?.onPageStyles))
             doc.querySelectorAll('style').forEach(element => {
               // Remove CSS comments before parsing
               const cleanContent = removeCSSComments(element.innerHTML)
@@ -1027,7 +1045,7 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
             })
   
           //Find Background Images/Links in script tags - get links/images and add to crawl all list, but if already found add as an instance
-          if (!isUrlHTMLFile(url) || (isUrlHTMLFile(url) && settings.crawl.onPageScripts))
+          if (!isUrlHTMLFile(url) || (isUrlHTMLFile(url) && settings?.crawl?.onPageScripts))
             doc.querySelectorAll('script').forEach(element => {
               // Remove JS comments before parsing
               const cleanContent = removeJSComments(element.innerHTML)
@@ -1241,10 +1259,10 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
           }
           
           if (linkIndex > -1) {
-            if (!isNaN(error.message)) {
+            if (error.httpStatus) {
               crawl.all.links[linkIndex].isWarning = true
-              crawl.all.links[linkIndex].statusCode = error.message
-              crawl.all.links[linkIndex].errorMessage = `Received HTTP status code ${error.message}`
+              crawl.all.links[linkIndex].statusCode = error.httpStatus
+              crawl.all.links[linkIndex].errorMessage = `Received HTTP status code ${error.httpStatus}`
             } else {
               crawl.all.links[linkIndex].isError = true
               crawl.all.links[linkIndex].errorMessage = error.message || 'Failed to load page - it may be inaccessible, blocked by CORS, or taking too long to respond'

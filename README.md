@@ -3,7 +3,7 @@
 
 **Crawl, explore, and export everything from a website — all in one view.**
 
-Site-Viewer lets you inspect pages, links, assets, files, and media from any website right in your browser, and optionally download them in a single file or browse them comfortably.:contentReference[oaicite:0]{index=0}
+Site-Viewer lets you inspect pages, links, assets, files, and media from any website right in your browser, and optionally download them in a single file or browse them comfortably.
 
 <p>
 🔍 Full site crawl & navigation  
@@ -20,7 +20,7 @@ Site-Viewer lets you inspect pages, links, assets, files, and media from any web
   <tr>
     <td align="center"><b>Home Dashboard</b><br><img src="https://lh3.googleusercontent.com/TGvNGn4pBGKkHNGy2uUYa7OVlCjGYOBmYT_mUq-G06g036G2dIcIaCTPj1hpd4R1RXuuS6mF3694A2iYAzc-Q0DcY2I=s1280-w1280-h800" alt="Home page" width="300"></td>
     <td align="center"><b>Pages View</b><br><img src="https://lh3.googleusercontent.com/Mm-vj5XBDSK834N4SrpXQH61MT9mAJnQAIYzBjC8z8EeTZUk6EbdXa_qYcS3bpnggnZW9Ny0003Q5socg_UyX4X-G8Q=s1280-w1280-h800" alt="Pages view" width="300"></td>
-    <td align="center"><b>Page Insect</b><br><img src="https://lh3.googleusercontent.com/G2w_L5cSQ-MiZt7KG2tJwfn87DtFeeufrNLW_l2VxvG_wuUU_Bc5c_9N5RE6mlTvBXfXUe_xHWHqp1vq1SDCfH8rNw=s1280-w1280-h800" alt="Page Inspection" width="300"></td>
+    <td align="center"><b>Page Inspect</b><br><img src="https://lh3.googleusercontent.com/G2w_L5cSQ-MiZt7KG2tJwfn87DtFeeufrNLW_l2VxvG_wuUU_Bc5c_9N5RE6mlTvBXfXUe_xHWHqp1vq1SDCfH8rNw=s1280-w1280-h800" alt="Page Inspection" width="300"></td>
   </tr>
   <tr>
     <td align="center"><b>Assets</b><br><img src="https://lh3.googleusercontent.com/UTnQYJFICSYBjNAaAAy_UKbWnAbt57I7znz8sZm6oa1GwhwT0Np-VvkvXbSrSWZ-wi0jI4NgerN7-f1xrFuSYGY_vw=s1280-w1280-h800" alt="Assets" width="300"></td>

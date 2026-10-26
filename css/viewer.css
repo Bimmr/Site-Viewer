@@ -610,10 +610,39 @@ hr {
 
 #overview .banner-action {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 12px;
   padding: 25px 35px;
   background: transparent;
+}
+
+#overview .crawl-progress {
+  width: 100%;
+  max-width: 260px;
+}
+
+#overview .crawl-progress-bar {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.35);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+#overview .crawl-progress-bar span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: white;
+  transition: width 0.3s ease;
+}
+
+#overview .crawl-progress-text {
+  margin-top: 6px;
+  color: white;
+  font-size: 0.85em;
+  text-align: center;
 }
 
 #overview .banner-action .crawlAllBtn {

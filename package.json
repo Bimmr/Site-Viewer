@@ -1,0 +1,16 @@
+{
+  "name": "site-viewer",
+  "private": true,
+  "type": "module",
+  "description": "Development tooling for the Site Viewer extension. Nothing here is needed to load the extension.",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "node tests/e2e/run.js"
+  },
+  "devDependencies": {
+    "jsdom": "^25.0.1",
+    "puppeteer": "^23.11.1",
+    "vitest": "^2.1.9"
+  }
+}

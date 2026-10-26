@@ -1,2650 +1,438 @@
-// Track last counts to detect changes
-let lastCounts = { pages: 1, assets: 1, links: 1, files: 1, media: 1, issues: 1 }
-
-// Download queue management
-const DOWNLOAD_QUEUE = {
-  queue: [],
-  active: 0,
-  maxConcurrent: 3
-}
-
-// Constants for magic numbers
-const BLOB_CLEANUP_DELAY = 2000
-const TEXT_FRAGMENT_MAX_LENGTH = 50
-
-/**
- * Creates a URL with text fragment for scroll-to-text functionality
- * @param {string} baseUrl - The base URL
- * @param {string} text - The text to create a fragment for
- * @returns {string} URL with text fragment appended
- */
-function createTextFragmentUrl(baseUrl, text) {
-  if (!text) return baseUrl
-  
-  // Encode the text for URL and limit to first 50 characters for reliability
-  const textForFragment = encodeURIComponent(text.trim().substring(0, TEXT_FRAGMENT_MAX_LENGTH))
-  return baseUrl + '#:~:text=' + textForFragment
-}
+import { settings, loadSettings, setSetting, getManageDownloads } from './settings.js'
+import { debounce } from './lib/html.js'
+import { store } from './state/store.js'
+import { site } from './state/site.js'
+import { setInitialTab } from './crawl/tabs.js'
+import { testUrl } from './crawl/network.js'
+import {
+  startCrawl, recrawl, crawlPage, startCrawlAll, stopCrawlAll, isCrawlAllRunning, onCrawlAllProgress
+} from './crawl/controller.js'
+import { renderViews, scheduleRender, syncSelection, getSelectedUrls } from './views/index.js'
+import { renderCrawlProgress, describeCrawlResult } from './views/overview.js'
+import { renderIssues } from './views/issues.js'
+import { openInspector } from './views/inspector.js'
+import { applySearchFilter } from './views/search.js'
+import { downloadUrl, queueDownload } from './download/download.js'
+import { showNotification } from '../modules/notifications/notifications.js'
 
 /**
- * Creates a DocumentFragment from HTML string for better performance
- * @param {string} htmlString - HTML string to convert
- * @returns {DocumentFragment} Document fragment containing the HTML elements
+ * Gets the page to crawl and the tab it's open in
+ * The viewer is opened with ?url=, or the popup sets tabURL/tabId on this window after opening it
+ * @returns {Promise<{url: string|null, tabId: number|null}>}
  */
-function createFragment(htmlString) {
-  const template = document.createElement('template')
-  template.innerHTML = htmlString.trim()
-  return template.content
+async function getStartPage() {
+  const params = new URLSearchParams(location.search)
+  if (params.get('url'))
+    return { url: params.get('url'), tabId: Number(params.get('tabId')) || null }
+
+  // Give the opener a moment to set the values
+  for (let i = 0; i < 40 && !window.tabURL; i++)
+    await new Promise(resolve => setTimeout(resolve, 50))
+  return { url: window.tabURL || null, tabId: window.tabId || null }
 }
 
 /**
- * Efficiently renders HTML to a container using DocumentFragment
- * @param {HTMLElement} container - Target container element
- * @param {string} htmlString - HTML string to render
+ * Loads settings, then starts crawling the page the viewer was opened for
  */
-function renderToContainer(container, htmlString) {
-  if (!htmlString || htmlString.length === 0) {
-    container.innerHTML = '<div class="empty-row">There are no items here.</div>'
+async function start() {
+  try {
+    await loadSettings()
+  } catch (error) {
+    // Missing settings on first use is normal, the defaults are used
+  }
+  populateSettingsInputs()
+
+  // Named downloads can be turned off on the options page, which makes the directory setting do nothing
+  if (!(await getManageDownloads()))
+    document.querySelectorAll("#settings .needsManageDownloads").forEach(element => element.classList.add("hidden"))
+
+  const { url, tabId } = await getStartPage()
+  if (!url || !/^https?:/i.test(url)) {
+    document.querySelector("#crawledSiteText").textContent = url || 'No page selected'
+    showNotification('Site Viewer can only crawl http and https pages', 'error', Infinity)
     return
   }
-  
-  const fragment = createFragment(htmlString)
-  container.innerHTML = '' // Clear existing content
-  container.appendChild(fragment)
+
+  setInitialTab(tabId)
+  startCrawl(url).catch(() => { })
+  document.querySelector("#crawledSiteText").textContent = site.baseUrl
+  renderViews()
 }
 
 /**
- * Processes the download queue with concurrent limit
+ * Sets the settings inputs to the current settings
+ * Inputs use the id "group-key" (or "group-key-value" for radios)
  */
-function processDownloadQueue() {
-  while (DOWNLOAD_QUEUE.active < DOWNLOAD_QUEUE.maxConcurrent && DOWNLOAD_QUEUE.queue.length > 0) {
-    const downloadFn = DOWNLOAD_QUEUE.queue.shift()
-    DOWNLOAD_QUEUE.active++
-    
-    downloadFn().finally(() => {
-      DOWNLOAD_QUEUE.active--
-      processDownloadQueue()
-    })
-  }
+function populateSettingsInputs() {
+  document.querySelectorAll("#settings.view input, #settings.view select").forEach(item => {
+    const [group, key] = item.id.split("-")
+    const value = settings[group]?.[key]
+    if (value === undefined) return
+
+    if (item.type === "checkbox")
+      item.checked = value
+    else if (item.type === "radio")
+      item.checked = item.value === value
+    else
+      item.value = value
+  })
+
+  document.querySelector(".combine-settings").classList.toggle("active", settings.combine.enabled === true)
 }
 
 /**
- * Queues a download to prevent overwhelming the browser
- * @param {Function} downloadFn - Function that returns a Promise for the download
+ * Switches to a view, sliding it in from the side of the sidebar item it's coming from
+ * @param {string} viewId - ID of the view to show
  */
-function queueDownload(downloadFn) {
-  DOWNLOAD_QUEUE.queue.push(downloadFn)
-  processDownloadQueue()
+function showView(viewId) {
+  const sidebarItems = Array.from(document.querySelectorAll(".sidebar-item"))
+  const item = sidebarItems.find(sidebarItem => sidebarItem.dataset.view === viewId)
+  const newView = document.getElementById(viewId)
+  if (!item || !newView) return
+
+  const previousView = document.querySelector(".view.active")
+  const previousItem = document.querySelector(".sidebar-item.active")
+
+  sidebarItems.forEach(sidebarItem => sidebarItem.classList.toggle("active", sidebarItem === item))
+  item.querySelector(".newContent")?.classList.remove("active")
+
+  if (!previousView || previousView === newView || !previousItem) {
+    document.querySelectorAll(".view.active").forEach(view => view.classList.remove("active"))
+    newView.classList.add("active")
+    return
+  }
+
+  const isMovingForward = sidebarItems.indexOf(item) > sidebarItems.indexOf(previousItem)
+  const transitionClasses = ["slide-in-left", "slide-in-right", "slide-out-left", "slide-out-right"]
+  document.querySelectorAll(".view").forEach(view => view.classList.remove(...transitionClasses))
+
+  requestAnimationFrame(() => {
+    previousView.classList.remove("active")
+    previousView.classList.add(isMovingForward ? "slide-out-left" : "slide-out-right")
+    newView.classList.add("active", isMovingForward ? "slide-in-left" : "slide-in-right")
+  })
+
+  // Cleanup after animation completes
+  setTimeout(() => {
+    document.querySelectorAll(".view").forEach(view => view.classList.remove(...transitionClasses))
+  }, 500)
 }
 
-// Application settings
-let settings = {
-  crawl: {
-    onPageScripts: true,
-    onPageStyles: true,
-    rateLimitMs: 100,
-    corsProxyUrl: 'https://api.allorigins.win/get?url=',
-    corsProxyRawUrl: 'https://api.allorigins.win/raw?url=',
-    crawlMode: 'smart',
-    liveWaitTime: 5000,
-    maxConcurrentTabs: 10
-  },
-  combine: {
-    enabled: false,
-    onlyLocal: true,
-    assets: false,
-    images: true,
-    imagesInAssets: false
-  },
-  download: {
-    directory: ''
+/**
+ * Deletes a crawled page's data, keeping it as an uncrawled page
+ * @param {string} url - The page URL
+ * @returns {boolean} False if it's the start page, which can't be deleted
+ */
+function deleteCrawlData(url) {
+  if (url === site.baseUrl) return false
+  store.removePage(url)
+  return true
+}
+
+/**
+ * Tests a link and shows the result on its icon
+ * @param {string} url - The URL to test
+ * @param {HTMLElement} element - The link's test icon
+ */
+async function testLink(url, element) {
+  element.classList.remove("test", "success", "warning", "error")
+  element.classList.add("testing")
+  element.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'
+
+  let result
+  let status
+  try {
+    status = await testUrl(url)
+    result = status === 200 ? 'success' : 'warning'
+  } catch (error) {
+    result = 'failed'
+  }
+
+  const icons = {
+    success: { class: 'success', icon: 'check-circle', title: 'Link is valid' },
+    warning: { class: 'warning', icon: 'exclamation-circle', title: `Returned a status code of ${status}\nClick to retry` },
+    failed: { class: 'error', icon: 'times-circle', title: "Link doesn't exist or took too long to respond\nClick to retry" }
+  }
+  element.classList.remove("testing")
+  element.classList.add(icons[result].class)
+  element.title = icons[result].title
+  element.innerHTML = `<i class="fas fa-${icons[result].icon}"></i>`
+
+  store.setLinkTest(url, result, result === 'warning' ? status : undefined)
+}
+
+/**
+ * Crawls a page or asset the user picked
+ * @param {string} url - URL to crawl
+ */
+function crawlUrl(url) {
+  crawlPage(url).catch(() => { })
+}
+
+/**
+ * Positions a hover popup above or below its icon, whichever has more room
+ * @param {HTMLElement} popup - The hover popup
+ * @param {HTMLElement} icon - The icon it belongs to
+ */
+function positionPopup(popup, icon) {
+  const iconRect = icon.getBoundingClientRect()
+  const popupMaxHeight = 200
+  const padding = 10
+  const spaceBelow = window.innerHeight - iconRect.bottom
+  const spaceAbove = iconRect.top
+
+  // Overlap the icon so the mouse can move onto the popup
+  if (spaceBelow >= popupMaxHeight + padding || spaceBelow > spaceAbove) {
+    Object.assign(popup.style, { top: '100%', bottom: 'auto', marginTop: '-10px', marginBottom: '0' })
+  } else {
+    Object.assign(popup.style, { top: 'auto', bottom: '100%', marginTop: '0', marginBottom: '-10px' })
   }
 }
 
-// Initialize event listeners and setup when DOM is loaded
-document.addEventListener("DOMContentLoaded", function () {
+document.addEventListener("DOMContentLoaded", () => {
 
   // Remove preload class after initial render to enable transitions
-  setTimeout(() => {
-    document.body.classList.remove("preload")
-  }, 100)
+  setTimeout(() => document.body.classList.remove("preload"), 100)
 
-  //Prevent Refreshing the popup as that breaks things
-  window.onunload = refreshParent;
-  function refreshParent() {
-    console.log("Refreshing parent window")
-    // Clean up intervals to prevent memory leaks
-    if (window.moreToCrawlInterval) {
-      clearInterval(window.moreToCrawlInterval)
-      window.moreToCrawlInterval = null
+  // Refreshing the viewer loses the page it was opened for, so close it instead
+  // Crawler tabs are closed by the background worker when this window closes
+  window.addEventListener("unload", () => window.close())
+
+  document.querySelector(".sidebar .sidebar-footer .version").textContent = window.version || chrome.runtime.getManifest().version
+
+  // Re-render when crawl data changes
+  store.onChange(scheduleRender)
+
+  // Crawl All progress
+  onCrawlAllProgress(progress => {
+    renderCrawlProgress(progress)
+    if (!progress.running) {
+      showNotification(describeCrawlResult(progress), progress.failed > 0 ? 'warning' : 'success', 6000)
+      renderViews()
     }
-    // Clean up observer
-    if (window.viewObserver) {
-      window.viewObserver.disconnect()
-      window.viewObserver = null
-    }
-    // Clean up all crawler tabs
-    if (typeof closeAllCrawlerTabs === 'function') {
-      closeAllCrawlerTabs().catch(err => console.warn('Failed to close crawler tabs:', err))
-    }
-    window.close()
-  }
-
-  //Load settings from local storage and update settings
-  storageGet("settings").then(data => {
-    if (data !== null) {
-      // Merge with defaults to ensure new fields are present
-      settings = {
-        crawl: {
-          onPageScripts: data.crawl?.onPageScripts !== undefined ? data.crawl.onPageScripts : true,
-          onPageStyles: data.crawl?.onPageStyles !== undefined ? data.crawl.onPageStyles : true,
-          rateLimitMs: data.crawl?.rateLimitMs !== undefined ? data.crawl.rateLimitMs : 100,
-          corsProxyUrl: data.crawl?.corsProxyUrl || 'https://api.allorigins.win/get?url=',
-          corsProxyRawUrl: data.crawl?.corsProxyRawUrl || 'https://api.allorigins.win/raw?url=',
-          crawlMode: data.crawl?.crawlMode || (data.crawl?.liveCrawling === true ? 'live' : 'smart'), // Migrate old liveCrawling setting
-          liveWaitTime: data.crawl?.liveWaitTime !== undefined ? data.crawl.liveWaitTime : 5000,
-          maxConcurrentTabs: data.crawl?.maxConcurrentTabs !== undefined ? data.crawl.maxConcurrentTabs : 10
-        },
-        combine: data.combine || settings.combine,
-        download: data.download || settings.download
-      }
-      
-      // Apply CORS URLs from settings
-      if (settings.crawl.corsProxyUrl) {
-        CORS_BYPASS_URL = settings.crawl.corsProxyUrl
-      }
-      if (settings.crawl.corsProxyRawUrl) {
-        CORS_BYPASS_URL_RAW = settings.crawl.corsProxyRawUrl
-      }
-      
-      //Settings Controls
-      document.querySelectorAll("#settings.view input, #settings.view select").forEach(item => {
-
-        let settingGroup = item.id.split("-")[0]
-        let setting = item.id.split("-")[1]
-
-        if (item.type === "checkbox")
-          item.checked = settings[settingGroup][setting]
-        else if (item.type === "radio")
-          item.checked = (item.value === settings[settingGroup][setting])
-        else if (item.type === "text" || item.type === "number")
-          item.value = settings[settingGroup][setting]
-        else if (item.tagName === "SELECT")
-          item.value = settings[settingGroup][setting]
-      })
-
-      document.querySelector(".combine-settings").classList.toggle("active", settings.combine.enabled === true)
-    }
-    
-    // Crawl base url after settings are loaded
-    startInitialCrawl()
-  }).catch(error => {
-    // No error notification needed - missing settings on first use is normal
-    // Just use defaults and start crawl
-    startInitialCrawl()
   })
 
-  // Function to start the initial crawl
-  function startInitialCrawl() {
-    if (window.tabURL)
-      baseUrl = window.tabURL
-    
-    // Store the tabId globally so it can be used for initial crawl
-    if (window.tabId)
-      window.initialTabId = window.tabId
+  // === Navigation ===
 
-    let url = new URL(baseUrl)
-    hostURL = url.origin
-    baseUrl = hostURL + (url.pathname ? url.pathname : '')
+  document.querySelectorAll(".sidebar-item").forEach(item => item.addEventListener("click", () => showView(item.dataset.view)))
 
-    document.querySelector("#crawledSiteText").textContent = baseUrl
-    crawlURL(baseUrl, true, true)  // Pass true for isInitialPage on first crawl
-
-    let link = createLinkObject(baseUrl, createElementFromHTML(`<a href="${baseUrl}"></a>`))
-    link.isCrawled = true
-    link.tags.isBaseUrl = true
-    crawl.all.links.push(link)
-  }
-
-  document.querySelector(".sidebar .sidebar-footer .version").innerHTML = window.version
-
-
-  //Sidebar controls
-  document.querySelectorAll(".sidebar-item").forEach(item => item.addEventListener("click", event => {
-    const previousActive = document.querySelector(".view.active")
-    const previousSidebarItem = document.querySelector(".sidebar-item.active")
-    
-    const newActiveView = document.querySelector(".view#" + item.querySelector("p").innerHTML.toLowerCase())
-    
-    // Update sidebar active states
-    document.querySelectorAll(".sidebar-item.active").forEach(activeItem => activeItem.classList.remove("active"))
-    item.classList.add("active")
-    item.querySelector(".newContent")?.classList.remove("active")
-    
-    // Handle view transitions
-    if (previousActive && previousActive !== newActiveView && previousSidebarItem) {
-      const allSidebarItems = Array.from(document.querySelectorAll(".sidebar-item"))
-      const previousIndex = allSidebarItems.indexOf(previousSidebarItem)
-      const newIndex = allSidebarItems.indexOf(item)
-      const isMovingForward = newIndex > previousIndex
-      
-      // Clean up any existing transition classes
-      document.querySelectorAll(".view").forEach(v => {
-        v.classList.remove("slide-in-left", "slide-in-right", "slide-out-left", "slide-out-right")
-      })
-            
-      // Apply transitions
-      requestAnimationFrame(() => {
-        previousActive.classList.remove("active")
-        previousActive.classList.add(isMovingForward ? "slide-out-left" : "slide-out-right")
-        
-        newActiveView.classList.add("active", isMovingForward ? "slide-in-left" : "slide-in-right")
-      })
-      
-      // Cleanup after animation completes
-      setTimeout(() => {
-        document.querySelectorAll(".view").forEach(v => {
-          v.classList.remove("slide-in-left", "slide-in-right", "slide-out-left", "slide-out-right")
-        })
-      }, 500)
-
-    } else {
-      // No transition needed, just switch
-      document.querySelectorAll(".view.active").forEach(activeItem => activeItem.classList.remove("active"))
-      newActiveView?.classList.add("active")
-    }
-  }))
-
-  // Overview card click handlers - navigate to respective views
+  // Overview cards open their view
   document.querySelectorAll("#overview .card[data-view]").forEach(card => {
-    card.addEventListener("click", () => {
-      // Match by name rather than index, the sidebar also contains Overview and Settings
-      const targetSidebarItem = Array.from(document.querySelectorAll(".sidebar-item"))
-        .find(item => item.querySelector("p")?.textContent.toLowerCase() === card.dataset.view)
-      targetSidebarItem?.click()
+    card.addEventListener("click", () => showView(card.dataset.view))
+  })
+
+  // Show a star on views that got new rows while not being looked at
+  const lastCounts = {}
+  const viewObserver = new MutationObserver(mutations => {
+    mutations.forEach(mutation => {
+      const view = mutation.target.closest(".view")
+      const count = mutation.target.querySelectorAll(".view-row").length
+      if (count > (lastCounts[view.id] || 0) && !view.classList.contains("active"))
+        document.querySelector(`.sidebar-item[data-view="${view.id}"] .newContent`)?.classList.add("active")
+      lastCounts[view.id] = count
     })
   })
+  document.querySelectorAll(".view .view-items").forEach(item => viewObserver.observe(item, { childList: true }))
 
-  document.querySelector(".crawlAllBtn").addEventListener("click", event => {
-    const button = event.target
-    
-    // Check if we're stopping a crawl
-    if (button.classList.contains('stop-crawling')) {
-      // Stop crawling
-      if (window.moreToCrawlInterval) {
-        clearInterval(window.moreToCrawlInterval)
-        window.moreToCrawlInterval = null
-      }
-      
-      // Remove isCrawling flag from items that were queued but not actively running
-      // Active crawls (in crawlLocks) will finish naturally
-      crawl.all.links.forEach(link => {
-        if (link.isCrawling && !crawlLocks.has(link.href)) {
-          delete link.isCrawling
-        }
-      })
-      
-      // Clear queues - prevents any new crawls from starting
-      // Items currently being processed will finish
-      try {
-        if (typeof tabQueue !== 'undefined') {
-          tabQueue.length = 0
-        }
-        if (typeof fetchQueue !== 'undefined') {
-          fetchQueue.length = 0
-        }
-      } catch (e) {
-        console.warn('Could not clear queues:', e)
-      }
-      
-      // Reset button
-      button.textContent = 'CRAWL ALL PAGES'
-      button.classList.remove('stop-crawling')
-      
-      // Update pages view to reflect removed isCrawling flags
-      if (typeof updatePages === 'function') {
-        updatePages()
-      }
-      
-      const activeCount = crawlLocks.size
-      if (activeCount > 0) {
-        showNotification(`Crawling stopped - ${activeCount} page${activeCount > 1 ? 's' : ''} finishing`, 'info', 3000)
-      } else {
-        showNotification('Crawling stopped', 'info', 2000)
-      }
-      
-      return
-    }
-    
-    // Prevent multiple intervals from being created
-    if (window.moreToCrawlInterval) {
-      showNotification('Crawl already in progress', 'info')
-      return
-    }
+  // === Crawling ===
 
-    // Change button to "Stop Crawling"
-    button.textContent = 'STOP CRAWLING'
-    button.classList.add('stop-crawling')
-
-    clickAllCrawlIcons()
-
-    function clickAllCrawlIcons() {
-      // Only click crawl icons for pages that:
-      // 1. Are not already crawled (isCrawled = false)
-      // 2. Are not currently being crawled (not in crawlLocks)
-      // 3. Are not in error/warning state (haven't failed)
-      const uncrawledPages = getPages().filter(link =>
-        !link.isCrawled &&
-        !crawlLocks.has(link.href) &&
-        !link.isError &&
-        !link.isWarning
-      )
-
-      // Look up crawl icons by URL instead of searching the DOM for every page
-      const crawlIcons = new Map()
-      document.querySelectorAll("#pages .crawl").forEach(icon => {
-        if (!crawlIcons.has(icon.href)) crawlIcons.set(icon.href, icon)
-      })
-
-      uncrawledPages.forEach(link => {
-        // Find the corresponding crawl icon in the DOM and click it
-        const crawlIcon = crawlIcons.get(link.href)
-        if (crawlIcon) {
-          crawlIcon.querySelector('i')?.click()
-        }
-      })
-    }
-
-    // Store interval globally for proper cleanup
-    window.moreToCrawlInterval = setInterval(() => {
-      try {
-        if (crawlLocks.size === 0) {
-          if (!getPages().some(link => !link.isCrawled)) {
-            button.classList.add("hidden")
-            button.textContent = 'CRAWL ALL PAGES'
-            button.classList.remove('stop-crawling')
-            clearInterval(window.moreToCrawlInterval)
-            window.moreToCrawlInterval = null
-          }
-          else {
-            clickAllCrawlIcons()
-          }
-        }
-      } catch (error) {
-        showNotification('Error during crawl check', 'error', 3000)
-        button.textContent = 'CRAWL ALL PAGES'
-        button.classList.remove('stop-crawling')
-        clearInterval(window.moreToCrawlInterval)
-        window.moreToCrawlInterval = null
-      }
-    }, 500)
+  document.querySelector(".crawlAllBtn").addEventListener("click", () => {
+    if (isCrawlAllRunning()) stopCrawlAll()
+    else startCrawlAll()
   })
 
+  document.querySelector("#settings #recrawlBtn").addEventListener("click", () => {
+    if (!confirm("Are you sure you want to recrawl? This will clear all current crawl data and start fresh from the base URL."))
+      return
+    recrawl().catch(() => { })
+    renderViews()
+  })
 
-  //Settings Controls
+  // === Settings ===
+
   document.querySelectorAll("#settings.view input, #settings.view select").forEach(item =>
-    item.addEventListener("change", event => {
+    item.addEventListener("change", () => {
+      const [group, key] = item.id.split("-")
+      let value
+      if (item.type === "checkbox") value = item.checked
+      else if (item.type === "number") value = parseInt(item.value, 10) || 0
+      else value = item.value
 
-      let settingGroup = item.id.split("-")[0]
-      let setting = item.id.split("-")[1]
-      
-      if (item.type === "checkbox")
-        settings[settingGroup][setting] = item.checked
-      else if (item.type === "radio")
-        settings[settingGroup][setting] = item.value
-      else if (item.type === "text")
-        settings[settingGroup][setting] = item.value
-      else if (item.type === "number")
-        settings[settingGroup][setting] = parseInt(item.value, 10) || 0
-      else if (item.tagName === "SELECT")
-        settings[settingGroup][setting] = item.value
-
-      if (settingGroup === "download") {
-        let downloadDirectory = settings.download.directory
-        if (downloadDirectory && !downloadDirectory.endsWith("/"))
-          downloadDirectory += "/"
-        settings.download.directory = downloadDirectory
-      }
-      
-      // Apply CORS URLs immediately when changed
-      if (setting === "corsProxyUrl") {
-        CORS_BYPASS_URL = settings.crawl.corsProxyUrl
-      }
-      if (setting === "corsProxyRawUrl") {
-        CORS_BYPASS_URL_RAW = settings.crawl.corsProxyRawUrl
-      }
-
-      storageSet("settings", settings)
+      setSetting(group, key, value)
+      if (item.id === "combine-enabled")
+        document.querySelector(".combine-settings").classList.toggle("active", value)
     })
   )
 
-  //If managing downloads is disabled we can't combine files
-  storageGet('manageDownloads').then(manageDownloads => {
-    if (manageDownloads === false) {
-      settings.combine.enabled = false
-      document.querySelector("#settings").querySelectorAll(".needsManageDownloads").forEach(e => e.classList.add("hidden"))
-    }
-  }).catch(error => {
-    showNotification('Failed to check download settings', 'error', 3000)
-  })
+  // === Popups ===
 
-  //Add event listeners to the combine section
-  document.querySelector("#settings #combine-enabled").addEventListener("change", event => {
-    document.querySelector(".combine-settings").classList.toggle("active")
-  })
+  const closeActivePopup = () => document.querySelector(".popup.active")?.classList.remove("active")
 
-  document.querySelector("#settings #recrawlBtn").addEventListener("click", event => {
-    // Show confirmation dialog
-    if (!confirm("Are you sure you want to recrawl? This will clear all current crawl data and start fresh from the base URL.")) {
-      return
-    }
-    
-    // Clean up any existing intervals
-    if (window.moreToCrawlInterval) {
-      clearInterval(window.moreToCrawlInterval)
-      window.moreToCrawlInterval = null
-    }
-    const crawlAllBtn = document.querySelector(".crawlAllBtn")
-    crawlAllBtn.textContent = 'CRAWL ALL PAGES'
-    crawlAllBtn.classList.remove('stop-crawling')
-
-    // Clean up crawling state
-    crawlLocks.clear()
-    crawlPromises.clear()
-    
-    //Reset
-    crawl = { all: { media: [], links: [], assets: [], issues: [] } }
-    pageHashCache.clear() // Clear hash cache on recrawl
-    lastCounts = { pages: 1, assets: 1, links: 1, files: 1, media: 1, issues: 1 }
-    document.querySelector("#crawledSiteCount").innerHTML = ''
-    document.querySelector("#crawledSiteText").textContent = baseUrl
-
-    // Update all views to reflect cleared data
-    updateAllViews()
-
-    //Recrawl
-    crawlURL(baseUrl)
-    const link = createLinkObject(baseUrl, createElementFromHTML(`<a href="${baseUrl}"></a>`))
-    link.isCrawled = true
-    link.tags.isBaseUrl = true
-    crawl.all.links.push(link)
-  })
-
-  //Popup Controls
-  document.querySelectorAll(".popup .popup-close i").forEach(element => element.addEventListener("click", event => {
-    document.querySelector(".popup.active").classList.remove("active")
+  document.querySelectorAll(".popup .popup-close i").forEach(element => element.addEventListener("click", closeActivePopup))
+  document.querySelectorAll(".popup .popup-outerWrapper").forEach(element => element.addEventListener("click", event => {
+    if (event.target === element) closeActivePopup()
   }))
-  
-  /**
-   * Delete crawl data for a specific URL
-   * @param {string} url - The URL to delete crawl data for
-   * @returns {boolean} - True if deleted, false if prevented
-   */
-  function deleteCrawlData(url) {
-    // Prevent deleting the original URL
-    if (url === baseUrl) {
-      return false
-    }
-    
-    // Remove the page's crawled content but keep it as a link
-    if (crawl[url]) {
-      // Store the page data to get links/media/assets found on this page
-      const pageData = crawl[url]
-      
-      // Remove all links found on this page from other links' instances
-      crawl.all.links.forEach(link => {
-        link.instances = link.instances.filter(instance => instance.foundOn !== url)
-      })
-      
-      // Remove all media found on this page from other media's instances
-      crawl.all.media.forEach(media => {
-        media.instances = media.instances.filter(instance => instance.foundOn !== url)
-      })
-      
-      // Remove all assets found on this page from other assets' instances
-      crawl.all.assets.forEach(asset => {
-        asset.instances = asset.instances.filter(instance => instance.foundOn !== url)
-      })
-      
-      // Remove all issues found on this page
-      if (crawl.all.issues) {
-        crawl.all.issues = crawl.all.issues.filter(issue => issue.location !== url)
-      }
-      
-      // Clean up items with no remaining instances
-      crawl.all.links = crawl.all.links.filter(link => link.instances.length > 0)
-      crawl.all.media = crawl.all.media.filter(media => media.instances.length > 0)
-      crawl.all.assets = crawl.all.assets.filter(asset => asset.instances.length > 0)
-      
-      // Delete the crawled page data
-      delete crawl[url]
-    }
-    
-    // Mark the link as not crawled anymore (so it can be crawled again)
-    const linkIndex = crawl.all.links.findIndex(link => link.href === url)
-    if (linkIndex > -1) {
-      crawl.all.links[linkIndex].isCrawled = false
-      // Clear any error/warning flags
-      delete crawl.all.links[linkIndex].isError
-      delete crawl.all.links[linkIndex].isWarning
-      delete crawl.all.links[linkIndex].statusCode
-      delete crawl.all.links[linkIndex].errorMessage
-      delete crawl.all.links[linkIndex].isDuplicate
-      delete crawl.all.links[linkIndex].duplicateOf
-    }
-    
-    return true
-  }
-  
-  // Delete crawl data button handler in popup
-  document.querySelector("#inspecter .popup-delete")?.addEventListener("click", async event => {
+
+  document.querySelectorAll("#inspecter .popup-nav-item").forEach(item => item.addEventListener("click", () => {
+    document.querySelectorAll("#inspecter .popup-nav-item.active, #inspecter .popup-view.active").forEach(activeItem => activeItem.classList.remove("active"))
+    item.classList.add("active")
+    document.querySelector("#inspecter #popup-view-" + item.querySelector("p").textContent.toLowerCase())?.classList.add("active")
+  }))
+
+  // Delete crawl data for the inspected page
+  document.querySelector("#inspecter .popup-delete")?.addEventListener("click", () => {
     const popup = document.querySelector("#inspecter")
-    const urlElement = popup.querySelector(".card-title h3")
-    if (!urlElement) return
-    
-    const url = urlElement.textContent.split('\n')[0].trim()
-    
-    if (!confirm(`Delete crawl data for this page?\n\n${url}\n\nThis will remove all content found on this page, but keep it as a discovered link.`)) {
+    const url = popup.dataset.url
+    if (!url) return
+
+    if (!confirm(`Delete crawl data for this page?\n\n${url}\n\nThis will remove all content found on this page, but keep it as a discovered link.`))
       return
-    }
-    
-    // Close the popup
+
     popup.classList.remove("active")
-    
-    // Delete the crawl data
     if (deleteCrawlData(url)) {
-      // Update all views
-      updateAllViews()
+      renderViews()
       showNotification(`Crawl data deleted for: ${url}`, 'success', 3000)
     }
   })
-  
-  document.querySelectorAll(".popup .popup-outerWrapper").forEach(element => element.addEventListener("click", event => {
-    if (Array.from(document.querySelectorAll(".popup .popup-outerWrapper")).some(element1 => element1 === event.target))
-      document.querySelector(".popup.active").classList.remove("active")
+
+  // === Selection ===
+
+  // Select all
+  document.querySelectorAll(".view-title .select input").forEach(item => item.addEventListener("click", () => {
+    const view = item.closest(".view")
+    view.querySelectorAll(".view-items .view-row:not(.hidden) .select input").forEach(checkbox => checkbox.checked = item.checked)
+    syncSelection(view)
   }))
 
-  document.querySelectorAll("#inspecter .popup-nav-item").forEach(item => item.addEventListener("click", event => {
-    document.querySelectorAll("#inspecter .popup-nav-item.active, #inspecter .popup-view.active").forEach(activeItem => activeItem.classList.remove("active"))
-    item.classList.add("active")
-    let view = item.querySelector("p").innerHTML.toLowerCase()
-    document.querySelector("#inspecter .popup-view#popup-view-" + view)?.classList.add("active")
-  }))
+  // Row checkboxes
+  document.body.addEventListener('click', event => {
+    if (event.target.matches('.view-items .select input'))
+      syncSelection(event.target.closest(".view, .popup-view"))
+  })
 
-  //Select All controls
-  document.querySelectorAll(".view-title .select input").forEach(item => item.addEventListener("click", event => {
-    let view = item.parentNode.parentNode.parentNode
-    let state = item.checked
-    view.querySelectorAll(".view-items .select input").forEach(checkbox => {
-      if (checkbox) checkbox.checked = state
-    })
-    
-    //Check if the multi-wrapper needs to show
-    const multiWrapper = document.querySelector(".view.active .multi-wrapper")
-    const checkedCount = Array.from(view.querySelectorAll(".view-items .select input")).filter(i => i.checked).length
-    if (checkedCount >= 1) {
-      multiWrapper.classList.add("active")
-      togglePageButtons()
-    } else {
-      multiWrapper.classList.remove("active")
-    }
-  }))
-
-  //Download all button with queue management
-  document.querySelectorAll(".downloadSelected").forEach(item => item.addEventListener("click", event => {
-    // Scope to the view or popup-view this button belongs to
-    let items = item.closest(".view, .popup-view").querySelectorAll(".view-items .select input:checked")
-    const totalItems = items.length
-    
-    if (totalItems === 0) {
+  // Download selected, from the view or popup view the button belongs to
+  document.querySelectorAll(".downloadSelected").forEach(button => button.addEventListener("click", () => {
+    const urls = getSelectedUrls(button.closest(".view, .popup-view"))
+    if (urls.length === 0) {
       showNotification('No items selected', 'warning')
       return
     }
-    
-    showNotification(`Queueing ${totalItems} download${totalItems > 1 ? 's' : ''}...`, 'info')
-    
-    items.forEach(item => {
-      const downloadIcon = item.parentNode.parentNode.querySelector("a.download i")
-      if (downloadIcon) {
-        queueDownload(() => {
-          return new Promise(resolve => {
-            downloadIcon.click()
-            // Small delay between downloads
-            setTimeout(resolve, 200)
-          })
-        })
-      }
+    showNotification(`Queueing ${urls.length} download${urls.length > 1 ? 's' : ''}...`, 'info')
+    urls.forEach(queueDownload)
+  }))
+
+  document.querySelectorAll(".testSelected").forEach(button => button.addEventListener("click", () => {
+    const view = button.closest(".view")
+    getSelectedUrls(view).forEach(url => {
+      const icon = view.querySelector(`.view-row[data-url="${CSS.escape(url)}"] :is(.test, .success, .warning, .error)`)
+      if (icon) testLink(url, icon)
     })
   }))
 
-  //Test all button
-  document.querySelectorAll(".testSelected").forEach(item => item.addEventListener("click", event => {
-    let items = document.querySelectorAll(".view.active .view-items .select input:checked")
-    items.forEach(item => item.parentNode.parentNode.querySelector("a.test i")?.click())
-  }))
-
-  //Crawl all button
-  document.querySelectorAll(".crawlSelected").forEach(item => item.addEventListener("click", event => {
-    let items = Array.from(document.querySelectorAll(".view.active .view-items .select input:checked")).filter(item => 
-      !item.parentNode.parentNode.classList.contains('hidden')
-    )
-    items.forEach(item => item.parentNode.parentNode.querySelector("a.crawl i")?.click())
-    const titleCheckbox = document.querySelector(".view.active .view-title .select input:checked")
-    if (titleCheckbox) titleCheckbox.checked = false
-  }))
-
-  //Delete crawl data button
-  document.querySelectorAll(".deleteCrawlSelected").forEach(item => item.addEventListener("click", async event => {
-    let items = Array.from(document.querySelectorAll(".view.active .view-items .select input:checked")).filter(item => {
-      const viewRow = item.parentNode.parentNode
-      return viewRow.querySelector('.inspect') && !viewRow.classList.contains('hidden')
+  document.querySelectorAll(".crawlSelected").forEach(button => button.addEventListener("click", () => {
+    const view = button.closest(".view")
+    getSelectedUrls(view, { visibleOnly: true }).forEach(url => {
+      const item = store.getLink(url) || store.getAsset(url)
+      if (item && !item.isCrawled) crawlUrl(url)
     })
-    const totalItems = items.length
-    
-    if (totalItems === 0) {
-      showNotification('No items selected', 'warning')
+  }))
+
+  document.querySelectorAll(".deleteCrawlSelected").forEach(button => button.addEventListener("click", () => {
+    const urls = getSelectedUrls(button.closest(".view"), { visibleOnly: true }).filter(url => store.getPage(url))
+    if (urls.length === 0) {
+      showNotification('No crawled pages selected', 'warning')
       return
     }
-    
-    if (!confirm(`Are you sure you want to delete crawl data for ${totalItems} selected page(s)?`)) {
+    if (!confirm(`Are you sure you want to delete crawl data for ${urls.length} selected page(s)?`))
       return
-    }
-    
-    let deletedCount = 0
-    let skippedCount = 0
-    
-    items.forEach(item => {
-      const viewRow = item.parentNode.parentNode
-      const url = viewRow.querySelector('.inspect')?.href
-     
-      // Use the shared delete function
-      if (deleteCrawlData(url)) {
-        deletedCount++
-      } else {
-        skippedCount++
-      }
-    })
-    
-    // Uncheck title checkbox
-    const titleCheckbox = document.querySelector(".view.active .view-title .select input:checked")
-    if (titleCheckbox) titleCheckbox.checked = false
-    
-    // Update all views
-    updateAllViews()
-    
-    if (deletedCount > 0) {
+
+    const deletedCount = urls.filter(deleteCrawlData).length
+    const skippedCount = urls.length - deletedCount
+    renderViews()
+
+    if (deletedCount > 0)
       showNotification(`Deleted crawl data for ${deletedCount} page(s)`, 'success', 3000)
-    }
-    if (skippedCount > 0) {
+    if (skippedCount > 0)
       showNotification(`Skipped ${skippedCount} page(s) (cannot delete base URL)`, 'warning', 3000)
-    }
   }))
 
-  // Helper function to toggle buttons based on selected pages
-  /**
-   * Manages visibility of action buttons in the multi-wrapper based on selected pages
-   * - Download button: Always visible
-   * - Crawl button: Only visible if at least one selected page is uncrawled
-   * - Delete button: Only visible if at least one selected page is crawled
-   */
-  function togglePageButtons() {
-    const activeView = document.querySelector('.view.active')
-    if (!activeView || activeView.id !== 'pages') return
+  // === Search ===
 
-    const rows = Array.from(activeView.querySelectorAll(".view-items .view-row:not(.hidden)"))
-    const row_data = rows.filter(row => row.querySelector(".select input")?.checked).map(row => { return {
-      isCrawled: row.querySelector(".crawl") ? false : true,
-      elm: row
-    }})
-    
-    if (row_data.length === 0) return
-        
-    const crawlBtn = document.querySelector("#pages .crawlSelected")
-    const deleteBtn = document.querySelector("#pages .deleteCrawlSelected")
-    
-    const uncrawledPages = row_data.filter(row => !row.isCrawled)
-    const crawledPages = row_data.filter(row => row.isCrawled)
-
-    // If the only selected page is the base URL, prevent delete
-    const baseUrlSelected = row_data.some(row => {
-        const url = row.elm.querySelector('.inspect')?.href
-        return url === baseUrl
-    })
-    const hasUncrawledPages = uncrawledPages.length > 0
-    const hasCrawledPages = crawledPages.length > 0
-    const onlyBaseCrawled = baseUrlSelected && crawledPages.length === 1
-
-    // Show crawl button only if there are uncrawled pages to crawl
-    crawlBtn.style.display = hasUncrawledPages ? 'inline-block' : 'none'
-    
-    // Show delete button only if there are crawled pages to delete
-    deleteBtn.style.display = hasCrawledPages && !onlyBaseCrawled ? 'inline-block' : 'none'
-  }
-
-  //Filter Icons for links
+  // Filter icons toggle the search bar, closing it clears the search
   document.querySelectorAll(".filter-icon").forEach(item => item.addEventListener("click", event => {
+    event.preventDefault()
     item.classList.toggle("active")
-    let view = item.parentNode.parentNode.parentNode.parentNode
+    const view = item.closest(".view")
     const searchbar = view.querySelector(".searchbar")
     searchbar.classList.toggle("active")
-    let state = searchbar.classList.contains("active")
-    if (!state) {
-      view.querySelector(".searchbar .form-item input").value = ""
-      view.querySelectorAll(".view-items .view-row").forEach(item => item.classList.remove("hidden"))
-      // Clear the filter count badge
-      const filterCount = item.querySelector('.filter-count')
-      if (filterCount) filterCount.remove()
-      // Issues are filtered at render time, so re-render instead of just unhiding rows
-      if (view.id === "issues") updateIssues()
+    if (!searchbar.classList.contains("active")) {
+      searchbar.querySelector("input").value = ""
+      if (view.id === "issues") renderIssues()
+      else applySearchFilter('#' + view.id, '')
     }
   }))
 
-  //Filter/Searchbar gets typed in (debounced to avoid excessive filtering)
-  // Use "input" so the search field's built-in clear button also re-filters; Issues has its own handler below
-  document.querySelectorAll(".view:not(#issues) .searchbar .form-item input").forEach(item => item.addEventListener("input", debounce(function () {
-    const view = item.parentNode.parentNode.parentNode
-    const viewId = '#' + view.id
-    applySearchFilter(viewId, item.value)
+  // Use "input" so the search field's built-in clear button also re-filters
+  document.querySelectorAll(".view:not(#issues) .searchbar input").forEach(item => item.addEventListener("input", debounce(() => {
+    applySearchFilter('#' + item.closest(".view").id, item.value)
   }, 200)))
 
-  // Issues view uses custom filtering, add specific handler
-  const issuesSearch = document.querySelector("#issues .searchbar input")
-  if (issuesSearch) {
-    issuesSearch.addEventListener("input", debounce(() => {
-      updateIssues()
-    }, 300))
-  }
+  // Issues are filtered while rendering
+  document.querySelector("#issues .searchbar input")?.addEventListener("input", debounce(renderIssues, 300))
 
+  // === Row actions ===
 
-  //Track new items in views and indicate if new
-  window.viewObserver = new MutationObserver(function (mutations) {
-    mutations.forEach(function (mutation) {
-      let view = mutation.target.parentNode.parentNode.id
-      if (mutation.target.children.length !== lastCounts[view] && mutation.target.children.length > lastCounts[view]) {
-        lastCounts[view] = mutation.target.children.length
-        let sidebarItem = Array.from(document.querySelectorAll(".sidebar-item p")).find(i => i.innerHTML.toLocaleLowerCase() === view)
-        if (!document.querySelector(".view#" + view).classList.contains("active"))
-          sidebarItem.parentNode.querySelector(".newContent").classList.add("active")
-      }
-    })
-  })
-  //Watch all view items for changes
-  document.querySelectorAll(".view .view-items").forEach(item => {
-    window.viewObserver.observe(item, { childList: true })
-  })
-
-  // Global event delegation for dynamically created elements
-  // Handle checkbox clicks to show/hide multi-wrapper
   document.body.addEventListener('click', event => {
-    if (event.target.matches('.view .view-items .select input, .popup-view .view-items .select input')) {
-      const container = event.target.closest(".view, .popup-view")
-      const multiWrapper = container.querySelector(".multi-wrapper")
-      if (!multiWrapper) return
-      const checkedCount = container.querySelectorAll(".view-items .select input:checked").length
-      if (checkedCount >= 1) {
-        multiWrapper.classList.add("active")
-        togglePageButtons()
-      } else {
-        multiWrapper.classList.remove("active")
-      }
-    }
-  })
-
-  // Handle inspect icon clicks
-  document.body.addEventListener('click', event => {
-    if (event.target.closest('.view .view-items .inspect')) {
+    const inspectLink = event.target.closest('.view .view-items .inspect')
+    if (inspectLink) {
       event.preventDefault()
-      const inspectLink = event.target.closest('.inspect')
-      let url = inspectLink.href
-      setupPopup(url)
-      document.querySelector("#inspecter").classList.add("active")
+      openInspector(inspectLink.closest('.view-row').dataset.url)
+      return
     }
-  })
 
-  // Handle expand image clicks
-  document.body.addEventListener('click', event => {
     if (event.target.matches('.expand-image')) {
       document.querySelector(".expanded-image").src = event.target.src
       document.querySelector(".expanded-image-title").textContent = event.target.alt ? `Alt: ${event.target.alt}` : 'No alt text'
       document.querySelector("#expander").classList.add("active")
+      return
     }
-  })
 
-  // Handle test link clicks
-  document.body.addEventListener('click', event => {
-    const testElement = event.target.closest('.view-items .test:not(.crawl), .view-items .warning:not(.crawl), .view-items .error:not(.crawl)')
-    if (testElement) {
+    const testElement = event.target.closest('.view-items :is(.test, .warning, .error, .success):not(.crawl)')
+    if (testElement && testElement.tagName === 'A') {
       event.preventDefault()
-      let url = testElement.href
-      testURL(url, testElement)
+      testLink(testElement.closest('.view-row').dataset.url, testElement)
+      return
     }
-  })
 
-  // Handle crawl icon clicks
-  document.body.addEventListener('click', event => {
-    if (event.target.closest('.view .view-items .crawl')) {
+    const crawlLink = event.target.closest('.view .view-items .crawl')
+    if (crawlLink) {
       event.preventDefault()
-      const crawlLink = event.target.closest('.crawl')
-      let url = crawlLink.href
-
-      //Check if the item being crawled is an HTML page or an asset
-      if (isUrlHTMLFile(url))
-        crawl.all.links[crawl.all.links.findIndex(i => i.href === url)].isCrawled = true
-      else
-        crawl.all.assets[crawl.all.assets.findIndex(i => i.link === url)].isCrawled = true
-
-      //Remove Crawl Icon
       crawlLink.remove()
-      crawlURL(url)
+      crawlUrl(crawlLink.closest('.view-row').dataset.url)
+      return
     }
-  })
 
-  // Handle download icon clicks
-  document.body.addEventListener('click', event => {
-    if (event.target.closest('.view-items .download')) {
+    const downloadLink = event.target.closest('.view-items .download')
+    if (downloadLink) {
       event.preventDefault()
-      const downloadLink = event.target.closest('.download')
-      let url = downloadLink.href
-      handleDownload(url)
+      downloadUrl(downloadLink.closest('.view-row').dataset.url)
     }
   })
 
-  // Enhanced hover popup system with intelligent positioning
+  // Position hover popups after CSS transitions start
   let activePopup = null
-  
   document.body.addEventListener('mouseover', event => {
     const hoverIcon = event.target.closest('.hover-popup-icon')
-    if (hoverIcon) {
-      const popup = hoverIcon.querySelector('.hover-popup')
-      if (popup && popup !== activePopup) {
-        activePopup = popup
-        
-        // Use double requestAnimationFrame to position after CSS transitions start
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            positionPopup(popup, hoverIcon)
-          })
-        })
-      }
+    const popup = hoverIcon?.querySelector('.hover-popup')
+    if (popup && popup !== activePopup) {
+      activePopup = popup
+      requestAnimationFrame(() => requestAnimationFrame(() => positionPopup(popup, hoverIcon)))
     }
   })
-  
-  function positionPopup(popup, icon) {
-    const iconRect = icon.getBoundingClientRect()
-    const viewportHeight = window.innerHeight
-    const popupMaxHeight = 200
-    const padding = 10
-    
-    // Calculate available space above and below
-    const spaceBelow = viewportHeight - iconRect.bottom
-    const spaceAbove = iconRect.top
-    
-    // Reset previous positioning
-    popup.style.top = ''
-    popup.style.bottom = ''
-    popup.style.marginTop = ''
-    popup.style.marginBottom = ''
-    
-    // Vertical positioning: prefer below unless insufficient space
-    if (spaceBelow >= popupMaxHeight + padding || spaceBelow > spaceAbove) {
-      // Position below with overlap so mouse is over popup
-      popup.style.top = '100%'
-      popup.style.bottom = 'auto'
-      popup.style.marginTop = '-10px'
-      popup.style.marginBottom = '0'
-    } else {
-      // Position above with overlap so mouse is over popup
-      popup.style.top = 'auto'
-      popup.style.bottom = '100%'
-      popup.style.marginTop = '0'
-      popup.style.marginBottom = '-10px'
-    }
-  }
-  
-  // Clean up when mouse leaves
   document.body.addEventListener('mouseout', event => {
-    if (event.target.closest('.hover-popup-icon') && !event.relatedTarget?.closest('.hover-popup-icon')) {
+    if (event.target.closest('.hover-popup-icon') && !event.relatedTarget?.closest('.hover-popup-icon'))
       activePopup = null
-    }
   })
 
+  start()
 })
-
-/**
- * Runs after each view and popup-view is updated
- */
-function updateAll() {
-  document.querySelectorAll(".view .view-title .select input").forEach(item => item.checked = false)
-}
-
-/**
- * Handles download logic for a URL
- * @param {string} url - The URL to download
- */
-function handleDownload(url) {
-  //If combining images and assets into one file
-  if (isUrlHTMLFile(url) && settings.combine.enabled) {
-
-        crawlIfNeeded(url).then(page => {
-
-          convertAll(page);
-
-          async function convertAll(page) {
-            let pageDoc = parsePageDocument(page.data, url).doc
-            if (settings.combine.assets) {
-              pageDoc = await convertAllScripts(pageDoc)
-              pageDoc = await convertAllStyles(pageDoc)
-            }
-            if (settings.combine.imagesInAssets) {
-              pageDoc = await convertAllStyleImages(pageDoc)
-            }
-            if (settings.combine.images) {
-              pageDoc = await convertAllImages(pageDoc)
-            }
-
-            //Create blob
-            let fileBlob = new Blob([pageDoc.querySelector("html").outerHTML], { type: "text/html" });
-            const blobUrl = URL.createObjectURL(fileBlob);
-
-            //Save blob to localstorage
-            storageSet(blobUrl, url)
-
-            //Update url to blobUrl
-            url = blobUrl
-
-            showNotification('Starting download...', 'info')
-            
-            chrome.downloads.download({ 
-              url,
-              saveAs: false,
-              conflictAction: 'uniquify'
-            }, (downloadId) => {
-              if (chrome.runtime.lastError) {
-                showNotification('Download failed: ' + chrome.runtime.lastError.message, 'error', 5000)
-              } else {
-                showNotification('Download started successfully', 'success')
-                // Cleanup blob URL after a delay to ensure download has started
-                setTimeout(() => {
-                  URL.revokeObjectURL(blobUrl)
-                  storageSet(blobUrl, null)
-                }, BLOB_CLEANUP_DELAY)
-              }
-            })
-
-          }
-
-          //Convert all style sheets
-          async function convertAllStyles(pageDoc) {
-            return new Promise(done => {
-              let styleSheets = pageDoc.querySelectorAll("link[rel='stylesheet']")
-              let styleSheetPromises = []
-
-              styleSheets.forEach(styleSheet => {
-                styleSheetPromises.push(new Promise((resolveStyle, rejectStyle) => {
-                  let styleSheetUrl = formatLink(baseUrl, styleSheet.href)
-                  crawlIfNeeded(styleSheetUrl).then(page => resolveStyle([styleSheetUrl, page.data])).catch(rejectStyle)
-                }))
-              })
-              styleSheets.forEach(styleSheet => styleSheet.remove())
-              Promise.allSettled(styleSheetPromises).then(data => {
-                const bodyElement = pageDoc.querySelector("body")
-
-                data.forEach((styleSheet) => {
-                  if (styleSheet.value) {
-                    let url = styleSheet.value[0]
-                    let page = styleSheet.value[1]
-                    let elm = createElementFromHTML(page)
-                    elm.setAttribute("data-link", url)
-                    bodyElement.appendChild(elm)
-                  }
-                })
-                pageDoc.querySelectorAll("style:not([data-link])").forEach(style => bodyElement.appendChild(style))
-                done(pageDoc)
-              })
-            })
-          }
-
-          //Convert all scripts
-          async function convertAllScripts(pageDoc) {
-            return new Promise(done => {
-              let scripts = pageDoc.querySelectorAll("script[src]")
-              let scriptPromises = []
-
-              scripts.forEach(script => {
-                scriptPromises.push(new Promise((resolveScript, rejectScript) => {
-                  let scriptUrl = formatLink(baseUrl, script.src)
-                  crawlIfNeeded(scriptUrl).then(page => resolveScript([scriptUrl, page.data])).catch(rejectScript)
-                }))
-              })
-              scripts.forEach(script => script.remove())
-              Promise.allSettled(scriptPromises).then(data => {
-                const bodyElement = pageDoc.querySelector("body")
-                
-                data.forEach((script) => {
-                  if (script.value) {
-                    let url = script.value[0]
-                    let page = script.value[1]
-                    let elm = createElementFromHTML(page)
-                    elm.setAttribute("data-link", url)
-                    bodyElement.appendChild(elm)
-                  }
-                })
-                pageDoc.querySelectorAll("script:not([data-link])").forEach(script => bodyElement.appendChild(script))
-                done(pageDoc)
-              })
-            })
-          }
-          //Convert all images in style tags
-          async function convertAllStyleImages(pageDoc) {
-            return new Promise(done => {
-              let styles = pageDoc.querySelectorAll("style")
-
-              let stylePromises = []
-              let matchedStyles = []
-
-              styles.forEach(style => {
-                stylePromises.push(new Promise(resolveStyle => {
-                  const imageMatches = style.innerHTML.match(getImageUrlRegex())
-                  if (imageMatches) {
-                    let imagePromises = []
-                    imageMatches.forEach(image => {
-                      matchedStyles.push(style)
-                      let src = getImageUrlRegex().exec(image).groups.image.replace(chromeExtensionRegex, '/').replace('viewer.html', '')
-                      imagePromises.push(new Promise((resolveImage, rejectImage) => {
-                        let img = createImageObject(baseUrl, null, src)
-                        toDataURL(img.src).then(dataUrl => {
-                          let srcToReplace = img._src || img.src
-                          resolveImage([srcToReplace, dataUrl])
-                        }).catch(err => rejectImage(err))
-                      })
-                      )
-                    })
-                    Promise.allSettled(imagePromises).then(data => {
-                      let toReplace = []
-                      data.forEach(image => {
-                        if (image.value) {
-                          toReplace.push(image.value)
-                        }
-                      })
-                      resolveStyle(toReplace)
-                    })
-                  }
-                  else
-                    resolveStyle([])
-                }))
-              })
-              Promise.all(stylePromises).then(styleList => {
-                styleList.forEach(style => {
-                  if (style.length > 0) {
-                    style.forEach(image => {
-                      matchedStyles.forEach(styleTag => styleTag.innerHTML = styleTag.innerHTML.replaceAll(image[0], image[1]))
-                    })
-                  }
-                })
-                done(pageDoc)
-              })
-            })
-          }
-
-          /**
-           * Convert all images to data URLs for embedding
-           * @param {Document} pageDoc - The document to process
-           * @returns {Promise<Document>} The processed document
-           */
-          async function convertAllImages(pageDoc) {
-            return new Promise(done => {
-              let images = pageDoc.querySelectorAll('img[src]:not([src^=data]), img[data-src], *[style*="background"]')
-              let imagePromises = []
-              let successCount = 0
-              let failureCount = 0
-              
-              images.forEach(image => {
-                imagePromises.push(new Promise((resolveImage, rejectImage) => {
-                  try {
-                    let isImageTag = image.tagName.toLowerCase() === "img"
-                    let src = image.src || image.getAttribute("data-src")
-                    
-                    const backgroundMatch = isImageTag ? null : getImageUrlRegex().exec(image.style.cssText)
-                    if (backgroundMatch) {
-                      src = backgroundMatch.groups.image
-                    }
-                    
-                    if (!src) {
-                      return resolveImage()
-                    }
-                    
-                    let img = createImageObject(baseUrl, null, src)
-                    toDataURL(img.src).then(dataUrl => {
-                      if (isImageTag)
-                        image.src = dataUrl
-                      else
-                        image.style = image.style.cssText.replaceAll(src, dataUrl)
-                      successCount++
-                      resolveImage()
-                    }).catch(err => {
-                      failureCount++
-                      resolveImage() // Resolve anyway to continue processing
-                    })
-                  } catch (err) {
-                    failureCount++
-                    resolveImage() // Resolve to continue
-                  }
-                })
-                )
-              })
-              
-              Promise.allSettled(imagePromises).then(data => {
-                console.log(`Image conversion complete: ${successCount} succeeded, ${failureCount} failed`)
-                if (failureCount > 0) {
-                  showNotification(`Warning: ${failureCount} images failed to convert`, 'warning', 3000)
-                }
-                done(pageDoc)
-              })
-            })
-          }
-        })
-
-        /**
-         * Crawl a URL if it hasn't been crawled yet
-         * @param {string} url - The URL to crawl
-         * @returns {Promise} Promise that resolves to the crawled page data
-         */
-        function crawlIfNeeded(url) {
-          return new Promise((resolve, reject) => {
-            if (Object.keys(crawl).find(i => i === url))
-              resolve(crawl[url])
-            else
-              crawlURL(url, false).then(page => resolve(page)).catch(error => reject(error))
-          })
-        }
-
-    } else {
-      showNotification('Starting download...', 'info')
-      
-      chrome.downloads.download({ 
-        url,
-        saveAs: false,
-        conflictAction: 'uniquify'
-      }, (downloadId) => {
-        if (chrome.runtime.lastError) {
-          showNotification('Download failed: ' + chrome.runtime.lastError.message, 'error', 3000)
-        } else {
-          showNotification('Download started successfully', 'success')
-        }
-      })
-    }
-  }
-
-/**
- * Tests a URL to see if it is valid and returns the status code
- * @param {string} url - The URL to test
- * @param {HTMLElement} element - The DOM element to update with test results
- */
-function testURL(url, element) {
-  element.classList.remove("test")
-  element.classList.remove("success")
-  element.classList.remove("warning")
-  element.classList.remove("error")
-  element.classList.add("testing")
-  element.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'
-
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 10000)
-  
-  // Try direct fetch first
-  const testFetch = async () => {
-    try {
-      const directRes = await fetch(url, { signal: controller.signal })
-      clearTimeout(timeoutId)
-      return { ok: true, status: directRes.status }
-    } catch (directError) {
-      // Fall back to CORS proxy
-      const proxyRes = await fetch(CORS_BYPASS_URL + encodeURIComponent(url), { signal: controller.signal })
-      if (!proxyRes.ok) throw new Error(proxyRes.error)
-      const data = await proxyRes.json()
-      clearTimeout(timeoutId)
-      return { ok: true, status: data.status.http_code, data: data }
-    }
-  }
-  
-  testFetch()
-    .then(result => {
-      const linkIndex = crawl.all.links.findIndex(i => i.href === url)
-      if (result.status === 200) {
-        element.classList.add("success")
-        element.title = "Link is valid"
-        element.innerHTML = '<i class="fas fa-check-circle"></i>'
-        if (linkIndex > -1) crawl.all.links[linkIndex].test = "success"
-      }
-      else if (result.data && (result.data.error || result.data.status?.error)) {
-        // Handle as error without throwing
-        element.classList.add("error")
-        element.title = "Link doesn't exist or took too long to respond\nClick to retry"
-        element.innerHTML = '<i class="fas fa-times-circle"></i>'
-        if (linkIndex > -1) crawl.all.links[linkIndex].test = "failed"
-      }
-      else {
-        element.classList.add("warning")
-        element.title = "Returned a status code of " + result.status + "\nClick to retry"
-        element.innerHTML = '<i class="fas fa-exclamation-circle"></i>'
-        if (linkIndex > -1) {
-          crawl.all.links[linkIndex].test = "warning"
-          crawl.all.links[linkIndex].statusCode = result.status
-        }
-      }
-    })
-    .catch(() => {
-      element.classList.add("error")
-      element.title = "Link doesn't exist or took too long to respond\nClick to retry"
-      element.innerHTML = '<i class="fas fa-times-circle"></i>'
-      const linkIndex = crawl.all.links.findIndex(i => i.href === url)
-      if (linkIndex > -1) crawl.all.links[linkIndex].test = "failed"
-    })
-    .finally(() => {
-      element.classList.remove("testing")
-    })
-}
-
-/**
- * Updates the Overview view with current counts and statistics
- */
-// Frame of the running overview count animation, so a new update can cancel it
-let overviewAnimationFrame = null
-
-function updateOverview() {
-
-  // Count from the crawl data, matching what each view renders
-  const pages = getPages()
-  let targetCount = [
-    pages.length,
-    crawl.all.assets.length,
-    getLinks().length,
-    getFiles().length,
-    crawl.all.media.length,
-    (crawl.all.issues || []).length
-  ]
-
-  // Pages badge shows crawled/total, with a tooltip if any crawled pages had problems
-  const crawledPages = pages.filter(link => link.isCrawled)
-  const problemPageCount = crawledPages.filter(link => link.isError || link.isWarning).length
-
-  //Get all counters in overview (excluding the banner crawled count)
-  let countElements = Array.from(document.querySelectorAll("#overview .count")).filter(el => {
-    // Only include count elements that are in stat cards, not the banner
-    return el.closest('.stat-card') !== null
-  })
-  let sidebarBadges = document.querySelectorAll(".sidebar-item .count-badge")
-
-  if (sidebarBadges[0])
-    sidebarBadges[0].title = problemPageCount > 0 ? `${problemPageCount} page(s) had errors or warnings` : ''
-
-  const setCount = (i, value) => {
-    countElements[i].textContent = value
-    const badge = sidebarBadges[i]
-    if (badge)
-      badge.textContent = i === 0 ? `${crawledPages.length}/${value}` : value
-  }
-
-  //Have a nice animation counting to the new counts
-  cancelAnimationFrame(overviewAnimationFrame)
-  const startCounts = countElements.map(element => parseInt(element.textContent) || 0)
-  const startTime = performance.now()
-  const duration = 400
-
-  const animate = now => {
-    const progress = Math.min((now - startTime) / duration, 1)
-    countElements.forEach((element, i) => {
-      setCount(i, Math.round(startCounts[i] + (targetCount[i] - startCounts[i]) * progress))
-    })
-    overviewAnimationFrame = progress < 1 ? requestAnimationFrame(animate) : null
-  }
-  overviewAnimationFrame = requestAnimationFrame(animate)
-
-  // Show or hide the Crawl All button based on uncrawled pages
-  const crawlAllBtn = document.querySelector("#overview .crawlAllBtn")
-  if (crawlAllBtn && !crawlAllBtn.classList.contains("stop-crawling")) {
-    const hasUncrawledPages = crawledPages.length < pages.length
-    if (hasUncrawledPages)
-      crawlAllBtn.classList.remove("hidden")
-    else
-      crawlAllBtn.classList.add("hidden")
-  }
-
-  //If crawled more than one page, show the crawl count with a hover popup list of all crawled pages
-  if (Object.keys(crawl).length - 2 > 0) {
-    let crawledHTML = '<ul>'
-    let crawledPages = []
-    
-    //Collect all crawled pages
-    crawl.all.links.forEach(item => {
-      if (item.isCrawled)
-        crawledPages.push(item.href)
-    })
-    crawl.all.assets.forEach(item => {
-      if (item.isCrawled)
-        crawledPages.push(item.link)
-    })
-    
-    //Show max 3 lines: if 3 or less show all, if 4+ show 2 + "..."
-    let displayText = ''
-    let counterText = ''
-    if (crawledPages.length > 0) {
-      if (crawledPages.length <= 3) {
-        // Show all pages if 3 or less
-        displayText = crawledPages.map(escapeHtml).join('<br>')
-      } else {
-        // Show first 2 pages, counter will show "... (+X more)" on 3rd line
-        const visibleUrls = crawledPages.slice(0, 2)
-        const remaining = crawledPages.length - 2
-        displayText = visibleUrls.map(escapeHtml).join('<br>')
-        counterText = `... <span class="count">(+${remaining} more)</span>`
-      }
-    }
-    
-    //Update banner text
-    document.querySelector("#crawledSiteText").innerHTML = displayText
-    
-    //Update counter (displayed on 3rd line with hover popup, styled like URLs)
-    document.querySelector("#crawledSiteCount").innerHTML = counterText
-    
-    //Update hover popup with full list
-    crawledPages.forEach(url => {
-      crawledHTML += '<li>' + escapeHtml(url) + '</li>'
-    })
-    crawledHTML += '</ul>'
-    document.querySelector("#crawledLinks").innerHTML = crawledHTML
-  } else {
-    document.querySelector("#crawledSiteText").textContent = baseUrl
-    document.querySelector("#crawledSiteCount").innerHTML = ''
-    document.querySelector("#crawledLinks").innerHTML = ''
-  }
-}
-
-/**
- * Updates the Pages view with crawled pages
- */
-function updatePages() {
-  //Hide Multi-wrapper if view is updated
-  document.querySelector("#pages .multi-wrapper").classList.remove("active")
-
-  //Get view wrapper
-  let wrapper = document.querySelector("#pages .view-items")
-
-  //Iterate all links in the crawl object adding to the HTML string
-  let html = ''
-
-  // Sort pages by URL path hierarchically
-  const sortedPages = getPages().sort((a, b) => {
-    // Extract pathnames without query parameters
-    const getPathname = (href) => {
-      try {
-        return new URL(href).pathname
-      } catch (e) {
-        return href.split('?')[0].split('#')[0].replace(/^https?:\/\/[^\/]+/, '')
-      }
-    }
-    
-    const pathA = getPathname(a.href)
-    const pathB = getPathname(b.href)
-    
-    // Split by path segments
-    const segmentsA = pathA.split('/').filter(s => s.length > 0)
-    const segmentsB = pathB.split('/').filter(s => s.length > 0)
-    
-    // Compare each segment (case-insensitive to group properly)
-    const minLength = Math.min(segmentsA.length, segmentsB.length)
-    for (let i = 0; i < minLength; i++) {
-      const comparison = segmentsA[i].toLowerCase().localeCompare(segmentsB[i].toLowerCase())
-      if (comparison !== 0) return comparison
-    }
-    
-    // If all segments match, shorter path comes first
-    if (segmentsA.length !== segmentsB.length) {
-      return segmentsA.length - segmentsB.length
-    }
-    
-    // Finally, sort by full URL (including query params) for consistent ordering
-    return a.href.localeCompare(b.href)
-  })
-
-  // Build a map to track actual parent-child relationships
-  const pageMap = new Map()
-  const pageMapWithParams = new Map() // Track pages that have query params
-  
-  sortedPages.forEach(link => {
-    try {
-      const url = new URL(link.href)
-      const pathname = url.pathname
-      const searchParams = url.searchParams
-      
-      // Store base pathname only if there are NO query params
-      if (!searchParams.toString()) {
-        pageMap.set(pathname, link)
-      } else {
-        // Track that this pathname exists but with params
-        pageMapWithParams.set(pathname, link)
-      }
-    } catch (e) {
-      const pathname = link.href.split('?')[0].split('#')[0].replace(/^https?:\/\/[^\/]+/, '')
-      pageMap.set(pathname, link)
-    }
-  })
-
-  // Function to calculate indent level based on actual parent chain
-  const findIndentLevel = (pathname, searchParams) => {
-    const segments = pathname.split('/').filter(s => s.length > 0)
-    let indentLevel = 0
-    
-    // First check if there's a parent with the same path but no query params
-    if (searchParams && searchParams.toString()) {
-      if (pageMap.has(pathname)) {
-        // The base path exists, so this query param version is a child
-        indentLevel = findIndentLevel(pathname, null) + 1
-        return indentLevel
-      }
-    }
-    
-    // Walk up the path checking for each potential parent
-    for (let i = segments.length - 1; i > 0; i--) {
-      const parentPath = '/' + segments.slice(0, i).join('/')
-      if (pageMap.has(parentPath)) {
-        // Found a parent, recursively get its indent level and add 1
-        indentLevel = findIndentLevel(parentPath, null) + 1
-        break
-      }
-    }
-    
-    return indentLevel
-  }
-
-  sortedPages.forEach(link => {
-    //Pages should only contain local HTML links but not anchors
-
-    // Calculate indentation based on actual parent-child relationships
-    let pathname = ''
-    let searchParams = null
-    try {
-      const url = new URL(link.href)
-      pathname = url.pathname
-      searchParams = url.searchParams
-    } catch (e) {
-      pathname = link.href.split('?')[0].split('#')[0].replace(/^https?:\/\/[^\/]+/, '')
-    }
-    
-    const indentLevel = findIndentLevel(pathname, searchParams)
-    const indentStyle = indentLevel > 0 ? `style="padding-left: ${indentLevel * 20}px;"` : ''
-
-    //Create string of tags and instances
-    let linkTagsText = ''
-    let instancesText = '<strong>Instances:</strong>(' + link.instances.length + ')<ul>'
-    linkTagsText += "Original URL: <strong>" + escapeHtml(link._href) + '</strong><br>'
-    
-    // Add duplicate information if applicable
-    if (link.isDuplicate) {
-      linkTagsText += '<span style="color: #2196F3;">Duplicate of: <strong>' + escapeHtml(link.duplicateOf) + '</strong></span><br>'
-    }
-
-    //No need to display isLocal if it's a page
-    Object.keys(link.tags).forEach(i => linkTagsText += i !== "isLocal" ? "" + i + ": <strong>" + escapeHtml(link.tags[i]) + "</strong><br>" : '')
-    if (linkTagsText.length > 0)
-      linkTagsText = linkTagsText.substr(0, linkTagsText.length - 4) + '<hr>'
-
-    //Add all instances to the instance string
-    instancesText = formatInstances(link.instances, i => i.text || i.alt || i.title)
-
-    //Add to HTML to html string for the item
-    html += `
-        <div class="view-row">
-          <div class="select">
-            <input type="checkbox">
-          </div>
-          <div class="link">
-            <p ${indentStyle}>` + escapeHtml(link.href) + `</p>
-          </div>
-          <div class="tools">
-            <a class="download" href="`+ escapeHtml(link.href) + `" title="Download Page"><i class="fas fa-file-download"></i></a>` +
-      '<a class="goto" target="_blank" href="' + escapeHtml(link.href) + '" title="Go to page"><i class="fas fa-external-link-alt"></i></a>'
-    if (link.isCrawling)
-      html += '<a class="crawling" title="Crawling in progress..."><i class="fas fa-spinner fa-spin"></i></a>'
-    else if (link.isError)
-      html += '<a class="error crawl" target="_blank" href="' + escapeHtml(link.href) + '" title="Page doesn\'t exist or took to long to respond\nClick to retry"><i class="fas fa-times-circle"></i></a>'
-    else if (link.isWarning)
-      html += '<a class="warning crawl" target="_blank" href="' + escapeHtml(link.href) + '" title="Returned a status code of ' + escapeHtml(link.statusCode) + '\nClick to retry"><i class="fas fa-exclamation-circle"></i></a>'
-    else if (link.isDuplicate)
-      html += '<a class="info duplicate" title="Duplicate of ' + escapeHtml(link.duplicateOf) + '"><i class="fas fa-info-circle"></i></a>'
-    else if (link.isCrawled)
-      html += '<a class="inspect" title="Inspect Page" href="' + escapeHtml(link.href) + '"><i class="fas fa-search"></i></a>'
-    else
-      html += '<a class="crawl" target="_blank" href="' + escapeHtml(link.href) + '" title="Crawl page"><i class="fas fa-sitemap"></i></a>'
-    html +=
-      `<div class="info">
-              <div class="hover-popup-icon">
-              <span class="fa-stack fa-1x">
-              <i class="fas fa-square fa-stack-2x"></i>
-              <i class="fas fa-info fa-stack-1x fa-inverse"></i>
-            </span>
-                <div class="hover-popup">`+
-      linkTagsText +
-      instancesText +
-      `</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      `
-  })
-  //Add html to page using DocumentFragment for better performance
-  renderToContainer(wrapper, html)
-  
-  // Reapply search filter if active
-  applySearchFilter('#pages')
-}
-
-/**
- * Applies search filter to a view
- * @param {string} viewSelector - CSS selector for the view (e.g., '#pages')
- * @param {string} [searchTerm] - Optional search term. If not provided, uses the view's search input
- */
-function applySearchFilter(viewSelector, searchTerm) {
-  const view = document.querySelector(viewSelector)
-  if (!view) return
-  
-  const searchbar = view.querySelector('.searchbar')
-  const searchInput = searchbar?.querySelector('input')
-  
-  const originalSearch = (searchTerm !== undefined ? searchTerm : searchInput?.value || '').trim()
-  
-  // Split by pipe "|" for OR groups, then split each group by comma "," for AND terms
-  // Example: "term1, term2 | term3" means (term1 AND term2) OR (term3)
-  const orGroups = originalSearch.split('|').map(group => group.trim()).filter(group => group.length > 0)
-  
-  // If no search terms, show all
-  if (orGroups.length === 0) {
-    view.querySelectorAll('.view-items .view-row').forEach(row => {
-      row.classList.remove('hidden')
-    })
-    const filterIcon = view.querySelector('.filter-icon')
-    if (filterIcon) {
-      const filterCount = filterIcon.querySelector('.filter-count')
-      if (filterCount) filterCount.remove()
-    }
-    return
-  }
-  
-  // Helper function to evaluate a single search term against a row
-  const evaluateTerm = (row, searchTerm) => {
-    let search = searchTerm.trim()
-    let invertFilter = false
-    
-    if (search.startsWith('!')) {
-      invertFilter = true
-      search = search.substring(1).trim()
-    }
-    
-    const isCustomFilter = search.match(/^is:(\w+)$/i)
-    let customFilterType = null
-    let textSearch = search.toLowerCase()
-    
-    if (isCustomFilter) {
-      customFilterType = isCustomFilter[1].toLowerCase()
-    }
-    
-    let termMatches = false
-    
-    if (customFilterType) {
-      switch (customFilterType) {
-        case 'crawled':
-          const hasCrawlIcon = row.querySelector('.crawl') !== null
-          termMatches = !hasCrawlIcon
-          break
-        case 'duplicate':
-          const infoPopup = row.querySelector('.hover-popup')
-          const hasDuplicate = infoPopup?.innerHTML.includes('Duplicate of:') || false
-          termMatches = hasDuplicate
-          break
-        case 'warning':
-          const hasWarning = row.querySelector('.warning') !== null
-          termMatches = hasWarning
-          break
-        case 'error':
-          const hasError = row.querySelector('.error') !== null
-          termMatches = hasError
-          break
-        case 'iframe':
-          const typeDiv = row.querySelector('.type')
-          const hasIframeIcon = typeDiv?.innerHTML.includes('fa-window-restore') || false
-          termMatches = hasIframeIcon
-          break
-        default:
-          termMatches = false
-      }
-    } else if (search) {
-      const text = row.querySelector('p')?.textContent.toLowerCase() || ''
-      termMatches = text.indexOf(textSearch) >= 0
-    } else {
-      termMatches = true
-    }
-    
-    if (invertFilter) {
-      termMatches = !termMatches
-    }
-    
-    return termMatches
-  }
-  
-  let visibleCount = 0
-  view.querySelectorAll('.view-items .view-row').forEach(row => {
-    // Row matches if ANY OR group matches (where each group requires ALL AND terms to match)
-    let matchesAnyGroup = false
-    
-    for (const orGroup of orGroups) {
-      const andTerms = orGroup.split(',').map(term => term.trim()).filter(term => term.length > 0)
-      
-      // Check if ALL terms in this AND group match
-      let matchesAllTermsInGroup = true
-      for (const andTerm of andTerms) {
-        if (!evaluateTerm(row, andTerm)) {
-          matchesAllTermsInGroup = false
-          break
-        }
-      }
-      
-      // If this OR group matches, the row should be shown
-      if (matchesAllTermsInGroup) {
-        matchesAnyGroup = true
-        break
-      }
-    }
-    
-    if (matchesAnyGroup) {
-      row.classList.remove('hidden')
-      visibleCount++
-    } else {
-      row.classList.add('hidden')
-    }
-  })
-  
-  // Show/hide "No items found" message
-  const viewItems = view.querySelector('.view-items')
-  let noItemsMsg = viewItems?.querySelector('.no-items-found')
-  
-  if (visibleCount === 0 && originalSearch) {
-    if (!noItemsMsg) {
-      noItemsMsg = document.createElement('div')
-      noItemsMsg.className = 'no-items-found empty-row'
-      noItemsMsg.textContent = 'No items found'
-      viewItems.appendChild(noItemsMsg)
-    }
-  } else {
-    if (noItemsMsg) {
-      noItemsMsg.remove()
-    }
-  }
-  
-  const filterIcon = view.querySelector('.filter-icon')
-  if (filterIcon && originalSearch) {
-    let filterCount = filterIcon.querySelector('.filter-count')
-    if (!filterCount) {
-      filterCount = document.createElement('span')
-      filterCount.className = 'filter-count'
-      filterIcon.appendChild(filterCount)
-    }
-    filterCount.textContent = visibleCount
-  } else if (filterIcon) {
-    const filterCount = filterIcon.querySelector('.filter-count')
-    if (filterCount) filterCount.remove()
-  }
-}
-
-/**
- * Builds tags HTML for popup hover
- * @param {Object} item - Link or file object
- * @param {string} originalUrl - Original URL before formatting
- * @returns {string} HTML string for tags section
- */
-function buildTagsHTML(item, originalUrl) {
-  let tagsHTML = ''
-  
-  if (item.tags.isLocal && originalUrl) {
-    tagsHTML += `Original URL: <strong>${escapeHtml(originalUrl)}</strong><br>`
-  }
-  
-  Object.keys(item.tags).forEach(key => {
-    tagsHTML += `${key}: <strong>${escapeHtml(item.tags[key])}</strong><br>`
-  })
-  
-  return tagsHTML ? tagsHTML.slice(0, -4) + '<hr>' : ''
-}
-
-/**
- * Builds test status icons for links
- * @param {Object} link - Link object
- * @param {string} href - Link URL
- * @returns {string} HTML string for test icons
- */
-function buildTestIconsHTML(link, href) {
-  if (!link.test || link.test === null) {
-    return `<a class="test" target="_blank" href="${escapeAttr(href)}" title="Test the link"><i class="fas fa-question-circle"></i></a>`
-  }
-  
-  const testIcons = {
-    success: { class: 'success', icon: 'check-circle', title: 'Link is valid' },
-    warning: { class: 'warning', icon: 'exclamation-circle', title: `Returned a status code of ${link.statusCode}\nClick to retry` },
-    failed: { class: 'error', icon: 'times-circle', title: "Link doesn't exist or took too long to respond\nClick to retry" }
-  }
-  
-  const config = testIcons[link.test]
-  if (!config) return ''
-  
-  return `<a class="${config.class}" target="_blank" href="${escapeAttr(href)}" title="${escapeAttr(config.title)}"><i class="fas fa-${config.icon}"></i></a>`
-}
-
-/**
- * Builds view row HTML for popup link/asset
- * @param {Object} link - Link object
- * @param {string} category - Category ('links', 'files', 'assets')
- * @returns {string} HTML string for view row
- */
-function buildPopupLinkRow(link, category) {
-  const href = link.href || link.link
-  const originalUrl = link._href || link._link
-  const isAsset = !!link.link
-  const isLocalPage = isUrlLocal(href) && !isUrlAnchor(href)
-  
-  const tagsHTML = buildTagsHTML(link, originalUrl)
-  const instancesHTML = formatInstances(link.instances, i => i.text || i.alt || i.title)
-  
-  let testIconsHTML = ''
-  if (!isUrlProtocol(href) && !isUrlAnchor(href) && category === 'links') {
-    testIconsHTML = buildTestIconsHTML(link, href)
-  }
-  
-  const downloadHTML = category !== 'links' 
-    ? `<a class="download" href="${escapeAttr(href)}" title="Download"><i class="fas fa-file-download"></i></a>` 
-    : ''
-
-  // Downloadable rows get a checkbox for the popup's Download Selected button
-  const selectHTML = category !== 'links'
-    ? `<div class="select"><input type="checkbox"></div>`
-    : ''
-  
-  // Determine the icon to display
-  let iconHTML
-  if (link.isBroken) {
-    iconHTML = getFAIcon('broken-link').icon
-  } else if (isLocalPage && !isAsset) {
-    iconHTML = getFAIcon('page').icon
-  } else {
-    iconHTML = getFAIcon(href).icon
-  }
-  
-  return `
-    <div class="view-row">
-      ${selectHTML}
-      <div class="type">
-        ${iconHTML}
-      </div>
-      <div class="link">
-        <p>${escapeHtml(href)}</p>
-      </div>
-      <div class="tools">
-        <a class="goto" target="_blank" href="${escapeAttr(href)}" title="Open"><i class="fas fa-external-link-alt"></i></a>
-        ${testIconsHTML}
-        ${downloadHTML}
-        <div class="info">
-          <div class="hover-popup-icon">
-            <span class="fa-stack fa-1x">
-              <i class="fas fa-square fa-stack-2x"></i>
-              <i class="fas fa-info fa-stack-1x fa-inverse"></i>
-            </span>
-            <div class="hover-popup">
-              ${tagsHTML}
-              ${instancesHTML}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  `
-}
-
-/**
- * Build view row HTML for popup media
- * @param {Object} file - Media file object
- * @returns {string} HTML string for view row
- */
-function buildPopupMediaRow(file) {
-  const isImage = isUrlImage(file.src)
-  const altText = file.instances?.[0]?.alt || ''
-  
-  const tagsHTML = buildTagsHTML(file, file._src)
-  const instancesHTML = formatInstances(file.instances, i => i.alt || i.title)
-  
-  const imageHTML = isImage 
-    ? `<img src="${escapeAttr(file.src)}" alt="${escapeAttr(altText)}" title="${escapeAttr(altText)}">` 
-    : getFAIcon(file.src).icon
-  
-  return `
-    <div class="view-row">
-      <div class="image">${imageHTML}</div>
-      <div class="link">
-        <p>${escapeHtml(file.src)}</p>
-      </div>
-      <div class="tools">
-        <a class="goto" target="_blank" href="${escapeAttr(file.src)}" title="Open"><i class="fas fa-external-link-alt"></i></a>
-        <a class="download" href="${escapeAttr(file.src)}" title="Download"><i class="fas fa-file-download"></i></a>
-        <div class="info">
-          <div class="hover-popup-icon">
-            <span class="fa-stack fa-1x">
-              <i class="fas fa-square fa-stack-2x"></i>
-              <i class="fas fa-info fa-stack-1x fa-inverse"></i>
-            </span>
-            <div class="hover-popup">
-              ${tagsHTML}
-              ${instancesHTML}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  `
-}
-
-/**
- * Categorize link into appropriate section
- * @param {Object} link - Link object
- * @returns {string} Category name ('links', 'files', 'assets')
- */
-function categorizeLink(link) {
-  const href = link.href || link.link
-  const isAsset = !!link.link
-  
-  if (isAsset) return 'assets'
-  
-  // Broken links should go in 'links' section
-  if (link.isBroken) return 'links'
-  
-  if (!isUrlHTMLFile(href) && !isUrlProtocol(href)) return 'files'
-  return 'links'
-}
-
-/** 
- * Setup the popup inspector for a crawled page
- * @param {string} url - The URL to setup the popup for
- */
-function setupPopup(url) {
-  const popup = document.querySelector("#inspecter")
-  const page = crawl[url]
-
-  // Hide delete button if this is the original URL
-  const deleteButton = popup.querySelector(".popup-delete")
-  if (deleteButton) {
-    deleteButton.style.display = url === baseUrl ? 'none' : ''
-  }
-
-  // Set popup title content
-  const crawlMethodIcon = page.crawlMethod === 'live' 
-    ? '<i class="fas fa-window-restore" title="Crawled using Live Mode (JavaScript executed)"></i>' 
-    : '<i class="fas fa-download" title="Crawled using Fetch Mode (raw HTML)"></i>'
-  const crawlMethodLabel = page.crawlMethod === 'live' ? 'Live Crawl' : 'Fetch Crawl'
-  
-  popup.querySelector(".card-title").innerHTML = `
-    <h2>${escapeHtml(page.title)}</h2>
-    <h3>${escapeHtml(url)}<br><br></h3>
-    <p>${escapeHtml(page.description)}</p>
-    <p style="margin-top: 10px; font-size: 0.9em; opacity: 0.8;">
-      ${crawlMethodIcon} ${crawlMethodLabel}
-    </p>
-  `
-
-  // Categorize and build HTML for links and assets
-  const html = { links: '', files: '', assets: '', media: '', issues: '' }
-  const items = [...page.links, ...page.assets]
-  
-  // Sort items using the sortLinks function before displaying
-  items.sort(sortLinks)
-  
-  items.forEach(link => {
-    const category = categorizeLink(link)
-    html[category] += buildPopupLinkRow(link, category)
-  })
-
-  // Build HTML for media
-  page.media.forEach(file => {
-    html.media += buildPopupMediaRow(file)
-  })
-
-  // Build HTML for issues (no page column in popup)
-  html.issues = buildPopupIssuesHtml(page.issues || [], url)
-
-  // Render all sections with empty state fallback
-  const sections = ['links', 'files', 'assets', 'media', 'issues']
-  sections.forEach(section => {
-    const content = html[section] || '<div class="empty-row">There are no items here.</div>'
-    popup.querySelector(`#popup-view-${section} .view-items`).innerHTML = content
-  })
-  popup.querySelectorAll(".multi-wrapper.active").forEach(wrapper => wrapper.classList.remove("active"))
-
-  updateAll()
-}
-
-/**
- * Updates the Assets view with scripts and stylesheets
- */
-function updateAssets() {
-  //Hide Multi-wrapper if view is updated
-  document.querySelector("#assets .multi-wrapper").classList.remove("active")
-
-  //Get view wrapper
-  let wrapper = document.querySelector("#assets .view-items")
-
-  //Iterate all assets in the crawl object adding to the HTML string
-  let html = ''
-  crawl.all.assets.forEach(link => {
-
-    //Create string of tags and isntances
-    let linkTagsText = ''
-    let instancesText = '<strong>Instances:</strong>(' + link.instances.length + ')<ul>'
-    if (link.tags.isLocal)
-      linkTagsText += "Original URL: <strong>" + escapeHtml(link._link) + '</strong><br>'
-
-    Object.keys(link.tags).forEach(i => linkTagsText += i != "isLocal" ? "" + i + ": <strong>" + escapeHtml(link.tags[i]) + "</strong><br>" : '')
-    if (linkTagsText.length > 0)
-      linkTagsText = linkTagsText.substr(0, linkTagsText.length - 4) + '<hr>'
-
-    //Add all instances to the instance string (filter out duplicates)
-    instancesText = formatInstances(link.instances, i => i.alt || i.title)
-
-    //Add to HTML to html string for the item
-    html += `
-        <div class="view-row">
-          <div class="select">
-            <input type="checkbox">
-          </div>
-          <div class="type">`+
-      getFAIcon(link.link).icon +
-      `</div>
-          <div class="link">
-            <p>` + escapeHtml(link.link) + `</p>
-          </div>
-          <div class="tools">
-            <a class="download" href="`+ escapeHtml(link.link) + `" title="Download Page"><i class="fas fa-file-download"></i></a>`
-    if (!link.isCrawled && (isUrlScript(link.link) || isUrlStyleSheet(link.link)))
-      html += '<a class="crawl" target="_blank" href="' + escapeHtml(link.link) + '" title="Crawl page"><i class="fas fa-sitemap"></i></a>'
-    html +=
-      `<div class="info">
-            <div class="hover-popup-icon">
-            <span class="fa-stack fa-1x">
-            <i class="fas fa-square fa-stack-2x"></i>
-            <i class="fas fa-info fa-stack-1x fa-inverse"></i>
-          </span>
-              <div class="hover-popup">`+
-      linkTagsText +
-      instancesText +
-      `</div>
-            </div>
-          </div>
-          </div>
-        </div>
-      `
-  })
-  //Add html to page
-  if (html.length > 0)
-    wrapper.innerHTML = html
-  else
-    wrapper.innerHTML = `<div class="empty-row">There are no items here.</div>`
-  
-  // Reapply search filter if active
-  applySearchFilter('#assets')
-
-}
-
-/**
- * Updates the Links view with external links and anchors
- */
-function updateLinks() {
-  //Hide Multi-wrapper if view is updated
-  let wrapper = document.querySelector("#links .view-items")
-
-  //Iterate all links in the crawl object adding to the HTML string
-  let html = ''
-  getLinks().forEach(link => {
-
-
-    //Create string of tags and instances
-    let linkTagsText = ''
-    let instancesText = '<strong>Instances:</strong>(' + link.instances.length + ')<ul>'
-
-    if (link.tags.isLocal)
-      linkTagsText += "Original URL: <strong>" + escapeHtml(link._href) + '</strong><br>'
-    Object.keys(link.tags).forEach(i => linkTagsText += "" + i + ": <strong>" + escapeHtml(link.tags[i]) + "</strong><br>")
-    if (linkTagsText.length > 0)
-      linkTagsText = linkTagsText.substr(0, linkTagsText.length - 4) + '<hr>'
-
-    //Add all instances to the instance string
-    instancesText = formatInstances(link.instances, i => i.text || i.title)
-
-    //Add to HTML to html string for the item
-    html += `
-        <div class="view-row">
-          <div class="select">`
-    if (!isUrlProtocol(link.href) && !isUrlAnchor(link.href))
-      html += `<input type="checkbox">`
-    html += `</div>
-        <div class="type">`
-    
-    // Determine link type for title attribute
-    let linkType = ''
-    if (link.isBroken) {
-      html += getFAIcon('broken-link').icon
-      linkType = 'broken-link'
-    } else if (link.tags.tag === 'iframe') {
-      html += getFAIcon(link.tags.tag).icon
-      linkType = 'iframe'
-    } else {
-      const protocol = getUrlProtocol(link.href)
-      if (protocol) {
-        html += getFAIcon(link.href).icon
-        linkType = `protocol:${protocol}`
-      } else if (isUrlAnchor(link.href)) {
-        html += getFAIcon(link.href).icon
-        linkType = 'anchor'
-      } else {
-        html += getFAIcon(link.href).icon
-        linkType = 'link'
-      }
-    }
-    
-    // Add title attribute to the type div
-    const typeIcon = html.substring(html.lastIndexOf('<div class="type">') + 18)
-    html = html.substring(0, html.lastIndexOf('<div class="type">') + 18)
-    html += typeIcon.replace('<i class=', `<i title="${linkType}" class=`)
-    
-    html += `</div>
-            <div class="link">`+
-      '<p>' + escapeHtml(link.href) + '</p>' +
-      `</div>
-        <div class="tools">`
-    if (!link.isBroken)
-      html += '<a class="goto" target="_blank" href="' + escapeHtml(link.href) + '" title="Open link"><i class="fas fa-external-link-alt"></i></a>'
-    if (!isUrlProtocol(link.href) && !isUrlAnchor(link.href) && !link.isBroken) {
-      if (!link.test || link.test === null)
-        html += '<a class="test" target="_blank" href="' + escapeHtml(link.href) + '" title="Test the link"><i class="fas fa-question-circle"></i></a>'
-      else if (link.test === "success")
-        html += '<a class="success" target="_blank" href="' + escapeHtml(link.href) + '" title="Link is valid"><i class="fas fa-check-circle"></i></a>'
-      else if (link.test === "warning")
-        html += '<a class="warning" target="_blank" href="' + escapeHtml(link.href) + '" title="Returned a status code of ' + escapeHtml(link.statusCode) + '"><i class="fas fa-exclamation-circle"></i></a>'
-      else if (link.test === "failed")
-        html += '<a class="error" target="_blank" href="' + escapeHtml(link.href) + '" title="Test the link"><i class="fas fa-exclamation-circle"></i></a>'
-    }
-    html += `<div class="info">
-          <div class="hover-popup-icon">
-            <span class="fa-stack fa-1x">
-              <i class="fas fa-square fa-stack-2x"></i>
-              <i class="fas fa-info fa-stack-1x fa-inverse"></i>
-            </span>
-            <div class="hover-popup">`+
-      linkTagsText +
-      instancesText +
-      `</div>
-            </div>
-          </div>
-        </div>
-        </div>
-      </div>
-      `
-
-  })
-  //Add html to page
-  if (html.length > 0)
-    wrapper.innerHTML = html
-  else
-    wrapper.innerHTML = `<div class="empty-row">There are no items here.</div>`
-  
-  // Reapply search filter if active
-  applySearchFilter('#links')
-}
-
-/**
- * Updates the Files view with downloadable files
- */
-function updateFiles() {
-  //Hide Multi-wrapper if view is updated
-  document.querySelector("#files .multi-wrapper").classList.remove("active")
-
-  //Iterate all links in the crawl object adding to the HTML string
-  let wrapper = document.querySelector("#files .view-items")
-  let html = ''
-  getFiles().forEach(link => {
-
-    //Create string of tags and instances
-    let linkTagsText = ''
-    let instancesText = '<strong>Instances:</strong>(' + link.instances.length + ')<ul>'
-
-    if (link.tags.isLocal)
-      linkTagsText += "Original URL: <strong>" + escapeHtml(link._href) + '</strong><br>'
-    Object.keys(link.tags).forEach(i => linkTagsText += "" + i + ": <strong>" + escapeHtml(link.tags[i]) + "</strong><br>")
-    if (linkTagsText.length > 0)
-      linkTagsText = linkTagsText.substr(0, linkTagsText.length - 4) + '<hr>'
-
-    //Add all instances to the instance string
-    instancesText = formatInstances(link.instances, i => i.text || i.title)
-
-    //Add to HTML to html string for the item
-    html += `
-        <div class="view-row">
-          <div class="select">
-            <input type="checkbox">
-          </div>
-          <div class="type">`+
-      getFAIcon(link.href).icon +
-      `</div>
-            <div class="link">`+
-      '<p>' + escapeHtml(link.href) + '</p>' +
-      `</div>
-        <div class="tools">
-          <a class="download" href="`+ escapeHtml(link.href) + `" title="Download File"><i class="fas fa-file-download"></i></a>
-          <a class="goto" target="_blank" href="`+ escapeHtml(link.href) + `" title="Go to link"><i class="fas fa-external-link-alt"></i></a>
-          <div class="info"><div class="hover-popup-icon">
-          <span class="fa-stack fa-1x">
-          <i class="fas fa-square fa-stack-2x"></i>
-          <i class="fas fa-info fa-stack-1x fa-inverse"></i>
-        </span>
-              <div class="hover-popup">`+
-      linkTagsText +
-      instancesText +
-      `</div>
-        </div>
-          </div>
-          </div>
-        </div>
-      </div>
-      `
-  })
-  //Add html to page
-  if (html.length > 0)
-    wrapper.innerHTML = html
-  else
-    wrapper.innerHTML = `<div class="empty-row">There are no items here.</div>`
-  
-  // Reapply search filter if active
-  applySearchFilter('#files')
-}
-
-/**
- * Updates the Media view with images, videos, and audio
- */
-function updateMedia() {
-  //Hide Multi-wrapper if view is updated
-  document.querySelector("#media .multi-wrapper").classList.remove("active")
-
-  //Iterate all images in the crawl object adding to the HTML string
-  let wrapper = document.querySelector("#media .view-items")
-  let html = ''
-
-  crawl.all.media.forEach(file => {
-
-    let isImage = isUrlImage(file.src)
-    let isVideo = isUrlVideo(file.src)
-    let isAudio = isUrlAudio(file.src)
-
-    //Create string of tags and instances
-    let imageTagsText = ''
-    let instancesText = '<strong>Instances:</strong>(' + file.instances.length + ')<ul>'
-
-    if (file._src)
-      imageTagsText += "Original URL: <strong>" + escapeHtml(file._src) + '</strong><br>'
-    Object.keys(file.tags).forEach(i => imageTagsText += "" + i + ": <strong>" + escapeHtml(file.tags[i]) + "</strong><br>")
-    if (imageTagsText.length > 0)
-      imageTagsText = imageTagsText.substr(0, imageTagsText.length - 4) + '<hr>'
-
-    instancesText = formatInstances(file.instances, i => i.alt)
-
-    //Add to HTML to html string for the item
-    html += `
-        <div class="view-row">
-            <div class="select">
-            <input type="checkbox">
-          </div>
-          <div class="image">`
-    if (isImage) {
-      const altText = file.instances && file.instances[0] && file.instances[0].alt ? file.instances[0].alt : ''
-      html += '<img class="expand-image" src="' + escapeHtml(file.src) + '" alt="' + escapeHtml(altText) + '" title="' + escapeHtml(altText) + '">'
-    } else if (isVideo) {
-      html += '<video controls style="max-width: 100%; max-height: 100px;"><source src="' + escapeHtml(file.src) + '"></video>'
-    } else if (isAudio) {
-      html += '<audio controls style="width: 100%;"><source src="' + escapeHtml(file.src) + '"></audio>'
-    } else {
-      html += getFAIcon(file.src).icon
-    }
-    html += `</div>
-          <div class="link">`+
-      '<p>' + escapeHtml(file.src) + '</p>' +
-      `</div>
-       <div class="tools">
-         <a class="goto" target="_blank" href="` + escapeHtml(file.src) + `" title="Open Media"><i class="fas fa-external-link-alt"></i></a>
-         <a class="download" href="`+ escapeHtml(file.src) + `" title="Download Media"><i class="fas fa-file-download"></i></a>
-         <div class="info">
-         <div class="hover-popup-icon">
-            <span class="fa-stack fa-1x">
-              <i class="fas fa-square fa-stack-2x"></i>
-              <i class="fas fa-info fa-stack-1x fa-inverse"></i>
-            </span>
-                <div class="hover-popup">` +
-      imageTagsText +
-      instancesText +
-      `</div>
-      </div>
-              </div>
-         </div>
-       </div>
-     </div>
-     `
-  })
-  //Add html to page
-  if (html.length > 0)
-    wrapper.innerHTML = html
-  else
-    wrapper.innerHTML = `<div class="empty-row">There are no items here.</div>`
-  
-  // Reapply search filter if active
-  applySearchFilter('#media')
-
-}
-
-/**
- * Updates the Issues view with current data
- */
-function updateIssues() {
-
-  const container = document.querySelector("#issues .view-items")
-  const searchInput = document.querySelector("#issues .searchbar input")
-  const filter = searchInput?.value || ''
-  
-  const issues = getIssues(filter)
-  
-  // Update count badge - find the Issues sidebar item by text content
-  const issuesSidebarItem = Array.from(document.querySelectorAll('.sidebar-item')).find(item => {
-    const pTag = item.querySelector('p')
-    return pTag && pTag.textContent === 'Issues'
-  })
-  if (issuesSidebarItem) {
-    const countBadge = issuesSidebarItem.querySelector('.count-badge')
-    if (countBadge) {
-      countBadge.textContent = (crawl.all.issues || []).length
-    }
-  }
-  
-  // Handle empty state
-  if (issues.length === 0) {
-    if ((crawl.all.issues || []).length === 0) {
-      container.innerHTML = '<div class="empty-row">No issues detected.</div>'
-    } else {
-      container.innerHTML = '<div class="empty-row">No issues match your filter.</div>'
-    }
-    return
-  }
-  
-  // Sort by severity (error > warning > info), then by type
-  const severityOrder = { error: 0, warning: 1, info: 2 }
-  const sortedIssues = issues.sort((a, b) => {
-    if (severityOrder[a.severity] !== severityOrder[b.severity]) {
-      return severityOrder[a.severity] - severityOrder[b.severity]
-    }
-    return a.type.localeCompare(b.type)
-  })
-  
-  // Group by issue description
-  const groupedIssues = new Map()
-  sortedIssues.forEach(issue => {
-    const key = issue.message
-    if (!groupedIssues.has(key)) {
-      groupedIssues.set(key, [])
-    }
-    groupedIssues.get(key).push(issue)
-  })
-
-  const getGroupSeverity = (items) => {
-    let best = items[0].severity
-    items.forEach(item => {
-      if (severityOrder[item.severity] < severityOrder[best]) {
-        best = item.severity
-      }
-    })
-    return best
-  }
-
-  const groupEntries = Array.from(groupedIssues.entries()).map(([message, items]) => {
-    return {
-      message,
-      items,
-      severity: getGroupSeverity(items),
-      type: items[0].type,
-      category: items[0].category
-    }
-  }).sort((a, b) => {
-    if (severityOrder[a.severity] !== severityOrder[b.severity]) {
-      return severityOrder[a.severity] - severityOrder[b.severity]
-    }
-    if (a.type !== b.type) {
-      return a.type.localeCompare(b.type)
-    }
-    return a.message.localeCompare(b.message)
-  })
-
-  // Build HTML
-  let html = ''
-  groupEntries.forEach(group => {
-    const severityIcon = group.severity === 'error' ? 'fa-circle-xmark' :
-                        group.severity === 'warning' ? 'fa-triangle-exclamation' :
-                        'fa-circle-info'
-
-    const groupMessage = escapeHtml(group.message)
-    const groupType = escapeHtml(group.type)
-
-    html += `
-      <div class="view-row issue-group severity-${group.severity}" data-category="${escapeAttr(group.category)}">
-        <div class="severity ${group.severity}">
-          <i class="fas ${severityIcon}"></i>
-        </div>
-        <div class="issue-group-header">
-          <p><span class="issue-badge ${group.type}">${groupType}</span> ${groupMessage} <span class="issue-count">(${group.items.length})</span></p>
-        </div>
-        <div class="message"></div>
-        <div class="page"></div>
-        <div class="tools"></div>
-      </div>
-    `
-
-    group.items.forEach(issue => {
-      const issueSeverityIcon = issue.severity === 'error' ? 'fa-circle-xmark' :
-                          issue.severity === 'warning' ? 'fa-triangle-exclamation' :
-                          'fa-circle-info'
-
-      const displayUrl = issue.location.length > 60 
-        ? '...' + issue.location.substring(issue.location.length - 57)
-        : issue.location
-
-      const safeMessage = escapeHtml(issue.message)
-      const safeElement = escapeHtml(issue.element)
-      const safeElementTitle = escapeAttr(issue.elementFull || issue.element)
-      const safeContext = issue.context ? escapeHtml(issue.context) : ''
-      const safeLocation = escapeAttr(issue.location)
-      const safeDisplayUrl = escapeHtml(displayUrl)
-
-      const fragmentText = issue.fragmentText || ''
-      const findOnPageUrl = fragmentText ? createTextFragmentUrl(issue.location, fragmentText) : issue.location
-      const canFindOnPage = fragmentText.length > 0
-
-      html += `
-        <div class="view-row issue-child severity-${issue.severity}" data-category="${escapeAttr(issue.category)}">
-          <div class="severity ${issue.severity}">
-            <i class="fas ${issueSeverityIcon}"></i>
-          </div>
-          <div class="element" title="${safeElementTitle}">
-            ${safeElement}
-          </div>
-          <div class="message">
-            <p>${safeContext || '<em>No additional details</em>'}</p>
-          </div>
-          <div class="page">
-            <span class="page-link" title="${safeLocation}">${safeDisplayUrl}</span>
-          </div>
-          <div class="tools">
-            <a class="goto" href="${escapeAttr(issue.location)}" target="_blank" title="Open page">
-              <i class="fas fa-external-link-alt"></i>
-            </a>
-            ${canFindOnPage
-              ? `<a class="find-on-page" href="${escapeAttr(findOnPageUrl)}" target="_blank" title="Find on page">
-                  <i class="fas fa-search"></i>
-                </a>`
-              : ''}
-          </div>
-        </div>
-      `
-    })
-  })
-
-  renderToContainer(container, html)
-}
-
-// URLs of duplicate pages, cached for one synchronous render so formatInstances doesn't scan all links per instance
-let duplicatePagesCache = null
-
-const isDuplicatePage = (url) => {
-  if (!duplicatePagesCache) {
-    duplicatePagesCache = new Set(crawl.all.links.filter(link => link.isDuplicate).map(link => link.href))
-    queueMicrotask(() => duplicatePagesCache = null)
-  }
-  return duplicatePagesCache.has(url)
-}
-
-/**
- * Filters and formats instances, excluding duplicates and grouping by URL
- * @param {Array} instances - Array of instance objects
- * @param {Function} getTextFn - Function to extract text for fragment URL
- * @returns {string} Formatted HTML string of instances
- */
-const formatInstances = (instances, getTextFn) => {
-  const nonDuplicateInstances = instances.filter(i => !isDuplicatePage(i.foundOn))
-  
-  // Group instances by foundOn URL
-  const groupedInstances = new Map()
-  nonDuplicateInstances.forEach(instance => {
-    const url = instance.foundOn
-    if (!groupedInstances.has(url)) {
-      groupedInstances.set(url, [])
-    }
-    groupedInstances.get(url).push(instance)
-  })
-  
-  let instancesText = '<strong>Instances:</strong>(' + nonDuplicateInstances.length + ')<ul>'
-  
-  groupedInstances.forEach((instanceGroup, url) => {
-    const count = instanceGroup.length
-    const firstInstance = instanceGroup[0]
-    const fragmentUrl = createTextFragmentUrl(url, getTextFn(firstInstance))
-    
-    // Add count suffix if multiple instances on same page
-    const countSuffix = count > 1 ? ` (${count})` : ''
-    instancesText += '<li><a href="' + escapeHtml(fragmentUrl) + '" target="_blank">' + escapeHtml(url) + countSuffix + '</a><ul>'
-    
-    // Show details from first instance
-    if (firstInstance.title)
-      instancesText += '<li>Title: <strong>' + escapeHtml(firstInstance.title) + '</strong></li>'
-    if (firstInstance.text)
-      instancesText += '<li>Text: <strong>' + escapeHtml(firstInstance.text) + '</strong></li>'
-    if (firstInstance.alt)
-      instancesText += '<li>Alt: <strong>' + escapeHtml(firstInstance.alt) + '</strong></li>'
-    Object.keys(firstInstance.tags).forEach(i1 => instancesText += firstInstance.tags[i1] ? "<li>" + i1 + ": <strong>" + escapeHtml(firstInstance.tags[i1]) + "</strong></li>" : '')
-    
-    instancesText += '</ul></li>'
-  })
-  
-  instancesText += '</ul>'
-  return instancesText
-}
-
-const getPages = () => crawl.all.links.filter(link => isUrlLocal(link.href) && isUrlHTMLFile(link.href) && !isUrlAnchor(link.href) && !isUrlScript(link.href) && !isUrlStyleSheet(link.href) && !link.isBroken)
-const getLinks = () => crawl.all.links.filter(link => (isUrlHTMLFile(link.href) && !isUrlLocal(link.href)) || isUrlAnchor(link.href) || isUrlProtocol(link.href) || link.isBroken)
-const getFiles = () => crawl.all.links.filter(link => !isUrlHTMLFile(link.href) && !isUrlProtocol(link.href) && !link.isBroken)
-
-/**
- * Gets all issues with optional filtering
- * @param {string} filter - Optional filter string
- * @returns {Array} Filtered issues array
- */
-function getIssues(filter = '') {
-  let issues = crawl.all.issues || []
-  
-  if (!filter || filter.trim().length === 0) {
-    return issues
-  }
-  
-  filter = filter.toLowerCase().trim()
-  
-  // Parse filter tokens
-  const tokens = filter.split(/\s+/)
-  
-  return issues.filter(issue => {
-    // Check each token
-    return tokens.every(token => {
-      const isNegation = token.startsWith('!')
-      const searchTerm = isNegation ? token.substring(1) : token
-      
-      // Special filters
-      if (searchTerm.startsWith('severity:')) {
-        const severity = searchTerm.split(':')[1]
-        const matches = issue.severity === severity
-        return isNegation ? !matches : matches
-      }
-      
-      if (searchTerm.startsWith('type:')) {
-        const type = searchTerm.split(':')[1]
-        const matches = issue.type === type
-        return isNegation ? !matches : matches
-      }
-      
-      if (searchTerm.startsWith('category:')) {
-        const category = searchTerm.split(':')[1]
-        const matches = issue.category === category
-        return isNegation ? !matches : matches
-      }
-      
-      if (searchTerm.startsWith('page:')) {
-        const page = searchTerm.split(':')[1]
-        const matches = issue.location.toLowerCase().includes(page)
-        return isNegation ? !matches : matches
-      }
-      
-      // Text search across message, element, location
-      const textMatches = 
-        issue.message.toLowerCase().includes(searchTerm) ||
-        issue.element.toLowerCase().includes(searchTerm) ||
-        issue.location.toLowerCase().includes(searchTerm) ||
-        issue.category.toLowerCase().includes(searchTerm)
-      
-      return isNegation ? !textMatches : textMatches
-    })
-  })
-}
-
-/**
- * Builds Issues HTML for the popup inspector (no page column)
- * @param {Array} issues - Issues for the current page
- * @param {string} pageUrl - URL of the inspected page
- * @returns {string} HTML string
- */
-function buildPopupIssuesHtml(issues, pageUrl) {
-  if (!issues || issues.length === 0) {
-    return '<div class="empty-row">No issues detected.</div>'
-  }
-
-  const severityOrder = { error: 0, warning: 1, info: 2 }
-  const sortedIssues = issues.slice().sort((a, b) => {
-    if (severityOrder[a.severity] !== severityOrder[b.severity]) {
-      return severityOrder[a.severity] - severityOrder[b.severity]
-    }
-    return a.type.localeCompare(b.type)
-  })
-
-  const groupedIssues = new Map()
-  sortedIssues.forEach(issue => {
-    const key = issue.message
-    if (!groupedIssues.has(key)) {
-      groupedIssues.set(key, [])
-    }
-    groupedIssues.get(key).push(issue)
-  })
-
-  const getGroupSeverity = (items) => {
-    let best = items[0].severity
-    items.forEach(item => {
-      if (severityOrder[item.severity] < severityOrder[best]) {
-        best = item.severity
-      }
-    })
-    return best
-  }
-
-  const groupEntries = Array.from(groupedIssues.entries()).map(([message, items]) => {
-    return {
-      message,
-      items,
-      severity: getGroupSeverity(items),
-      type: items[0].type,
-      category: items[0].category
-    }
-  }).sort((a, b) => {
-    if (severityOrder[a.severity] !== severityOrder[b.severity]) {
-      return severityOrder[a.severity] - severityOrder[b.severity]
-    }
-    if (a.type !== b.type) {
-      return a.type.localeCompare(b.type)
-    }
-    return a.message.localeCompare(b.message)
-  })
-
-  let html = ''
-  groupEntries.forEach(group => {
-    const severityIcon = group.severity === 'error' ? 'fa-circle-xmark' :
-                        group.severity === 'warning' ? 'fa-triangle-exclamation' :
-                        'fa-circle-info'
-    const groupMessage = escapeHtml(group.message)
-    const groupType = escapeHtml(group.type)
-
-    html += `
-      <div class="view-row issue-group severity-${group.severity}" data-category="${escapeAttr(group.category)}">
-        <div class="severity ${group.severity}">
-          <i class="fas ${severityIcon}"></i>
-        </div>
-        <div class="issue-group-header">
-          <p><span class="issue-badge ${group.type}">${groupType}</span> ${groupMessage} <span class="issue-count">(${group.items.length})</span></p>
-        </div>
-        <div class="message"></div>
-        <div class="tools"></div>
-      </div>
-    `
-
-    group.items.forEach(issue => {
-      const issueSeverityIcon = issue.severity === 'error' ? 'fa-circle-xmark' :
-                          issue.severity === 'warning' ? 'fa-triangle-exclamation' :
-                          'fa-circle-info'
-
-      const safeMessage = escapeHtml(issue.message)
-      const safeElement = escapeHtml(issue.element)
-      const safeElementTitle = escapeAttr(issue.elementFull || issue.element)
-      const safeContext = issue.context ? escapeHtml(issue.context) : ''
-
-      const fragmentText = issue.fragmentText || ''
-      const findOnPageUrl = fragmentText ? createTextFragmentUrl(pageUrl, fragmentText) : pageUrl
-      const canFindOnPage = fragmentText.length > 0
-
-      html += `
-        <div class="view-row issue-child severity-${issue.severity}" data-category="${escapeAttr(issue.category)}">
-          <div class="severity ${issue.severity}">
-            <i class="fas ${issueSeverityIcon}"></i>
-          </div>
-          <div class="element" title="${safeElementTitle}">
-            ${safeElement}
-          </div>
-          <div class="message">
-            <p>${safeContext || '<em>No additional details</em>'}</p>
-          </div>
-          <div class="tools">
-            <a class="goto" href="${escapeAttr(pageUrl)}" target="_blank" title="Open page">
-              <i class="fas fa-external-link-alt"></i>
-            </a>
-            ${canFindOnPage
-              ? `<a class="find-on-page" href="${escapeAttr(findOnPageUrl)}" target="_blank" title="Find on page">
-                  <i class="fas fa-search"></i>
-                </a>`
-              : ''}
-          </div>
-        </div>
-      `
-    })
-  })
-
-  return html
-}

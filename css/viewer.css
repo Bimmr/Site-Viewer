@@ -2016,6 +2016,31 @@ input[type="checkbox"]{
   overflow: visible;
 }
 
+/* Issue groups are <details>, with the group row as the clickable <summary> */
+#issues .issue-group,
+#popup-view-issues .issue-group {
+  cursor: pointer;
+  list-style: none;
+}
+
+#issues .issue-group::-webkit-details-marker,
+#popup-view-issues .issue-group::-webkit-details-marker {
+  display: none;
+}
+
+#issues .issue-group-chevron,
+#popup-view-issues .issue-group-chevron {
+  margin-right: 8px;
+  font-size: 0.8em;
+  opacity: 0.6;
+  transition: transform 0.2s;
+}
+
+#issues .issue-group-details[open] .issue-group-chevron,
+#popup-view-issues .issue-group-details[open] .issue-group-chevron {
+  transform: rotate(90deg);
+}
+
 #issues .issue-child .element,
 #popup-view-issues .issue-child .element {
   padding-left: 24px;

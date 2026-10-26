@@ -155,6 +155,17 @@ export function renderRows(container, html, emptyText) {
 const severityOrder = { error: 0, warning: 1, info: 2 }
 const severityIcons = { error: 'fa-circle-xmark', warning: 'fa-triangle-exclamation', info: 'fa-circle-info' }
 
+// Issue groups the user collapsed, kept so re-renders during a crawl don't reopen them
+const collapsedIssueGroups = new Set()
+
+// toggle doesn't bubble, so listen in the capture phase
+document.addEventListener('toggle', event => {
+  const key = event.target.dataset?.groupKey
+  if (key === undefined) return
+  if (event.target.open) collapsedIssueGroups.delete(key)
+  else collapsedIssueGroups.add(key)
+}, true)
+
 /**
  * Builds issue rows grouped by message, most severe first
  * @param {Array} issues - Issues to show
@@ -181,18 +192,20 @@ export function buildIssuesHTML(issues, { pageUrl = null } = {}) {
 
   let html = ''
   groups.forEach(group => {
+    const groupKey = (pageUrl || '') + '\n' + group.message
     html += `
-      <div class="view-row issue-group severity-${group.severity}" data-category="${escapeAttr(group.category)}">
+      <details class="issue-group-details" data-group-key="${escapeAttr(groupKey)}"${collapsedIssueGroups.has(groupKey) ? '' : ' open'}>
+      <summary class="view-row issue-group severity-${group.severity}" data-category="${escapeAttr(group.category)}">
         <div class="severity ${group.severity}">
           <i class="fas ${severityIcons[group.severity]}"></i>
         </div>
         <div class="issue-group-header">
-          <p><span class="issue-badge ${escapeAttr(group.type)}">${escapeHtml(group.type)}</span> ${escapeHtml(group.message)} <span class="issue-count">(${group.items.length})</span></p>
+          <p><i class="fas fa-chevron-right issue-group-chevron"></i><span class="issue-badge ${escapeAttr(group.type)}">${escapeHtml(group.type)}</span> ${escapeHtml(group.message)} <span class="issue-count">(${group.items.length})</span></p>
         </div>
         <div class="message"></div>
         ${showPageColumn ? '<div class="page"></div>' : ''}
         <div class="tools"></div>
-      </div>
+      </summary>
     `
 
     group.items.forEach(issue => {
@@ -229,6 +242,8 @@ export function buildIssuesHTML(issues, { pageUrl = null } = {}) {
         </div>
       `
     })
+
+    html += '</details>'
   })
 
   return html

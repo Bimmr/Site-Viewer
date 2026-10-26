@@ -7,6 +7,9 @@ const pageHashCache = new Map()
 // Mutex lock to prevent race conditions
 const crawlLocks = new Set()
 
+// In-progress crawl promises, so repeat requests for the same URL can await the same result
+const crawlPromises = new Map()
+
 // Queue systems for tabs (limited concurrency) and HTTP fetches (higher concurrency)
 const tabQueue = []
 const fetchQueue = []
@@ -68,12 +71,15 @@ const rateLimitedFetch = async (fetchFn) => {
 
 const processTabQueue = async () => {
   if (isProcessingTabQueue) return
+
+  isProcessingTabQueue = true
+
   while (activeTabs < getMaxConcurrentTabs() && tabQueue.length > 0) {
     const { fetchFn, resolve, reject } = tabQueue.shift()
     
     const now = Date.now()
     const timeSinceLastFetch = now - lastFetchTime
-    const rateLimit = settings?.crawl?.rateLimitMs || 100
+    const rateLimit = settings?.crawl?.rateLimitMs ?? 100
     
     if (timeSinceLastFetch < rateLimit) {
       const delay = rateLimit - timeSinceLastFetch
@@ -105,7 +111,7 @@ const processFetchQueue = async () => {
     
     const now = Date.now()
     const timeSinceLastFetch = now - lastFetchTime
-    const rateLimit = settings?.crawl?.rateLimitMs || 100
+    const rateLimit = settings?.crawl?.rateLimitMs ?? 100
     
     if (timeSinceLastFetch < rateLimit) {
       const delay = rateLimit - timeSinceLastFetch
@@ -670,14 +676,13 @@ function updateAllViews() {
  * @returns {Promise<Object>} Promise that resolves with the crawled page object
  */
 async function crawlURL(url, addToAll = true, isInitialPage = false) {
-    return new Promise(async (resolve, reject) => {
-  
-      // Check for race condition - if already crawling this URL, skip
-      if (crawlLocks.has(url)) {
-        console.log(`Already crawling ${url}, skipping duplicate request`)
-        return
-      }
-      
+    // Check for race condition - if already crawling this URL, share the in-progress crawl
+    if (crawlPromises.has(url)) {
+      console.log(`Already crawling ${url}, reusing in-progress request`)
+      return crawlPromises.get(url)
+    }
+
+    const crawlPromise = new Promise(async (resolve, reject) => {
       // Acquire lock
       crawlLocks.add(url)
       
@@ -820,7 +825,7 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
   
       fetchData(url, isInitialPage)
         .then(result => {
-          const { html: data, crawlMethod } = result
+          let { html: data, crawlMethod } = result
   
           let type = "html"
   
@@ -839,7 +844,19 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
   
           // Get doc from fetched page data
           let doc = (new DOMParser()).parseFromString(data, "text/html")
-  
+
+          // Without a base the parsed doc resolves relative URLs against viewer.html instead of the crawled page
+          let baseElement = doc.querySelector("base[href]")
+          let baseHref = url
+          try {
+            if (baseElement) baseHref = new URL(baseElement.getAttribute("href"), url).href
+          } catch (e) { }
+          if (!baseElement) {
+            baseElement = doc.createElement("base")
+            doc.head.prepend(baseElement)
+          }
+          baseElement.setAttribute("href", baseHref)
+
           //Init lists
           let links = []
           let media = []
@@ -852,7 +869,8 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
               return href !== null &&
                 !href.startsWith("javascript:") &&
                 !href.startsWith("?") &&
-                !href.startsWith("about:blank")
+                !href.startsWith("about:blank") &&
+                !isUrlTemplate(href)
             }
           ).forEach(element => {
             let link = createLinkObject(url, element)
@@ -1050,7 +1068,18 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
                   if (!linkElement) {
                     return
                   }
-                  
+
+                  // Skip links whose href is still JS code, e.g. href="' + postLink + '"
+                  const rawHref = linkElement.getAttribute("href")
+                  if (rawHref && isUrlTemplate(rawHref)) return
+
+                  // Built outside the parsed doc, so resolve against the page's base manually
+                  if (rawHref && !rawHref.startsWith("javascript:") && !rawHref.startsWith("?")) {
+                    try {
+                      linkElement.setAttribute("href", new URL(rawHref, baseHref).href)
+                    } catch (e) { }
+                  }
+
                   let link = createLinkObject(url, linkElement)
                   
                   // Skip if link creation failed
@@ -1228,6 +1257,12 @@ async function crawlURL(url, addToAll = true, isInitialPage = false) {
           reject(error[0] ?? error)
         })
     })
+
+    crawlPromises.set(url, crawlPromise)
+    crawlPromise.catch(() => { }).finally(() => {
+      if (crawlPromises.get(url) === crawlPromise) crawlPromises.delete(url)
+    })
+    return crawlPromise
   }
 
 /**
@@ -1315,7 +1350,8 @@ function createLinkObject(url, element) {
   
     //Create the image object
     let image = {
-      src: element?.src ?? element?.getAttribute("data-src") ?? src ?? '',
+      // element.src is "" (not null) when there's no src attribute, so check the attribute to allow lazy-load fallbacks
+      src: (element?.getAttribute("src") && element.src) || element?.getAttribute("data-src") || src || '',
       tags: {}
     }
     image.instances = [{

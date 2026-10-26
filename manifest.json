@@ -2,7 +2,7 @@
 
   "name": "Site Viewer",
   "short_name": "Site Viewer",
-  "version": "0.7.2",
+  "version": "0.8.0",
   "description": "Crawl/Map a website for Pages, Links, Files and Media.",
 
   "manifest_version": 3,

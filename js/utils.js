@@ -1,4 +1,23 @@
 /**
+ * Gets the file extension of a URL's last path segment, ignoring the host, query and hash
+ * @param {string} url - The URL to check
+ * @returns {string} Lowercase extension without the dot, or '' if there is none
+ */
+const getUrlExtension = url => {
+  let path
+  try {
+    path = new URL(url, hostURL).pathname
+  } catch {
+    path = url.split(/[?#]/)[0]
+  }
+  const fileName = path.split('/').pop()
+  const dotIndex = fileName.lastIndexOf('.')
+  return dotIndex > 0 ? fileName.substring(dotIndex + 1).toLowerCase() : ''
+}
+
+const hasUrlExtension = (url, extensions) => extensions.includes(getUrlExtension(url))
+
+/**
  * Determines if a URL points to an HTML file or page
  * @param {string} url - The URL to check
  * @returns {boolean} True if the URL is an HTML file/page
@@ -6,7 +25,7 @@
 const isUrlHTMLFile = url => {
   try {
 
-    // Check for the extensions that aren't the at the end of the URL
+    // Known non-page file types
     if (isUrlPDFFile(url)
         || isUrlImage(url) 
         || isUrlVideo(url)
@@ -21,22 +40,13 @@ const isUrlHTMLFile = url => {
       return false;
     }
 
-    const pathname = new URL(url).pathname.split('/').pop();
-    if (pathname.indexOf('.') <= 0) return true;
-    if (url.includes(".html") || url.includes(".shtml") || url.includes(".htm") || url.includes(".aspx") || url.includes(".asp") || url.includes(".jsp") || url.includes(".php") || url.includes(".xhtml")) return true;
-    
-    const lastDotIndex = pathname.lastIndexOf('.');
-    const lastSlashOrStart = pathname.lastIndexOf('/') + 1;
-    
-    if (lastDotIndex > lastSlashOrStart) {
-      const afterDot = pathname.substring(lastDotIndex + 1);
-      // Extensions longer than 4 chars or with special chars are likely not file extensions
-      if (afterDot.length > 4 || afterDot.includes('-') || afterDot.includes('_') || afterDot.includes('@')) {
-        return true;
-      }
-      return false;
-    }
-    return true;
+    new URL(url); // Relative or invalid URLs aren't treated as pages
+    const extension = getUrlExtension(url);
+    if (!extension) return true;
+    if (["html", "shtml", "htm", "aspx", "asp", "jsp", "php", "xhtml"].includes(extension)) return true;
+
+    // Extensions longer than 4 chars or with special chars are likely not file extensions
+    return extension.length > 4 || /[-_@]/.test(extension);
   } catch {
     return false
   }
@@ -64,8 +74,16 @@ const normalizeUrl = url => {
 }
 
 // URL type checking utilities
-const isUrlPDFFile = url => url.includes('.pdf')
+const isUrlPDFFile = url => hasUrlExtension(url, ["pdf"])
 const isUrlProtocol = url => /^[a-z][a-z0-9+.-]*:/i.test(url) && !url.match(/^https?:/i)
+
+/**
+ * Checks if an href is unrendered template/code rather than a real URL
+ * e.g. "${isEnglish ? '/contact' : '/contact-fr'}", "' + postLink + '", "{{ url }}", "<%= link %>"
+ * @param {string} href - The raw href attribute value
+ * @returns {boolean} True if the href contains template or string concatenation syntax
+ */
+const isUrlTemplate = href => /\$\{|\{\{|<%|%>|['"`]\s*\+|\+\s*['"`]/.test(href)
 
 /**
  * Extracts the protocol from a URL (excluding http/https)
@@ -96,16 +114,33 @@ const isUrlAnchor = url => {
     return url.includes("#")
   }
 }
-const isUrlImage = url => url.includes(".png") || url.includes(".gif") || url.includes(".svg") || url.includes(".jpg") || url.includes(".jpeg") || url.includes(".bmp") || url.includes(".webp") || url.includes(".ico") || url.includes(".tiff") || url.includes(".tif") || url.includes(".avif") || url.startsWith("data:image/")
-const isUrlVideo = url => url.includes(".mp4") || url.includes(".webm") || url.includes(".ogg") || url.includes(".ogv") || url.includes(".avi") || url.includes(".mov") || url.includes(".wmv") || url.includes(".flv") || url.includes(".m4v") || url.includes(".mkv")
-const isUrlAudio = url => url.includes(".mp3") || url.includes(".wav") || url.includes(".ogg") || url.includes(".oga") || url.includes(".m4a") || url.includes(".aac") || url.includes(".flac") || url.includes(".wma")
-const isUrlStyleSheet = url => url.includes(".css") || url.includes(".scss") || url.includes(".sass") || url.includes(".less") || url.includes("fonts.googleapis.com/css")
-const isUrlScript = url => url.includes(".js") || url.includes(".jsx") || url.includes(".ts") || url.includes(".tsx") || url.includes(".mjs") || url.includes(".cjs") || url.includes("googletagmanager.com/gtag/js")
-const isUrlFont = url => url.includes(".ttf") || url.includes(".otf") || url.includes(".woff") || url.includes(".woff2") || url.includes(".eot") || url.includes("fonts.googleapis.com") || url.includes("fonts.gstatic.com")
-const isUrlDocument = url => url.includes(".doc") || url.includes(".docx") || url.includes(".xls") || url.includes(".xlsx") || url.includes(".ppt") || url.includes(".pptx") || url.includes(".odt") || url.includes(".ods") || url.includes(".odp")
-const isUrlArchive = url => url.includes(".zip") || url.includes(".rar") || url.includes(".7z") || url.includes(".tar") || url.includes(".gz") || url.includes(".bz2")
-const isUrlData = url => url.includes(".json") || url.includes(".xml") || url.includes(".csv") || url.includes(".yaml") || url.includes(".yml")
+const isUrlImage = url => hasUrlExtension(url, ["png", "gif", "svg", "jpg", "jpeg", "bmp", "webp", "ico", "tiff", "tif", "avif"]) || url.startsWith("data:image/")
+const isUrlVideo = url => hasUrlExtension(url, ["mp4", "webm", "ogg", "ogv", "avi", "mov", "wmv", "flv", "m4v", "mkv"])
+const isUrlAudio = url => hasUrlExtension(url, ["mp3", "wav", "ogg", "oga", "m4a", "aac", "flac", "wma"])
+const isUrlStyleSheet = url => hasUrlExtension(url, ["css", "scss", "sass", "less"]) || url.includes("fonts.googleapis.com/css")
+const isUrlScript = url => hasUrlExtension(url, ["js", "jsx", "ts", "tsx", "mjs", "cjs"]) || url.includes("googletagmanager.com/gtag/js")
+const isUrlFont = url => hasUrlExtension(url, ["ttf", "otf", "woff", "woff2", "eot"]) || url.includes("fonts.googleapis.com") || url.includes("fonts.gstatic.com")
+const isUrlDocument = url => hasUrlExtension(url, ["doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp"])
+const isUrlArchive = url => hasUrlExtension(url, ["zip", "rar", "7z", "tar", "gz", "tgz", "bz2"])
+const isUrlData = url => hasUrlExtension(url, ["json", "xml", "csv", "yaml", "yml"])
 
+
+/**
+ * Escapes a value for safe insertion into HTML text or attributes
+ * @param {*} value - The value to escape
+ * @returns {string} Escaped string ('' for null/undefined)
+ */
+const escapeHtml = (value) => {
+  if (value === null || value === undefined) return ''
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+const escapeAttr = (value) => escapeHtml(value)
 
 /**
  * Creates an HTML element from a string
@@ -309,6 +344,13 @@ const formatLink = (url, link) => {
     const chromeExtensionProtocol = 'chrome-extension:'
     const chromeExtensionId = window.extensionId
 
+        // Raw (unresolved) links can be resolved against the page they were found on directly
+        if (!link.startsWith(chromeExtensionProtocol)) {
+            try {
+                return new URL(link, url).href
+            } catch (e) { }
+        }
+
         const urlLocation = new URL(url)
         const linkLocation = new URL(getLocation(link))
 
@@ -317,10 +359,10 @@ const formatLink = (url, link) => {
 
         // If it's a // link
         if (linkLocation.host !== chromeExtensionId) {
-            return `${urlLocation.protocol}//${linkLocation.host}${linkLocation.pathname}${linkLocation.hash}${linkLocation.search}`
+            return `${urlLocation.protocol}//${linkLocation.host}${linkLocation.pathname}${linkLocation.search}${linkLocation.hash}`
         }
 
         // If it's a local link 
         const basePath = linkLocation.pathname === "/viewer.html" ? "/" : linkLocation.pathname
-        return `${urlLocation.protocol}//${urlLocation.host}${basePath}${linkLocation.hash}${linkLocation.search}`
+        return `${urlLocation.protocol}//${urlLocation.host}${basePath}${linkLocation.search}${linkLocation.hash}`
 }

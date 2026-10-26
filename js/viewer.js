@@ -1,5 +1,5 @@
 // Track last counts to detect changes
-let lastCounts = { pages: 1, assets: 1, links: 1, files: 1, media: 1 }
+let lastCounts = { pages: 1, assets: 1, links: 1, files: 1, media: 1, issues: 1 }
 
 // Download queue management
 const DOWNLOAD_QUEUE = {
@@ -171,10 +171,9 @@ document.addEventListener("DOMContentLoaded", function () {
           item.value = settings[settingGroup][setting]
         else if (item.tagName === "SELECT")
           item.value = settings[settingGroup][setting]
-
-        if (settings.combine.enabled === true)
-          document.querySelector(".combine-settings").classList.toggle("active")
       })
+
+      document.querySelector(".combine-settings").classList.toggle("active", settings.combine.enabled === true)
     }
     
     // Crawl base url after settings are loaded
@@ -257,16 +256,12 @@ document.addEventListener("DOMContentLoaded", function () {
   }))
 
   // Overview card click handlers - navigate to respective views
-  const overviewCards = document.querySelectorAll("#overview .card")
-  const sidebarItems = document.querySelectorAll(".sidebar-item")
-  
-  overviewCards.forEach((card, index) => {
+  document.querySelectorAll("#overview .card[data-view]").forEach(card => {
     card.addEventListener("click", () => {
-      // Cards map to sidebar items: Pages(0), Assets(1), Links(2), Files(3), Media(4)
-      const targetSidebarItem = sidebarItems[index]
-      if (targetSidebarItem) {
-        targetSidebarItem.click()
-      }
+      // Match by name rather than index, the sidebar also contains Overview and Settings
+      const targetSidebarItem = Array.from(document.querySelectorAll(".sidebar-item"))
+        .find(item => item.querySelector("p")?.textContent.toLowerCase() === card.dataset.view)
+      targetSidebarItem?.click()
     })
   })
 
@@ -401,7 +396,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
       if (settingGroup === "download") {
         let downloadDirectory = settings.download.directory
-        if (downloadDirectory[downloadDirectory.length - 1] !== "/")
+        if (downloadDirectory && !downloadDirectory.endsWith("/"))
           downloadDirectory += "/"
         settings.download.directory = downloadDirectory
       }
@@ -444,16 +439,20 @@ document.addEventListener("DOMContentLoaded", function () {
       clearInterval(window.moreToCrawlInterval)
       window.moreToCrawlInterval = null
     }
-    
+    const crawlAllBtn = document.querySelector(".crawlAllBtn")
+    crawlAllBtn.textContent = 'CRAWL ALL PAGES'
+    crawlAllBtn.classList.remove('stop-crawling')
+
     // Clean up crawling state
     crawlLocks.clear()
+    crawlPromises.clear()
     
     //Reset
     crawl = { all: { media: [], links: [], assets: [], issues: [] } }
     pageHashCache.clear() // Clear hash cache on recrawl
-    lastCounts = { pages: 1, assets: 1, links: 1, files: 1, media: 1 }
+    lastCounts = { pages: 1, assets: 1, links: 1, files: 1, media: 1, issues: 1 }
     document.querySelector("#crawledSiteCount").innerHTML = ''
-    document.querySelector("#crawledSiteText").innerHTML = baseUrl
+    document.querySelector("#crawledSiteText").textContent = baseUrl
 
     // Update all views to reflect cleared data
     updateAllViews()
@@ -588,7 +587,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
   //Download all button with queue management
   document.querySelectorAll(".downloadSelected").forEach(item => item.addEventListener("click", event => {
-    let items = document.querySelectorAll(".view.active .view-items .select input:checked")
+    // Scope to the view or popup-view this button belongs to
+    let items = item.closest(".view, .popup-view").querySelectorAll(".view-items .select input:checked")
     const totalItems = items.length
     
     if (totalItems === 0) {
@@ -632,7 +632,7 @@ document.addEventListener("DOMContentLoaded", function () {
   document.querySelectorAll(".deleteCrawlSelected").forEach(item => item.addEventListener("click", async event => {
     let items = Array.from(document.querySelectorAll(".view.active .view-items .select input:checked")).filter(item => {
       const viewRow = item.parentNode.parentNode
-      return !viewRow.querySelector('.crawl') && !viewRow.classList.contains('hidden')
+      return viewRow.querySelector('.inspect') && !viewRow.classList.contains('hidden')
     })
     const totalItems = items.length
     
@@ -729,11 +729,14 @@ document.addEventListener("DOMContentLoaded", function () {
       // Clear the filter count badge
       const filterCount = item.querySelector('.filter-count')
       if (filterCount) filterCount.remove()
+      // Issues are filtered at render time, so re-render instead of just unhiding rows
+      if (view.id === "issues") updateIssues()
     }
   }))
 
   //Filter/Searchbar gets typed in (debounced to avoid excessive filtering)
-  document.querySelectorAll(".searchbar .form-item input").forEach(item => item.addEventListener("keyup", debounce(function () {
+  // Use "input" so the search field's built-in clear button also re-filters; Issues has its own handler below
+  document.querySelectorAll(".view:not(#issues) .searchbar .form-item input").forEach(item => item.addEventListener("input", debounce(function () {
     const view = item.parentNode.parentNode.parentNode
     const viewId = '#' + view.id
     applySearchFilter(viewId, item.value)
@@ -768,9 +771,11 @@ document.addEventListener("DOMContentLoaded", function () {
   // Global event delegation for dynamically created elements
   // Handle checkbox clicks to show/hide multi-wrapper
   document.body.addEventListener('click', event => {
-    if (event.target.matches('.view .view-items .select input')) {
-      const multiWrapper = document.querySelector(".view.active .multi-wrapper")
-      const checkedCount = Array.from(document.querySelectorAll(".view.active .view-items .select input")).filter(i => i.checked).length
+    if (event.target.matches('.view .view-items .select input, .popup-view .view-items .select input')) {
+      const container = event.target.closest(".view, .popup-view")
+      const multiWrapper = container.querySelector(".multi-wrapper")
+      if (!multiWrapper) return
+      const checkedCount = container.querySelectorAll(".view-items .select input:checked").length
       if (checkedCount >= 1) {
         multiWrapper.classList.add("active")
         togglePageButtons()
@@ -934,7 +939,7 @@ function handleDownload(url) {
 
             //Create blob
             let fileBlob = new Blob([pageDoc.querySelector("html").outerHTML], { type: "text/html" });
-            blobUrl = URL.createObjectURL(fileBlob);
+            const blobUrl = URL.createObjectURL(fileBlob);
 
             //Save blob to localstorage
             storageSet(blobUrl, url)
@@ -1067,7 +1072,7 @@ function handleDownload(url) {
                 styleList.forEach(style => {
                   if (style.length > 0) {
                     style.forEach(image => {
-                      matchedStyles.forEach(styleTag => styleTag.innerHTML = styleTag.innerHTML.replace(new RegExp(image[0], "g"), image[1]))
+                      matchedStyles.forEach(styleTag => styleTag.innerHTML = styleTag.innerHTML.replaceAll(image[0], image[1]))
                     })
                   }
                 })
@@ -1108,7 +1113,7 @@ function handleDownload(url) {
                       if (isImageTag)
                         image.src = dataUrl
                       else
-                        image.style = image.style.cssText.replace(new RegExp(src, "g"), dataUrl)
+                        image.style = image.style.cssText.replaceAll(src, dataUrl)
                       successCount++
                       resolveImage()
                     }).catch(err => {
@@ -1332,12 +1337,12 @@ function updateOverview() {
     if (crawledPages.length > 0) {
       if (crawledPages.length <= 3) {
         // Show all pages if 3 or less
-        displayText = crawledPages.join('<br>')
+        displayText = crawledPages.map(escapeHtml).join('<br>')
       } else {
         // Show first 2 pages, counter will show "... (+X more)" on 3rd line
         const visibleUrls = crawledPages.slice(0, 2)
         const remaining = crawledPages.length - 2
-        displayText = visibleUrls.join('<br>')
+        displayText = visibleUrls.map(escapeHtml).join('<br>')
         counterText = `... <span class="count">(+${remaining} more)</span>`
       }
     }
@@ -1350,7 +1355,7 @@ function updateOverview() {
     
     //Update hover popup with full list
     crawledPages.forEach(url => {
-      crawledHTML += '<li>' + url + '</li>'
+      crawledHTML += '<li>' + escapeHtml(url) + '</li>'
     })
     crawledHTML += '</ul>'
     document.querySelector("#crawledLinks").innerHTML = crawledHTML
@@ -1478,15 +1483,15 @@ function updatePages() {
     //Create string of tags and instances
     let linkTagsText = ''
     let instancesText = '<strong>Instances:</strong>(' + link.instances.length + ')<ul>'
-    linkTagsText += "Original URL: <strong>" + link._href + '</strong><br>'
+    linkTagsText += "Original URL: <strong>" + escapeHtml(link._href) + '</strong><br>'
     
     // Add duplicate information if applicable
     if (link.isDuplicate) {
-      linkTagsText += '<span style="color: #2196F3;">Duplicate of: <strong>' + link.duplicateOf + '</strong></span><br>'
+      linkTagsText += '<span style="color: #2196F3;">Duplicate of: <strong>' + escapeHtml(link.duplicateOf) + '</strong></span><br>'
     }
 
     //No need to display isLocal if it's a page
-    Object.keys(link.tags).forEach(i => linkTagsText += i !== "isLocal" ? "" + i + ": <strong>" + link.tags[i] + "</strong><br>" : '')
+    Object.keys(link.tags).forEach(i => linkTagsText += i !== "isLocal" ? "" + i + ": <strong>" + escapeHtml(link.tags[i]) + "</strong><br>" : '')
     if (linkTagsText.length > 0)
       linkTagsText = linkTagsText.substr(0, linkTagsText.length - 4) + '<hr>'
 
@@ -1500,23 +1505,23 @@ function updatePages() {
             <input type="checkbox">
           </div>
           <div class="link">
-            <p ${indentStyle}>` + link.href + `</p>
+            <p ${indentStyle}>` + escapeHtml(link.href) + `</p>
           </div>
           <div class="tools">
-            <a class="download" href="`+ link.href + `" title="Download Page"><i class="fas fa-file-download"></i></a>` +
-      '<a class="goto" target="_blank" href="' + link.href + '" title="Go to page"><i class="fas fa-external-link-alt"></i></a>'
+            <a class="download" href="`+ escapeHtml(link.href) + `" title="Download Page"><i class="fas fa-file-download"></i></a>` +
+      '<a class="goto" target="_blank" href="' + escapeHtml(link.href) + '" title="Go to page"><i class="fas fa-external-link-alt"></i></a>'
     if (link.isCrawling)
       html += '<a class="crawling" title="Crawling in progress..."><i class="fas fa-spinner fa-spin"></i></a>'
     else if (link.isError)
-      html += '<a class="error crawl" target="_blank" href="' + link.href + '" title="Page doesn\'t exist or took to long to respond\nClick to retry"><i class="fas fa-times-circle"></i></a>'
+      html += '<a class="error crawl" target="_blank" href="' + escapeHtml(link.href) + '" title="Page doesn\'t exist or took to long to respond\nClick to retry"><i class="fas fa-times-circle"></i></a>'
     else if (link.isWarning)
-      html += '<a class="warning crawl" target="_blank" href="' + link.href + '" title="Returned a status code of ' + link.statusCode + '\nClick to retry"><i class="fas fa-exclamation-circle"></i></a>'
+      html += '<a class="warning crawl" target="_blank" href="' + escapeHtml(link.href) + '" title="Returned a status code of ' + escapeHtml(link.statusCode) + '\nClick to retry"><i class="fas fa-exclamation-circle"></i></a>'
     else if (link.isDuplicate)
-      html += '<a class="info duplicate" title="Duplicate of ' + link.duplicateOf + '"><i class="fas fa-info-circle"></i></a>'
+      html += '<a class="info duplicate" title="Duplicate of ' + escapeHtml(link.duplicateOf) + '"><i class="fas fa-info-circle"></i></a>'
     else if (link.isCrawled)
-      html += '<a class="inspect" title="Inspect Page" href="' + link.href + '"><i class="fas fa-search"></i></a>'
+      html += '<a class="inspect" title="Inspect Page" href="' + escapeHtml(link.href) + '"><i class="fas fa-search"></i></a>'
     else
-      html += '<a class="crawl" target="_blank" href="' + link.href + '" title="Crawl page"><i class="fas fa-sitemap"></i></a>'
+      html += '<a class="crawl" target="_blank" href="' + escapeHtml(link.href) + '" title="Crawl page"><i class="fas fa-sitemap"></i></a>'
     html +=
       `<div class="info">
               <div class="hover-popup-icon">
@@ -1620,7 +1625,7 @@ function applySearchFilter(viewSelector, searchTerm) {
           termMatches = false
       }
     } else if (search) {
-      const text = row.querySelector('p')?.innerHTML.toLowerCase() || ''
+      const text = row.querySelector('p')?.textContent.toLowerCase() || ''
       termMatches = text.indexOf(textSearch) >= 0
     } else {
       termMatches = true
@@ -1707,11 +1712,11 @@ function buildTagsHTML(item, originalUrl) {
   let tagsHTML = ''
   
   if (item.tags.isLocal && originalUrl) {
-    tagsHTML += `Original URL: <strong>${originalUrl}</strong><br>`
+    tagsHTML += `Original URL: <strong>${escapeHtml(originalUrl)}</strong><br>`
   }
   
   Object.keys(item.tags).forEach(key => {
-    tagsHTML += `${key}: <strong>${item.tags[key]}</strong><br>`
+    tagsHTML += `${key}: <strong>${escapeHtml(item.tags[key])}</strong><br>`
   })
   
   return tagsHTML ? tagsHTML.slice(0, -4) + '<hr>' : ''
@@ -1725,19 +1730,19 @@ function buildTagsHTML(item, originalUrl) {
  */
 function buildTestIconsHTML(link, href) {
   if (!link.test || link.test === null) {
-    return `<a class="test" target="_blank" href="${href}" title="Test the link"><i class="fas fa-question-circle"></i></a>`
+    return `<a class="test" target="_blank" href="${escapeAttr(href)}" title="Test the link"><i class="fas fa-question-circle"></i></a>`
   }
   
   const testIcons = {
     success: { class: 'success', icon: 'check-circle', title: 'Link is valid' },
     warning: { class: 'warning', icon: 'exclamation-circle', title: `Returned a status code of ${link.statusCode}\nClick to retry` },
-    error: { class: 'error', icon: 'times-circle', title: "Link doesn't exist or took too long to respond\nClick to retry" }
+    failed: { class: 'error', icon: 'times-circle', title: "Link doesn't exist or took too long to respond\nClick to retry" }
   }
   
   const config = testIcons[link.test]
   if (!config) return ''
   
-  return `<a class="${config.class}" target="_blank" href="${href}" title="${config.title}"><i class="fas fa-${config.icon}"></i></a>`
+  return `<a class="${config.class}" target="_blank" href="${escapeAttr(href)}" title="${escapeAttr(config.title)}"><i class="fas fa-${config.icon}"></i></a>`
 }
 
 /**
@@ -1761,7 +1766,12 @@ function buildPopupLinkRow(link, category) {
   }
   
   const downloadHTML = category !== 'links' 
-    ? `<a class="download" href="${href}" title="Download"><i class="fas fa-file-download"></i></a>` 
+    ? `<a class="download" href="${escapeAttr(href)}" title="Download"><i class="fas fa-file-download"></i></a>` 
+    : ''
+
+  // Downloadable rows get a checkbox for the popup's Download Selected button
+  const selectHTML = category !== 'links'
+    ? `<div class="select"><input type="checkbox"></div>`
     : ''
   
   // Determine the icon to display
@@ -1776,14 +1786,15 @@ function buildPopupLinkRow(link, category) {
   
   return `
     <div class="view-row">
+      ${selectHTML}
       <div class="type">
         ${iconHTML}
       </div>
       <div class="link">
-        <p>${href}</p>
+        <p>${escapeHtml(href)}</p>
       </div>
       <div class="tools">
-        <a class="goto" target="_blank" href="${href}" title="Open"><i class="fas fa-external-link-alt"></i></a>
+        <a class="goto" target="_blank" href="${escapeAttr(href)}" title="Open"><i class="fas fa-external-link-alt"></i></a>
         ${testIconsHTML}
         ${downloadHTML}
         <div class="info">
@@ -1816,18 +1827,18 @@ function buildPopupMediaRow(file) {
   const instancesHTML = formatInstances(file.instances, i => i.alt || i.title)
   
   const imageHTML = isImage 
-    ? `<img src="${file.src}" alt="${altText}" title="${altText}">` 
+    ? `<img src="${escapeAttr(file.src)}" alt="${escapeAttr(altText)}" title="${escapeAttr(altText)}">` 
     : getFAIcon(file.src).icon
   
   return `
     <div class="view-row">
       <div class="image">${imageHTML}</div>
       <div class="link">
-        <p>${file.src}</p>
+        <p>${escapeHtml(file.src)}</p>
       </div>
       <div class="tools">
-        <a class="goto" target="_blank" href="${file.src}" title="Open"><i class="fas fa-external-link-alt"></i></a>
-        <a class="download" href="${file.src}" title="Download"><i class="fas fa-file-download"></i></a>
+        <a class="goto" target="_blank" href="${escapeAttr(file.src)}" title="Open"><i class="fas fa-external-link-alt"></i></a>
+        <a class="download" href="${escapeAttr(file.src)}" title="Download"><i class="fas fa-file-download"></i></a>
         <div class="info">
           <div class="hover-popup-icon">
             <span class="fa-stack fa-1x">
@@ -1884,9 +1895,9 @@ function setupPopup(url) {
   const crawlMethodLabel = page.crawlMethod === 'live' ? 'Live Crawl' : 'Fetch Crawl'
   
   popup.querySelector(".card-title").innerHTML = `
-    <h2>${page.title}</h2>
-    <h3>${url}<br><br></h3>
-    <p>${page.description}</p>
+    <h2>${escapeHtml(page.title)}</h2>
+    <h3>${escapeHtml(url)}<br><br></h3>
+    <p>${escapeHtml(page.description)}</p>
     <p style="margin-top: 10px; font-size: 0.9em; opacity: 0.8;">
       ${crawlMethodIcon} ${crawlMethodLabel}
     </p>
@@ -1918,6 +1929,7 @@ function setupPopup(url) {
     const content = html[section] || '<div class="empty-row">There are no items here.</div>'
     popup.querySelector(`#popup-view-${section} .view-items`).innerHTML = content
   })
+  popup.querySelectorAll(".multi-wrapper.active").forEach(wrapper => wrapper.classList.remove("active"))
 
   updateAll()
 }
@@ -1940,9 +1952,9 @@ function updateAssets() {
     let linkTagsText = ''
     let instancesText = '<strong>Instances:</strong>(' + link.instances.length + ')<ul>'
     if (link.tags.isLocal)
-      linkTagsText += "Original URL: <strong>" + link._link + '</strong><br>'
+      linkTagsText += "Original URL: <strong>" + escapeHtml(link._link) + '</strong><br>'
 
-    Object.keys(link.tags).forEach(i => linkTagsText += i != "isLocal" ? "" + i + ": <strong>" + link.tags[i] + "</strong><br>" : '')
+    Object.keys(link.tags).forEach(i => linkTagsText += i != "isLocal" ? "" + i + ": <strong>" + escapeHtml(link.tags[i]) + "</strong><br>" : '')
     if (linkTagsText.length > 0)
       linkTagsText = linkTagsText.substr(0, linkTagsText.length - 4) + '<hr>'
 
@@ -1959,12 +1971,12 @@ function updateAssets() {
       getFAIcon(link.link).icon +
       `</div>
           <div class="link">
-            <p>` + link.link + `</p>
+            <p>` + escapeHtml(link.link) + `</p>
           </div>
           <div class="tools">
-            <a class="download" href="`+ link.link + `" title="Download Page"><i class="fas fa-file-download"></i></a>`
+            <a class="download" href="`+ escapeHtml(link.link) + `" title="Download Page"><i class="fas fa-file-download"></i></a>`
     if (!link.isCrawled && (isUrlScript(link.link) || isUrlStyleSheet(link.link)))
-      html += '<a class="crawl" target="_blank" href="' + link.link + '" title="Crawl page"><i class="fas fa-sitemap"></i></a>'
+      html += '<a class="crawl" target="_blank" href="' + escapeHtml(link.link) + '" title="Crawl page"><i class="fas fa-sitemap"></i></a>'
     html +=
       `<div class="info">
             <div class="hover-popup-icon">
@@ -2010,8 +2022,8 @@ function updateLinks() {
     let instancesText = '<strong>Instances:</strong>(' + link.instances.length + ')<ul>'
 
     if (link.tags.isLocal)
-      linkTagsText += "Original URL: <strong>" + link._href + '</strong><br>'
-    Object.keys(link.tags).forEach(i => linkTagsText += "" + i + ": <strong>" + link.tags[i] + "</strong><br>")
+      linkTagsText += "Original URL: <strong>" + escapeHtml(link._href) + '</strong><br>'
+    Object.keys(link.tags).forEach(i => linkTagsText += "" + i + ": <strong>" + escapeHtml(link.tags[i]) + "</strong><br>")
     if (linkTagsText.length > 0)
       linkTagsText = linkTagsText.substr(0, linkTagsText.length - 4) + '<hr>'
 
@@ -2056,20 +2068,20 @@ function updateLinks() {
     
     html += `</div>
             <div class="link">`+
-      '<p>' + link.href + '</p>' +
+      '<p>' + escapeHtml(link.href) + '</p>' +
       `</div>
         <div class="tools">`
     if (!link.isBroken)
-      html += '<a class="goto" target="_blank" href="' + link.href + '" title="Open link"><i class="fas fa-external-link-alt"></i></a>'
+      html += '<a class="goto" target="_blank" href="' + escapeHtml(link.href) + '" title="Open link"><i class="fas fa-external-link-alt"></i></a>'
     if (!isUrlProtocol(link.href) && !isUrlAnchor(link.href) && !link.isBroken) {
       if (!link.test || link.test === null)
-        html += '<a class="test" target="_blank" href="' + link.href + '" title="Test the link"><i class="fas fa-question-circle"></i></a>'
+        html += '<a class="test" target="_blank" href="' + escapeHtml(link.href) + '" title="Test the link"><i class="fas fa-question-circle"></i></a>'
       else if (link.test === "success")
-        html += '<a class="success" target="_blank" href="' + link.href + '" title="Link is valid"><i class="fas fa-check-circle"></i></a>'
+        html += '<a class="success" target="_blank" href="' + escapeHtml(link.href) + '" title="Link is valid"><i class="fas fa-check-circle"></i></a>'
       else if (link.test === "warning")
-        html += '<a class="warning" target="_blank" href="' + link.href + '" title="Returned a status code of ' + link.statusCode + '"><i class="fas fa-exclamation-circle"></i></a>'
+        html += '<a class="warning" target="_blank" href="' + escapeHtml(link.href) + '" title="Returned a status code of ' + escapeHtml(link.statusCode) + '"><i class="fas fa-exclamation-circle"></i></a>'
       else if (link.test === "failed")
-        html += '<a class="error" target="_blank" href="' + link.href + '" title="Test the link"><i class="fas fa-exclamation-circle"></i></a>'
+        html += '<a class="error" target="_blank" href="' + escapeHtml(link.href) + '" title="Test the link"><i class="fas fa-exclamation-circle"></i></a>'
     }
     html += `<div class="info">
           <div class="hover-popup-icon">
@@ -2116,8 +2128,8 @@ function updateFiles() {
     let instancesText = '<strong>Instances:</strong>(' + link.instances.length + ')<ul>'
 
     if (link.tags.isLocal)
-      linkTagsText += "Original URL: <strong>" + link._href + '</strong><br>'
-    Object.keys(link.tags).forEach(i => linkTagsText += "" + i + ": <strong>" + link.tags[i] + "</strong><br>")
+      linkTagsText += "Original URL: <strong>" + escapeHtml(link._href) + '</strong><br>'
+    Object.keys(link.tags).forEach(i => linkTagsText += "" + i + ": <strong>" + escapeHtml(link.tags[i]) + "</strong><br>")
     if (linkTagsText.length > 0)
       linkTagsText = linkTagsText.substr(0, linkTagsText.length - 4) + '<hr>'
 
@@ -2134,11 +2146,11 @@ function updateFiles() {
       getFAIcon(link.href).icon +
       `</div>
             <div class="link">`+
-      '<p>' + link.href + '</p>' +
+      '<p>' + escapeHtml(link.href) + '</p>' +
       `</div>
         <div class="tools">
-          <a class="download" href="`+ link.href + `" title="Download File"><i class="fas fa-file-download"></i></a>
-          <a class="goto" target="_blank" href="`+ link.href + `" title="Go to link"><i class="fas fa-external-link-alt"></i></a>
+          <a class="download" href="`+ escapeHtml(link.href) + `" title="Download File"><i class="fas fa-file-download"></i></a>
+          <a class="goto" target="_blank" href="`+ escapeHtml(link.href) + `" title="Go to link"><i class="fas fa-external-link-alt"></i></a>
           <div class="info"><div class="hover-popup-icon">
           <span class="fa-stack fa-1x">
           <i class="fas fa-square fa-stack-2x"></i>
@@ -2187,8 +2199,8 @@ function updateMedia() {
     let instancesText = '<strong>Instances:</strong>(' + file.instances.length + ')<ul>'
 
     if (file._src)
-      imageTagsText += "Original URL: <strong>" + file._src + '</strong><br>'
-    Object.keys(file.tags).forEach(i => imageTagsText += "" + i + ": <strong>" + file.tags[i] + "</strong><br>")
+      imageTagsText += "Original URL: <strong>" + escapeHtml(file._src) + '</strong><br>'
+    Object.keys(file.tags).forEach(i => imageTagsText += "" + i + ": <strong>" + escapeHtml(file.tags[i]) + "</strong><br>")
     if (imageTagsText.length > 0)
       imageTagsText = imageTagsText.substr(0, imageTagsText.length - 4) + '<hr>'
 
@@ -2203,21 +2215,21 @@ function updateMedia() {
           <div class="image">`
     if (isImage) {
       const altText = file.instances && file.instances[0] && file.instances[0].alt ? file.instances[0].alt : ''
-      html += '<img class="expand-image" src="' + file.src + '" alt="' + altText + '" title="' + altText + '">'
+      html += '<img class="expand-image" src="' + escapeHtml(file.src) + '" alt="' + escapeHtml(altText) + '" title="' + escapeHtml(altText) + '">'
     } else if (isVideo) {
-      html += '<video controls style="max-width: 100%; max-height: 100px;"><source src="' + file.src + '"></video>'
+      html += '<video controls style="max-width: 100%; max-height: 100px;"><source src="' + escapeHtml(file.src) + '"></video>'
     } else if (isAudio) {
-      html += '<audio controls style="width: 100%;"><source src="' + file.src + '"></audio>'
+      html += '<audio controls style="width: 100%;"><source src="' + escapeHtml(file.src) + '"></audio>'
     } else {
       html += getFAIcon(file.src).icon
     }
     html += `</div>
           <div class="link">`+
-      '<p>' + file.src + '</p>' +
+      '<p>' + escapeHtml(file.src) + '</p>' +
       `</div>
        <div class="tools">
-         <a class="goto" target="_blank" href="` + file.src + `" title="Open Media"><i class="fas fa-external-link-alt"></i></a>
-         <a class="download" href="`+ file.src + `" title="Download Media"><i class="fas fa-file-download"></i></a>
+         <a class="goto" target="_blank" href="` + escapeHtml(file.src) + `" title="Open Media"><i class="fas fa-external-link-alt"></i></a>
+         <a class="download" href="`+ escapeHtml(file.src) + `" title="Download Media"><i class="fas fa-file-download"></i></a>
          <div class="info">
          <div class="hover-popup-icon">
             <span class="fa-stack fa-1x">
@@ -2245,18 +2257,6 @@ function updateMedia() {
   applySearchFilter('#media')
 
 }
-
-const escapeHtml = (value) => {
-  if (value === null || value === undefined) return ''
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
-
-const escapeAttr = (value) => escapeHtml(value)
 
 /**
  * Updates the Issues view with current data
@@ -2349,7 +2349,7 @@ function updateIssues() {
     const groupType = escapeHtml(group.type)
 
     html += `
-      <div class="view-row issue-group severity-${group.severity}" data-category="${group.category}">
+      <div class="view-row issue-group severity-${group.severity}" data-category="${escapeAttr(group.category)}">
         <div class="severity ${group.severity}">
           <i class="fas ${severityIcon}"></i>
         </div>
@@ -2383,7 +2383,7 @@ function updateIssues() {
       const canFindOnPage = fragmentText.length > 0
 
       html += `
-        <div class="view-row issue-child severity-${issue.severity}" data-category="${issue.category}">
+        <div class="view-row issue-child severity-${issue.severity}" data-category="${escapeAttr(issue.category)}">
           <div class="severity ${issue.severity}">
             <i class="fas ${issueSeverityIcon}"></i>
           </div>
@@ -2397,11 +2397,11 @@ function updateIssues() {
             <span class="page-link" title="${safeLocation}">${safeDisplayUrl}</span>
           </div>
           <div class="tools">
-            <a class="goto" href="${issue.location}" target="_blank" title="Open page">
+            <a class="goto" href="${escapeAttr(issue.location)}" target="_blank" title="Open page">
               <i class="fas fa-external-link-alt"></i>
             </a>
             ${canFindOnPage
-              ? `<a class="find-on-page" href="${findOnPageUrl}" target="_blank" title="Find on page">
+              ? `<a class="find-on-page" href="${escapeAttr(findOnPageUrl)}" target="_blank" title="Find on page">
                   <i class="fas fa-search"></i>
                 </a>`
               : ''}
@@ -2447,16 +2447,16 @@ const formatInstances = (instances, getTextFn) => {
     
     // Add count suffix if multiple instances on same page
     const countSuffix = count > 1 ? ` (${count})` : ''
-    instancesText += '<li><a href="' + fragmentUrl + '" target="_blank">' + url + countSuffix + '</a><ul>'
+    instancesText += '<li><a href="' + escapeHtml(fragmentUrl) + '" target="_blank">' + escapeHtml(url) + countSuffix + '</a><ul>'
     
     // Show details from first instance
     if (firstInstance.title)
-      instancesText += '<li>Title: <strong>' + firstInstance.title + '</strong></li>'
+      instancesText += '<li>Title: <strong>' + escapeHtml(firstInstance.title) + '</strong></li>'
     if (firstInstance.text)
-      instancesText += '<li>Text: <strong>' + firstInstance.text + '</strong></li>'
+      instancesText += '<li>Text: <strong>' + escapeHtml(firstInstance.text) + '</strong></li>'
     if (firstInstance.alt)
-      instancesText += '<li>Alt: <strong>' + firstInstance.alt + '</strong></li>'
-    Object.keys(firstInstance.tags).forEach(i1 => instancesText += firstInstance.tags[i1] ? "<li>" + i1 + ": <strong>" + firstInstance.tags[i1] + "</strong></li>" : '')
+      instancesText += '<li>Alt: <strong>' + escapeHtml(firstInstance.alt) + '</strong></li>'
+    Object.keys(firstInstance.tags).forEach(i1 => instancesText += firstInstance.tags[i1] ? "<li>" + i1 + ": <strong>" + escapeHtml(firstInstance.tags[i1]) + "</strong></li>" : '')
     
     instancesText += '</ul></li>'
   })
@@ -2594,7 +2594,7 @@ function buildPopupIssuesHtml(issues, pageUrl) {
     const groupType = escapeHtml(group.type)
 
     html += `
-      <div class="view-row issue-group severity-${group.severity}" data-category="${group.category}">
+      <div class="view-row issue-group severity-${group.severity}" data-category="${escapeAttr(group.category)}">
         <div class="severity ${group.severity}">
           <i class="fas ${severityIcon}"></i>
         </div>
@@ -2621,7 +2621,7 @@ function buildPopupIssuesHtml(issues, pageUrl) {
       const canFindOnPage = fragmentText.length > 0
 
       html += `
-        <div class="view-row issue-child severity-${issue.severity}" data-category="${issue.category}">
+        <div class="view-row issue-child severity-${issue.severity}" data-category="${escapeAttr(issue.category)}">
           <div class="severity ${issue.severity}">
             <i class="fas ${issueSeverityIcon}"></i>
           </div>
@@ -2632,11 +2632,11 @@ function buildPopupIssuesHtml(issues, pageUrl) {
             <p>${safeContext || '<em>No additional details</em>'}</p>
           </div>
           <div class="tools">
-            <a class="goto" href="${pageUrl}" target="_blank" title="Open page">
+            <a class="goto" href="${escapeAttr(pageUrl)}" target="_blank" title="Open page">
               <i class="fas fa-external-link-alt"></i>
             </a>
             ${canFindOnPage
-              ? `<a class="find-on-page" href="${findOnPageUrl}" target="_blank" title="Find on page">
+              ? `<a class="find-on-page" href="${escapeAttr(findOnPageUrl)}" target="_blank" title="Find on page">
                   <i class="fas fa-search"></i>
                 </a>`
               : ''}

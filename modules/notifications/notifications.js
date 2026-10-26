@@ -61,12 +61,14 @@ function showNotification(message, type = 'info', duration = 2000, id = null, in
     // Build notification content
     notification.innerHTML = `
       <i class="notification-icon fas ${icons[type] || icons.info}"></i>
-      <span class="notification-message">${message}</span>
+      <span class="notification-message"></span>
       <button class="notification-close" aria-label="Close notification">
         <i class="fas fa-xmark"></i>
       </button>
     `
-    
+    // Messages often contain crawled URLs, so never treat them as HTML
+    notification.querySelector('.notification-message').textContent = message
+
     // Add close button handler
     const closeBtn = notification.querySelector('.notification-close')
     closeBtn.addEventListener('click', (e) => {
@@ -106,7 +108,7 @@ function showNotification(message, type = 'info', duration = 2000, id = null, in
  * @param {boolean} skipAnimation - Skip the slide-out animation (useful when replacing notifications)
  */
 function dismissNotification(id, skipAnimation = false) {
-  const notification = document.querySelector(`[data-notification-id="${id}"]`)
+  const notification = document.querySelector(`[data-notification-id="${CSS.escape(id)}"]`)
   if (notification && notification.parentElement) {
     if (skipAnimation) {
       // Remove immediately without animation
@@ -184,10 +186,11 @@ function dismissAllNotifications() {
  * @param {string} type - New type (optional)
  */
 function updateNotification(id, message = null, type = null) {
-  const notification = document.querySelector(`[data-notification-id="${id}"]`)
+  const notification = document.querySelector(`[data-notification-id="${CSS.escape(id)}"]`)
   if (notification) {
     if (message !== null) {
-      notification.textContent = message
+      // Only replace the message, keeping the icon and close button
+      notification.querySelector('.notification-message').textContent = message
     }
     if (type !== null) {
       // Remove old type classes

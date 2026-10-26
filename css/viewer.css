@@ -401,11 +401,11 @@ hr {
 }
 
 #popup-view-files .view-row {
-  grid-template-columns: 100px 4fr 1fr;
+  grid-template-columns: 50px 100px 4fr 1fr;
 }
 
 #popup-view-assets .view-row {
-  grid-template-columns: 80px 1fr 150px;
+  grid-template-columns: 50px 80px 1fr 150px;
 }
 
 #popup-view-media .view-row {
@@ -1771,14 +1771,15 @@ input[type="checkbox"]{
 }
 
 /* Issues View Specific Styles */
+/* minmax(0, 1fr) lets the element column shrink below its content, so long elements truncate instead of pushing tools off-screen */
 #issues .view-title,
 #issues .view-row {
-  grid-template-columns: 40px 1fr 300px 200px 90px;
+  grid-template-columns: 40px minmax(0, 1fr) 300px 200px 90px;
 }
 
 #popup-view-issues .view-title,
 #popup-view-issues .view-row {
-  grid-template-columns: 40px 1fr 300px 90px;
+  grid-template-columns: 40px minmax(0, 1fr) 300px 90px;
 }
 
 #issues .view-row {
@@ -1894,6 +1895,7 @@ input[type="checkbox"]{
 #popup-view-issues .view-row .message p {
   margin: 0;
   font-weight: 500;
+  overflow-wrap: anywhere;
 }
 
 #issues .view-row .element,

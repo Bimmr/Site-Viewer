@@ -27,56 +27,54 @@ function storageGet(key) {
 
 /**
 * Listen to files being downloaded and suggest the name if the file is being downloaded from Site Viewer
+* Registered synchronously so the service worker always has it, the setting is checked per download
 */
-storageGet('manageDownloads').then(manageDownloads => {
-    if (manageDownloads)
-        chrome.downloads.onDeterminingFilename.addListener(function (item, suggest) {
-            //If item download is from this extension
-            if (item.byExtensionId === chrome.runtime.id) {
-                storageGet(item.url).then(url => {
+chrome.downloads.onDeterminingFilename.addListener(function (item, suggest) {
+    //Only handle downloads from this extension
+    if (item.byExtensionId !== chrome.runtime.id)
+        return
 
-                    if (url)
-                        storageSet(item.url, null)
-                    else
-                        url = item.url
+    storageGet('manageDownloads').then(manageDownloads => {
+        //Keep Chrome's default name if managing downloads is turned off
+        if (!manageDownloads)
+            return suggest()
 
-                    //Regex for non word file name
-                    let nonWordRegex = new RegExp(/[^a-z0-9A-Z.]/gi)
+        return storageGet(item.url).then(url => {
 
-                    let urlObject = new URL(url)
-                    console.log(urlObject)
-                    let name = urlObject.pathname
-                    if (name.startsWith("/"))
-                        name = name.substr(1)
-                    name = name.replace("/", "__").replace(nonWordRegex, '_')
+            if (url)
+                storageSet(item.url, null)
+            else
+                url = item.url
 
-                    //If the name is empty, assume you're downloading the home page
-                    if (name === "__" || name === "")
-                        name = "index.html"
+            //Regex for non word file name
+            let nonWordRegex = new RegExp(/[^a-z0-9A-Z.]/gi)
 
-                    //If there is no extension, add .html
-                    if (name.indexOf(".") === -1)
-                        name += ".html"
+            let urlObject = new URL(url)
+            let name = urlObject.pathname
+            if (name.startsWith("/"))
+                name = name.substr(1)
+            name = name.replaceAll("/", "__").replace(nonWordRegex, '_')
 
-                    //Suggest the name of the file
-                    console.log(name)
+            //If the name is empty, assume you're downloading the home page
+            if (name === "__" || name === "")
+                name = "index.html"
 
-                    storageGet('settings').then(settings => {
-                        if (settings && settings.download.directory)
-                            name = settings.download.directory + name
+            //If there is no extension, add .html
+            if (name.indexOf(".") === -1)
+                name += ".html"
 
-                        console.log("Suggesting: " + name)
-                        suggest({ filename: name })
-                    }).catch(error => {
-                        console.error("Failed to get settings for download:", error)
-                        suggest({ filename: name })
-                    })
-                }).catch(error => {
-                    console.error("Failed to get URL for download:", error)
-                })
-                return true;
-            }
+            return storageGet('settings').then(settings => {
+                if (settings && settings.download && settings.download.directory)
+                    name = settings.download.directory + name
+
+                console.log("Suggesting: " + name)
+                suggest({ filename: name })
+            })
         })
-}).catch(error => {
-    console.error("Failed to check manageDownloads setting:", error)
+    }).catch(error => {
+        //Always call suggest, otherwise the download stays pending
+        console.error("Failed to suggest a download name:", error)
+        suggest()
+    })
+    return true
 })

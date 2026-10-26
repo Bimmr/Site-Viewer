@@ -142,7 +142,7 @@ function waitForPageLoad(tabId, waitTime, signal) {
 /**
  * Extract HTML content from a tab
  * @param {number} tabId - Tab ID to extract from
- * @returns {Promise<string>} - HTML content
+ * @returns {Promise<{html: string, finalUrl: string}>} HTML content, and the URL the tab is on after any redirects
  */
 async function extractPageContent(tabId) {
   const tab = await chrome.tabs.get(tabId)
@@ -160,7 +160,7 @@ async function extractPageContent(tabId) {
   if (!results?.[0]?.result)
     throw new Error('No content extracted from page')
 
-  return results[0].result
+  return { html: results[0].result, finalUrl: tab.url }
 }
 
 /**
@@ -184,7 +184,7 @@ async function closeTab(tabId) {
  * @param {boolean} options.isInitialPage - Use the tab the viewer was opened from, it's already loaded
  * @param {number} options.waitTime - Time to let JavaScript run after the page loads (ms)
  * @param {AbortSignal} options.signal - Cancels the crawl
- * @returns {Promise<string>} HTML after JavaScript execution
+ * @returns {Promise<{html: string, finalUrl: string}>} HTML after JavaScript execution, and the URL the tab ended up on
  */
 export async function getLiveHtml(url, { isInitialPage = false, waitTime = 5000, signal } = {}) {
   if (!chrome.tabs || !chrome.scripting)

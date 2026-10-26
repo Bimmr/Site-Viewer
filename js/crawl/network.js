@@ -1,5 +1,5 @@
 import { settings } from '../settings.js'
-import { isUrlHTMLFile } from '../lib/url.js'
+import { isUrlHTMLFile, normalizeUrl } from '../lib/url.js'
 import { getLiveHtml } from './tabs.js'
 
 /**
@@ -130,7 +130,7 @@ async function fetchDirect(url, signal) {
  * Only used when enabled in settings, as it sends the URL to a third party
  * @param {string} url - URL to fetch
  * @param {AbortSignal} signal - Cancels the request
- * @returns {Promise<string>} Response text
+ * @returns {Promise<{text: string, finalUrl: string}>} Response text and the URL it came from after redirects
  */
 async function fetchTextViaProxy(url, signal) {
   const res = await fetch(settings.crawl.corsProxyUrl + encodeURIComponent(url), { signal })
@@ -140,18 +140,19 @@ async function fetchTextViaProxy(url, signal) {
     throw new HttpStatusError(data.status.http_code)
   if (!data.contents)
     throw new Error('No content received from the URL')
-  return data.contents
+  return { text: data.contents, finalUrl: data.status?.url || url }
 }
 
 /**
  * Fetches a URL, falling back to the CORS proxy if enabled and the request couldn't be made at all
  * @param {string} url - URL to fetch
  * @param {AbortSignal} signal - Cancels the request
- * @returns {Promise<string>} Response text
+ * @returns {Promise<{text: string, finalUrl: string}>} Response text and the URL it came from after redirects
  */
 async function fetchText(url, signal) {
   try {
-    return await (await fetchDirect(url, signal)).text()
+    const res = await fetchDirect(url, signal)
+    return { text: await res.text(), finalUrl: res.url || url }
   } catch (error) {
     // The server responded, so the proxy would only get the same status
     if (error.httpStatus || isAbortError(error) || !settings.crawl.useCorsProxy) throw error
@@ -226,7 +227,7 @@ export function shouldUseLiveCrawling(html) {
  * @param {boolean} options.isStatusKnown - The page was already fetched successfully, so skip the status check
  * @param {AbortSignal} options.signal - Cancels the crawl
  * @param {Function} options.onStart - Called when the crawl actually starts
- * @returns {Promise<string>} HTML after JavaScript execution
+ * @returns {Promise<{html: string, finalUrl: string}>} HTML after JavaScript execution, and the URL the tab ended up on
  */
 function fetchLive(url, { isInitialPage = false, isStatusKnown = false, signal, onStart } = {}) {
   return scheduler.run('tab', async () => {
@@ -244,12 +245,13 @@ function fetchLive(url, { isInitialPage = false, isStatusKnown = false, signal, 
  * @param {string} url - URL to fetch
  * @param {AbortSignal} signal - Cancels the request
  * @param {Function} onStart - Called when the request actually starts
- * @returns {Promise<string>} HTML
+ * @returns {Promise<{html: string, finalUrl: string}>} HTML, and the URL it came from after redirects
  */
 function fetchStatic(url, signal, onStart) {
-  return scheduler.run('fetch', () => {
+  return scheduler.run('fetch', async () => {
     onStart?.()
-    return fetchText(url, signal)
+    const { text, finalUrl } = await fetchText(url, signal)
+    return { html: text, finalUrl }
   }, signal)
 }
 
@@ -263,7 +265,8 @@ function fetchStatic(url, signal, onStart) {
  * @param {boolean} options.isInitialPage - Whether this is the page the viewer was opened from
  * @param {AbortSignal} options.signal - Cancels the crawl
  * @param {Function} options.onStart - Called once when the crawl actually starts
- * @returns {Promise<{html: string, method: string}>} HTML and whether it came from a 'live' tab or a 'fetch'
+ * @returns {Promise<{html: string, method: string, finalUrl: string}>} HTML, whether it came from a 'live' tab or a
+ * 'fetch', and the URL it came from after redirects
  */
 export async function fetchPage(url, { isInitialPage = false, signal, onStart } = {}) {
   let started = false
@@ -275,37 +278,37 @@ export async function fetchPage(url, { isInitialPage = false, signal, onStart } 
 
   // Stylesheets and scripts have no JavaScript to run, and a tab would wrap them in its own HTML
   if (!isUrlHTMLFile(url))
-    return { html: await fetchStatic(url, signal, start), method: 'fetch' }
+    return { ...await fetchStatic(url, signal, start), method: 'fetch' }
 
   if (crawlMode === 'live')
-    return { html: await fetchLive(url, { isInitialPage, signal, onStart: start }), method: 'live' }
+    return { ...await fetchLive(url, { isInitialPage, signal, onStart: start }), method: 'live' }
 
   if (crawlMode === 'smart') {
     // The initial page is already loaded in a tab, so read it from there
     if (isInitialPage) {
       try {
-        return { html: await fetchLive(url, { isInitialPage, signal, onStart: start }), method: 'live' }
+        return { ...await fetchLive(url, { isInitialPage, signal, onStart: start }), method: 'live' }
       } catch (error) {
         if (isAbortError(error)) throw error
         console.warn(`Failed to read the initial page from its tab, fetching instead:`, error.message)
       }
     }
 
-    const html = await fetchStatic(url, signal, start)
-    if (!shouldUseLiveCrawling(html))
-      return { html, method: 'fetch' }
+    const fetched = await fetchStatic(url, signal, start)
+    if (!shouldUseLiveCrawling(fetched.html))
+      return { ...fetched, method: 'fetch' }
 
     try {
       // The fetch already succeeded, so skip the status check
-      return { html: await fetchLive(url, { isStatusKnown: true, signal, onStart: start }), method: 'live' }
+      return { ...await fetchLive(url, { isStatusKnown: true, signal, onStart: start }), method: 'live' }
     } catch (error) {
       if (isAbortError(error)) throw error
       console.warn(`Live crawling failed for ${url}, using fetched HTML:`, error.message)
-      return { html, method: 'fetch' }
+      return { ...fetched, method: 'fetch' }
     }
   }
 
-  return { html: await fetchStatic(url, signal, start), method: 'fetch' }
+  return { ...await fetchStatic(url, signal, start), method: 'fetch' }
 }
 
 /**
@@ -315,26 +318,39 @@ export async function fetchPage(url, { isInitialPage = false, signal, onStart } 
  * @returns {Promise<string>} Response text
  */
 export function fetchResourceText(url, signal) {
-  return scheduler.run('fetch', () => fetchText(url, signal), signal)
+  return scheduler.run('fetch', async () => (await fetchText(url, signal)).text, signal)
 }
 
 /**
- * Tests a URL, returning its HTTP status
+ * Tests a URL, returning its HTTP status and where it redirects to
  * @param {string} url - URL to test
- * @returns {Promise<number>} HTTP status code
+ * @returns {Promise<{status: number, finalUrl: string}>} HTTP status code, and the URL after redirects
  */
 export async function testUrl(url) {
   const signal = AbortSignal.timeout(10000)
   try {
-    return (await fetch(url, { signal })).status
+    const res = await fetch(url, { signal })
+    return { status: res.status, finalUrl: res.url || url }
   } catch (error) {
     if (!settings.crawl.useCorsProxy) throw error
     const res = await fetch(settings.crawl.corsProxyUrl + encodeURIComponent(url), { signal })
     if (!res.ok) throw new Error(`Proxy request failed with status ${res.status}`)
     const data = await res.json()
     if (data.error || data.status?.error) throw new Error('Unable to reach URL')
-    return data.status.http_code
+    return { status: data.status.http_code, finalUrl: data.status.url || url }
   }
+}
+
+/**
+ * Gets where a URL redirected to, ignoring trailing slashes and hashes
+ * @param {string} url - URL that was requested
+ * @param {string} finalUrl - URL the response came from
+ * @returns {string|null} The URL redirected to, or null if it didn't redirect
+ */
+export function getRedirectTarget(url, finalUrl) {
+  if (!finalUrl) return null
+  const comparable = value => normalizeUrl(value.split('#')[0])
+  return comparable(finalUrl) !== comparable(url) ? finalUrl : null
 }
 
 /**

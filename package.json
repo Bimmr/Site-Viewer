@@ -6,7 +6,8 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "node tests/e2e/run.js"
+    "test:e2e": "node tests/e2e/run.js",
+    "package": "node scripts/package.js"
   },
   "devDependencies": {
     "jsdom": "^25.0.1",

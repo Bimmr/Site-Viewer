@@ -1,5 +1,43 @@
-import { describe, it, expect } from 'vitest'
-import { RequestScheduler, shouldUseLiveCrawling, isAbortError } from '../../js/crawl/network.js'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { RequestScheduler, shouldUseLiveCrawling, isAbortError, getRedirectTarget, fetchPage } from '../../js/crawl/network.js'
+import { settings } from '../../js/settings.js'
+
+describe('getRedirectTarget', () => {
+  it('ignores trailing slashes and hashes', () => {
+    expect(getRedirectTarget('https://example.com/a', 'https://example.com/a/')).toBeNull()
+    expect(getRedirectTarget('https://example.com/a#top', 'https://example.com/a')).toBeNull()
+    expect(getRedirectTarget('https://example.com/a', undefined)).toBeNull()
+  })
+
+  it('returns where a URL redirected to', () => {
+    expect(getRedirectTarget('https://example.com/old', 'https://example.com/new')).toBe('https://example.com/new')
+    expect(getRedirectTarget('http://example.com/', 'https://example.com/')).toBe('https://example.com/')
+  })
+})
+
+describe('fetchPage', () => {
+  const { crawlMode, rateLimitMs } = settings.crawl
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    Object.assign(settings.crawl, { crawlMode, rateLimitMs })
+  })
+
+  it('reports the URL the page came from after redirects', async () => {
+    Object.assign(settings.crawl, { crawlMode: 'fetch', rateLimitMs: 0 })
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      url: 'https://example.com/new',
+      text: async () => '<title>New</title>'
+    })))
+
+    await expect(fetchPage('https://example.com/old')).resolves.toEqual({
+      html: '<title>New</title>',
+      finalUrl: 'https://example.com/new',
+      method: 'fetch'
+    })
+  })
+})
 
 const deferred = () => {
   let resolve

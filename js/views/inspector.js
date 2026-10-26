@@ -3,7 +3,7 @@ import { getFAIcon, sortLinks } from '../lib/icons.js'
 import { isUrlLocal, isUrlAnchor, isUrlProtocol, isUrlHTMLFile } from '../lib/url.js'
 import { store } from '../state/store.js'
 import { site } from '../state/site.js'
-import { buildTagsHTML, formatInstances, buildInfoHTML, buildTestIconHTML, buildIssuesHTML } from './rows.js'
+import { buildInfoHTML, buildTestIconHTML, buildIssuesHTML } from './rows.js'
 import { buildMediaPreviewHTML } from './lists.js'
 
 /**
@@ -32,9 +32,6 @@ function buildPopupLinkRow(link, category) {
   const isAsset = !!link.link
   const isLocalPage = isUrlLocal(href) && !isUrlAnchor(href)
 
-  const tagsHTML = buildTagsHTML(link, link._href || link._link)
-  const instancesHTML = formatInstances(link.instances, i => i.text || i.alt || i.title)
-
   const testIconHTML = category === 'links' && !isUrlProtocol(href) && !isUrlAnchor(href)
     ? buildTestIconHTML(link, href)
     : ''
@@ -58,7 +55,7 @@ function buildPopupLinkRow(link, category) {
         <a class="goto" target="_blank" href="${escapeAttr(href)}" title="Open"><i class="fas fa-external-link-alt"></i></a>
         ${testIconHTML}
         ${isDownloadable ? `<a class="download" href="${escapeAttr(href)}" title="Download"><i class="fas fa-file-download"></i></a>` : ''}
-        ${buildInfoHTML(tagsHTML + instancesHTML)}
+        ${buildInfoHTML('popup-link')}
       </div>
     </div>
   `
@@ -70,8 +67,6 @@ function buildPopupLinkRow(link, category) {
  * @returns {string} HTML string for view row
  */
 function buildPopupMediaRow(file) {
-  const tagsHTML = buildTagsHTML(file, file._src)
-  const instancesHTML = formatInstances(file.instances, i => i.alt || i.title)
 
   return `
     <div class="view-row" data-url="${escapeAttr(file.src)}">
@@ -82,7 +77,7 @@ function buildPopupMediaRow(file) {
       <div class="tools">
         <a class="goto" target="_blank" href="${escapeAttr(file.src)}" title="Open"><i class="fas fa-external-link-alt"></i></a>
         <a class="download" href="${escapeAttr(file.src)}" title="Download"><i class="fas fa-file-download"></i></a>
-        ${buildInfoHTML(tagsHTML + instancesHTML)}
+        ${buildInfoHTML('popup-media')}
       </div>
     </div>
   `

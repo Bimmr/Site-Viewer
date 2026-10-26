@@ -49,7 +49,7 @@ function mergeInto(collection, items, getKey, onAdded = () => { }, onExisting = 
 }
 
 // Flags describing the result of the last crawl attempt
-const CRAWL_RESULT_FLAGS = ['isError', 'isWarning', 'statusCode', 'errorMessage']
+const CRAWL_RESULT_FLAGS = ['isError', 'isWarning', 'statusCode', 'errorMessage', 'redirectsTo']
 
 const linkKey = link => normalizeUrl(link.href)
 
@@ -239,6 +239,8 @@ class CrawlStore {
     if (!item) return
     item.isCrawled = true
     item.isCrawling = true
+    // A retry replaces the last attempt's result
+    CRAWL_RESULT_FLAGS.forEach(flag => delete item[flag])
     this.changed(item.link ? 'assets' : 'links')
   }
 
@@ -285,6 +287,21 @@ class CrawlStore {
   }
 
   /**
+   * Records that a page redirects, its content belongs to the page it redirects to
+   * @param {string} url - URL that was crawled
+   * @param {string} target - URL it redirected to
+   */
+  markRedirect(url, target) {
+    const link = this.getLink(url)
+    if (!link) return
+    link.isCrawled = true
+    delete link.isCrawling
+    CRAWL_RESULT_FLAGS.forEach(flag => delete link[flag])
+    link.redirectsTo = target
+    this.changed('links')
+  }
+
+  /**
    * Records that crawling a URL failed
    * @param {string} url - URL that failed
    * @param {Error} error - The failure, with httpStatus if the server responded with an error status
@@ -321,12 +338,15 @@ class CrawlStore {
    * @param {string} url - Link URL
    * @param {string} result - 'success' | 'warning' | 'failed'
    * @param {number} statusCode - HTTP status, for warnings
+   * @param {string} redirectsTo - URL it redirected to, if it did
    */
-  setLinkTest(url, result, statusCode) {
+  setLinkTest(url, result, statusCode, redirectsTo) {
     const link = this.getLink(url)
     if (!link) return
     link.test = result
     if (statusCode) link.statusCode = statusCode
+    if (redirectsTo) link.redirectsTo = redirectsTo
+    else delete link.redirectsTo
     this.changed('links')
   }
 

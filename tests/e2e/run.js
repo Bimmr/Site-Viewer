@@ -27,6 +27,7 @@ const routes = {
     <img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" data-src="/img/lazy.jpg" alt="Lazy">
     <video src="/media/intro.mp4"></video>
     <div class="hero">Hero</div>
+    <a href="/old-news">Old news</a>
     <a href="/about">About</a>
     <a href="/blog/">Blog</a>
     <a href="/missing">Missing</a>
@@ -54,6 +55,9 @@ const routes = {
     <script>document.getElementById('root').innerHTML = '<h1>App</h1><a href="/app/rendered">Rendered by JavaScript</a>'</script>
     </body></html>`,
   '/app/rendered': () => page('Rendered', ''),
+  // Only reachable through the redirect
+  '/old-news': () => ({ redirect: '/news' }),
+  '/news': () => page('News', ''),
   '/robots.txt': () => `User-agent: *\nDisallow: /private/\nSitemap: ${origin}/sitemap.xml\n`,
   '/sitemap.xml': () => `<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url><loc>${origin}/</loc></url><url><loc>${origin}/orphan</loc></url></urlset>`
@@ -69,10 +73,15 @@ const server = http.createServer((req, res) => {
     res.writeHead(404, { 'Content-Type': 'text/html' })
     return res.end(page('Not found', ''))
   }
+  const body = route()
+  if (body?.redirect) {
+    res.writeHead(301, { Location: body.redirect })
+    return res.end()
+  }
   const types = { txt: 'text/plain', xml: 'application/xml', css: 'text/css', woff2: 'font/woff2', mp4: 'video/mp4' }
   const type = pathname.startsWith('/img/') ? 'image/png' : types[pathname.split('.').pop()] || 'text/html'
   res.writeHead(200, { 'Content-Type': type })
-  res.end(req.method === 'HEAD' ? undefined : route())
+  res.end(req.method === 'HEAD' ? undefined : body)
 })
 
 // === Helpers ===
@@ -88,7 +97,8 @@ function check(name, condition, details = '') {
  * @returns {Promise<Array<{url: string, status: string, title: string}>>}
  */
 const getPageRows = viewer => viewer.$$eval('#pages .view-row[data-url]', rows => rows.map(row => {
-  const status = row.querySelector('.inspect') ? 'crawled'
+  const status = row.querySelector('.redirect') ? 'redirect'
+    : row.querySelector('.inspect') ? 'crawled'
     : row.querySelector('.crawling') ? 'crawling'
     : row.querySelector('.warning') ? 'warning'
     : row.querySelector('.error') ? 'error'
@@ -128,7 +138,28 @@ async function showView(viewer, viewId) {
 }
 
 /**
- * Records errors and accepts confirm dialogs on a viewer page
+ * Closes the inspector and waits for it to fade out, so it doesn't catch the next click
+ * @param {Page} viewer - Viewer page
+ */
+async function closeInspector(viewer) {
+  await viewer.click('#inspecter .popup-close i')
+  await viewer.waitForFunction(() => !document.querySelector('#inspecter.active'))
+  await new Promise(resolve => setTimeout(resolve, 600))
+}
+
+/**
+ * Answers the viewer's confirmation dialog
+ * @param {Page} viewer - Viewer page
+ * @param {string} answer - 'confirm' or 'cancel'
+ */
+async function answerDialog(viewer, answer) {
+  await viewer.waitForSelector('dialog.app-dialog[open]', { timeout: 5000 })
+  await viewer.click(`dialog.app-dialog .dialog-${answer}`)
+  await viewer.waitForFunction(() => !document.querySelector('dialog.app-dialog'), { timeout: 5000 })
+}
+
+/**
+ * Records errors on a viewer page
  * @param {Page} viewer - Viewer page
  * @returns {string[]} Errors, filled in as they happen
  */
@@ -139,7 +170,6 @@ function watchViewer(viewer) {
     // Chrome logs every failed request, like the test site's intentional 404, which aren't errors in the viewer
     if (message.type() === 'error' && !message.text().startsWith('Failed to load resource')) errors.push(message.text())
   })
-  viewer.on('dialog', dialog => dialog.accept())
   return errors
 }
 
@@ -185,7 +215,6 @@ async function openViewer(browser, extensionId, settings) {
     // Chrome logs every failed request, like the test site's intentional 404, which aren't errors in the viewer
     if (message.type() === 'error' && !message.text().startsWith('Failed to load resource')) errors.push(message.text())
   })
-  viewer.on('dialog', dialog => dialog.accept())
 
   // Settings are read when the viewer starts, so store them first
   await viewer.goto(`chrome-extension://${extensionId}/setup/options.html`)
@@ -256,6 +285,8 @@ try {
   check('a 404 is a warning', statusOf('/missing') === 'warning', `missing=${statusOf('/missing')}`)
   const secret = rows.find(row => row.url === origin + '/private/secret')
   check('robots.txt blocked pages are skipped with a reason', secret?.status === 'uncrawled' && secret.title.includes('robots.txt'), JSON.stringify(secret))
+  check('redirecting pages are shown as redirects', statusOf('/old-news') === 'redirect', `old-news=${statusOf('/old-news')}`)
+  check('the page a redirect leads to is crawled', statusOf('/news') === 'crawled', `news=${statusOf('/news')}`)
 
   const summary = await viewer.$$eval('.toast-notification', toasts => toasts.map(toast => toast.textContent.trim()).join(' | '))
   check('a summary is shown when Crawl All finishes', /Crawl finished: \d+ pages crawled/.test(summary), summary)
@@ -284,12 +315,79 @@ try {
   await viewer.evaluate(() => document.querySelector('#links .view-row')?.scrollIntoView())
   check('selecting a page shows the actions', await viewer.$eval('#pages .multi-wrapper', element => element.classList.contains('active')))
 
+  // Info popups are filled in on first hover
+  const aboutInfo = `#pages .view-row[data-url="${origin}/about"] .hover-popup-icon`
+  check('info popups start empty', await viewer.$$eval('#pages .hover-popup', popups => popups.every(popup => popup.innerHTML === '')))
+  await viewer.hover(aboutInfo)
+  const aboutInfoText = await viewer.$eval(`${aboutInfo} .hover-popup`, popup => popup.textContent)
+  check('info popups are filled in on hover', aboutInfoText.includes('Instances') && aboutInfoText.includes(origin + '/'), aboutInfoText.substring(0, 200))
+  await viewer.hover(`#pages .view-row[data-url="${origin}/old-news"] .hover-popup-icon`)
+  const redirectInfoText = await viewer.$eval(`#pages .view-row[data-url="${origin}/old-news"] .hover-popup`, popup => popup.textContent)
+  check('redirect info shows where it leads', redirectInfoText.includes(`Redirects to: ${origin}/news`), redirectInfoText.substring(0, 200))
+
   // Inspector
   await viewer.click(`#pages .view-row[data-url="${origin}/about"] .inspect`)
   await viewer.waitForSelector('#inspecter.active')
   const inspectorText = await viewer.$eval('#inspecter .card-title', element => element.textContent)
   check('inspector opens for a crawled page', inspectorText.includes('About'), inspectorText)
-  await viewer.click('#inspecter .popup-close i')
+
+  // Cancelling the delete dialog with Escape keeps the page
+  await viewer.click('#inspecter .popup-delete')
+  await viewer.waitForSelector('dialog.app-dialog[open]')
+  await viewer.keyboard.press('Escape')
+  await viewer.waitForFunction(() => !document.querySelector('dialog.app-dialog'), { timeout: 5000 })
+  await new Promise(resolve => setTimeout(resolve, 400))
+  check('Escape cancels the delete dialog', (await getPageRows(viewer)).find(row => row.url === origin + '/about')?.status === 'crawled')
+  await closeInspector(viewer)
+
+  // Clicking a redirect inspects the page it leads to
+  await viewer.click(`#pages .view-row[data-url="${origin}/old-news"] .redirect`)
+  await viewer.waitForSelector('#inspecter.active')
+  const redirectInspectorText = await viewer.$eval('#inspecter .card-title', element => element.textContent)
+  check('clicking a redirect inspects where it leads', redirectInspectorText.includes(origin + '/news'), redirectInspectorText)
+  await closeInspector(viewer)
+
+  // is: filters use the tags of where items were found
+  /**
+   * Searches a view and returns the visible rows' URLs
+   * @param {string} viewId - View to search
+   * @param {string} search - Search text
+   */
+  const searchView = async (viewId, search) => {
+    await showView(viewer, viewId)
+    await viewer.click(`#${viewId} .filter-icon`)
+    await viewer.type(`#${viewId} .searchbar input`, search)
+    await new Promise(resolve => setTimeout(resolve, 400))
+    const visible = await viewer.$$eval(`#${viewId} .view-row[data-url]:not(.hidden)`, rows => rows.map(row => row.dataset.url))
+    // The open search bar can cover the filter icon, so close it with its own button
+    await viewer.click(`#${viewId} .searchbar-close`)
+    await new Promise(resolve => setTimeout(resolve, 600))
+    return visible.map(url => url.replace(origin, ''))
+  }
+  const srcsetMedia = await searchView('media', 'is:srcset')
+  check('is:srcset shows srcset images', srcsetMedia.includes('/img/photo-2x.jpg') && !srcsetMedia.includes('/img/favicon.png'), JSON.stringify(srcsetMedia))
+  const iconMedia = await searchView('media', 'is:icon')
+  check('is:icon shows icons', JSON.stringify(iconMedia) === JSON.stringify(['/img/favicon.png']), JSON.stringify(iconMedia))
+  const notImages = await searchView('media', '!is:image')
+  check('!is:image shows video', JSON.stringify(notImages) === JSON.stringify(['/media/intro.mp4']), JSON.stringify(notImages))
+  const fonts = await searchView('assets', 'is:font')
+  check('is:font shows fonts', fonts.length === 2 && fonts.every(url => url.startsWith('/fonts/')), JSON.stringify(fonts))
+  const redirects = await searchView('pages', 'is:redirect')
+  check('is:redirect shows redirecting pages', JSON.stringify(redirects) === JSON.stringify(['/old-news']), JSON.stringify(redirects))
+
+  // Escape closes the search and clears the filter
+  await showView(viewer, 'media')
+  await viewer.click('#media .filter-icon')
+  await viewer.type('#media .searchbar input', 'is:video')
+  await new Promise(resolve => setTimeout(resolve, 400))
+  await viewer.keyboard.press('Escape')
+  await new Promise(resolve => setTimeout(resolve, 600))
+  const afterEscape = await viewer.$eval('#media', view => ({
+    open: view.querySelector('.searchbar').classList.contains('active'),
+    hidden: view.querySelectorAll('.view-row.hidden').length
+  }))
+  check('Escape closes the search and clears the filter', !afterEscape.open && afterEscape.hidden === 0, JSON.stringify(afterEscape))
+  await showView(viewer, 'pages')
 
   // Search filter
   await viewer.click('#pages .filter-icon')
@@ -329,6 +427,7 @@ try {
   // Recrawl
   await showView(viewer, 'settings')
   await viewer.click('#recrawlBtn')
+  await answerDialog(viewer, 'confirm')
   await viewer.waitForFunction(url => document.querySelector(`#pages .view-row[data-url="${url}"] .inspect`), { timeout: 30000 }, origin + '/')
   await new Promise(resolve => setTimeout(resolve, 600))
   rows = await getPageRows(viewer)

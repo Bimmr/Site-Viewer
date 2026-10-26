@@ -91,21 +91,46 @@ export function formatInstances(instances, getTextFn) {
 }
 
 /**
- * Builds the info icon with its hover popup
- * @param {string} contentHTML - HTML shown in the popup
+ * Builds the info icon with an empty hover popup, filled in on first hover by fillInfoPopup (views/info.js)
+ * Building every popup up front was most of the page's size on large sites
+ * @param {string} kind - Which builder fills it: 'page', 'asset', 'link', 'file', 'media', 'popup-link' or 'popup-media'
  * @returns {string} HTML string
  */
-export function buildInfoHTML(contentHTML) {
+export function buildInfoHTML(kind) {
   return `
     <div class="info">
-      <div class="hover-popup-icon">
+      <div class="hover-popup-icon" data-info-kind="${kind}">
         <span class="fa-stack fa-1x">
           <i class="fas fa-square fa-stack-2x"></i>
           <i class="fas fa-info fa-stack-1x fa-inverse"></i>
         </span>
-        <div class="hover-popup">${contentHTML}</div>
+        <div class="hover-popup"></div>
       </div>
     </div>`
+}
+
+/**
+ * Lists a row's tags for search filters like is:srcset or is:font
+ * Tags come from the item and everywhere it was found, e.g. isSrcset -> "srcset", isInSitemap -> "sitemap",
+ * tag: 'iframe' -> "iframe"
+ * @param {Object} item - Link, asset or media object
+ * @param {string[]} extra - Additional tags, e.g. the media kind
+ * @returns {string} Space separated tags
+ */
+export function buildRowTags(item, extra = []) {
+  const names = new Set(extra)
+  const add = tags => Object.entries(tags || {}).forEach(([key, value]) => {
+    if (key === 'tag') names.add(String(value).toLowerCase())
+    else if (value === true) names.add(key.replace(/^is(In(?=[A-Z]))?/, '').toLowerCase())
+  })
+  add(item.tags)
+  item.instances?.forEach(instance => add(instance.tags))
+
+  if (item.isDuplicate) names.add('duplicate')
+  if (item.redirectsTo) names.add('redirect')
+  if (item.skipReason) names.add('skipped')
+
+  return Array.from(names).join(' ')
 }
 
 /**
@@ -120,7 +145,7 @@ export function buildTestIconHTML(link, href) {
   }
 
   const testIcons = {
-    success: { class: 'success', icon: 'check-circle', title: 'Link is valid' },
+    success: { class: 'success', icon: 'check-circle', title: link.redirectsTo ? `Link is valid, redirects to ${link.redirectsTo}` : 'Link is valid' },
     warning: { class: 'warning', icon: 'exclamation-circle', title: `Returned a status code of ${link.statusCode}\nClick to retry` },
     failed: { class: 'error', icon: 'times-circle', title: "Link doesn't exist or took too long to respond\nClick to retry" }
   }

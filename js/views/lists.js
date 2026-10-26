@@ -2,7 +2,7 @@ import { escapeHtml, escapeAttr } from '../lib/html.js'
 import { getFAIcon } from '../lib/icons.js'
 import { isUrlAnchor, isUrlProtocol, getUrlProtocol, isUrlImage, isUrlVideo, isUrlAudio, isUrlScript, isUrlStyleSheet } from '../lib/url.js'
 import { store } from '../state/store.js'
-import { buildTagsHTML, formatInstances, buildInfoHTML, buildTestIconHTML, renderRows } from './rows.js'
+import { buildInfoHTML, buildRowTags, buildTestIconHTML, renderRows } from './rows.js'
 
 // Explanations for pages Crawl All didn't crawl
 const skipReasonText = {
@@ -103,6 +103,10 @@ function buildPageStatusHTML(link) {
     return `<a class="error crawl" target="_blank" href="${href}" title="${escapeAttr(link.errorMessage || "Page doesn't exist or took too long to respond")}\nClick to retry"><i class="fas fa-times-circle"></i></a>`
   if (link.isWarning)
     return `<a class="warning crawl" target="_blank" href="${href}" title="Returned a status code of ${escapeAttr(link.statusCode)}\nClick to retry"><i class="fas fa-exclamation-circle"></i></a>`
+  if (link.redirectsTo) {
+    const canInspect = !!store.getPage(link.redirectsTo)
+    return `<a class="redirect" href="${escapeAttr(link.redirectsTo)}" title="${escapeAttr(`Redirects to ${link.redirectsTo}${canInspect ? '\nClick to inspect it' : ''}`)}"><i class="fas fa-share"></i></a>`
+  }
   if (link.isDuplicate)
     return `<a class="info duplicate" title="Duplicate of ${escapeAttr(link.duplicateOf)}"><i class="fas fa-info-circle"></i></a>`
   if (link.isCrawled)
@@ -123,16 +127,8 @@ export function renderPages() {
     const indentLevel = getIndentLevel(link)
     const indentStyle = indentLevel > 0 ? `style="padding-left: ${indentLevel * 20}px;"` : ''
 
-    // Add duplicate information if applicable
-    const duplicateHTML = link.isDuplicate
-      ? '<span style="color: #2196F3;">Duplicate of: <strong>' + escapeHtml(link.duplicateOf) + '</strong></span><br>'
-      : ''
-    //No need to display isLocal if it's a page
-    const tagsHTML = buildTagsHTML(link, link._href, { showOriginal: true, hideIsLocal: true, extraHTML: duplicateHTML })
-    const instancesHTML = formatInstances(link.instances, i => i.text || i.alt || i.title)
-
     html += `
-      <div class="view-row" data-url="${escapeAttr(link.href)}">
+      <div class="view-row" data-url="${escapeAttr(link.href)}" data-tags="${escapeAttr(buildRowTags(link))}">
         <div class="select">
           <input type="checkbox">
         </div>
@@ -143,7 +139,7 @@ export function renderPages() {
           <a class="download" href="${escapeAttr(link.href)}" title="Download Page"><i class="fas fa-file-download"></i></a>
           <a class="goto" target="_blank" href="${escapeAttr(link.href)}" title="Go to page"><i class="fas fa-external-link-alt"></i></a>
           ${buildPageStatusHTML(link)}
-          ${buildInfoHTML(tagsHTML + instancesHTML)}
+          ${buildInfoHTML('page')}
         </div>
       </div>
     `
@@ -153,17 +149,15 @@ export function renderPages() {
 }
 
 /**
- * Updates the Assets view with scripts and stylesheets
+ * Updates the Assets view with scripts, stylesheets, fonts and manifests
  */
 export function renderAssets() {
   let html = ''
   store.getAssets().forEach(asset => {
-    const tagsHTML = buildTagsHTML(asset, asset._link, { hideIsLocal: true })
-    const instancesHTML = formatInstances(asset.instances, i => i.alt || i.title)
     const canCrawl = !asset.isCrawled && (isUrlScript(asset.link) || isUrlStyleSheet(asset.link))
 
     html += `
-      <div class="view-row" data-url="${escapeAttr(asset.link)}">
+      <div class="view-row" data-url="${escapeAttr(asset.link)}" data-tags="${escapeAttr(buildRowTags(asset))}">
         <div class="select">
           <input type="checkbox">
         </div>
@@ -174,7 +168,7 @@ export function renderAssets() {
         <div class="tools">
           <a class="download" href="${escapeAttr(asset.link)}" title="Download Page"><i class="fas fa-file-download"></i></a>
           ${canCrawl ? `<a class="crawl" target="_blank" href="${escapeAttr(asset.link)}" title="Crawl page"><i class="fas fa-sitemap"></i></a>` : ''}
-          ${buildInfoHTML(tagsHTML + instancesHTML)}
+          ${buildInfoHTML('asset')}
         </div>
       </div>
     `
@@ -204,13 +198,11 @@ function getLinkType(link) {
 export function renderLinks() {
   let html = ''
   store.getLinks().forEach(link => {
-    const tagsHTML = buildTagsHTML(link, link._href)
-    const instancesHTML = formatInstances(link.instances, i => i.text || i.title)
     const isTestable = !isUrlProtocol(link.href) && !isUrlAnchor(link.href)
     const { icon, linkType } = getLinkType(link)
 
     html += `
-      <div class="view-row" data-url="${escapeAttr(link.href)}">
+      <div class="view-row" data-url="${escapeAttr(link.href)}" data-tags="${escapeAttr(buildRowTags(link, link.isBroken ? ['broken'] : []))}">
         <div class="select">${isTestable ? '<input type="checkbox">' : ''}</div>
         <div class="type">${icon.replace('<i class=', `<i title="${escapeAttr(linkType)}" class=`)}</div>
         <div class="link">
@@ -219,7 +211,7 @@ export function renderLinks() {
         <div class="tools">
           ${!link.isBroken ? `<a class="goto" target="_blank" href="${escapeAttr(link.href)}" title="Open link"><i class="fas fa-external-link-alt"></i></a>` : ''}
           ${isTestable && !link.isBroken ? buildTestIconHTML(link, link.href) : ''}
-          ${buildInfoHTML(tagsHTML + instancesHTML)}
+          ${buildInfoHTML('link')}
         </div>
       </div>
     `
@@ -234,11 +226,8 @@ export function renderLinks() {
 export function renderFiles() {
   let html = ''
   store.getFiles().forEach(link => {
-    const tagsHTML = buildTagsHTML(link, link._href)
-    const instancesHTML = formatInstances(link.instances, i => i.text || i.title)
-
     html += `
-      <div class="view-row" data-url="${escapeAttr(link.href)}">
+      <div class="view-row" data-url="${escapeAttr(link.href)}" data-tags="${escapeAttr(buildRowTags(link))}">
         <div class="select">
           <input type="checkbox">
         </div>
@@ -249,7 +238,7 @@ export function renderFiles() {
         <div class="tools">
           <a class="download" href="${escapeAttr(link.href)}" title="Download File"><i class="fas fa-file-download"></i></a>
           <a class="goto" target="_blank" href="${escapeAttr(link.href)}" title="Go to link"><i class="fas fa-external-link-alt"></i></a>
-          ${buildInfoHTML(tagsHTML + instancesHTML)}
+          ${buildInfoHTML('file')}
         </div>
       </div>
     `
@@ -259,21 +248,34 @@ export function renderFiles() {
 }
 
 /**
+ * Gets what kind of media a file is: from where it was found if known, otherwise from its extension
+ * @param {Object} file - Media object
+ * @returns {string|null} 'image' | 'video' | 'audio', or null if unknown
+ */
+export function getMediaKind(file) {
+  if (file.kind) return file.kind
+  if (isUrlImage(file.src)) return 'image'
+  if (isUrlVideo(file.src)) return 'video'
+  if (isUrlAudio(file.src)) return 'audio'
+  return null
+}
+
+/**
  * Builds the preview for a media item
  * @param {Object} file - Media object
  * @param {boolean} expandable - Whether clicking an image opens it larger
  * @returns {string} HTML string
  */
 export function buildMediaPreviewHTML(file, expandable = true) {
-  // Where it was found says what it is, otherwise go by the extension
-  if (file.kind === 'image' || (!file.kind && isUrlImage(file.src))) {
+  const kind = getMediaKind(file)
+  if (kind === 'image') {
     const altText = file.instances?.[0]?.alt || ''
-    return `<img ${expandable ? 'class="expand-image"' : ''} src="${escapeAttr(file.src)}" alt="${escapeAttr(altText)}" title="${escapeAttr(altText)}">`
+    return `<img ${expandable ? 'class="expand-image"' : ''} loading="lazy" src="${escapeAttr(file.src)}" alt="${escapeAttr(altText)}" title="${escapeAttr(altText)}">`
   }
-  if (file.kind === 'video' || (!file.kind && isUrlVideo(file.src)))
-    return `<video controls style="max-width: 100%; max-height: 100px;"><source src="${escapeAttr(file.src)}"></video>`
-  if (file.kind === 'audio' || (!file.kind && isUrlAudio(file.src)))
-    return `<audio controls style="width: 100%;"><source src="${escapeAttr(file.src)}"></audio>`
+  if (kind === 'video')
+    return `<video controls preload="none" style="max-width: 100%; max-height: 100px;"><source src="${escapeAttr(file.src)}"></video>`
+  if (kind === 'audio')
+    return `<audio controls preload="none" style="width: 100%;"><source src="${escapeAttr(file.src)}"></audio>`
   return getFAIcon(file.src).icon
 }
 
@@ -283,11 +285,9 @@ export function buildMediaPreviewHTML(file, expandable = true) {
 export function renderMedia() {
   let html = ''
   store.getMedia().forEach(file => {
-    const tagsHTML = buildTagsHTML(file, file._src, { showOriginal: true })
-    const instancesHTML = formatInstances(file.instances, i => i.alt)
-
+    const kind = getMediaKind(file)
     html += `
-      <div class="view-row" data-url="${escapeAttr(file.src)}">
+      <div class="view-row" data-url="${escapeAttr(file.src)}" data-tags="${escapeAttr(buildRowTags(file, kind ? [kind] : []))}">
         <div class="select">
           <input type="checkbox">
         </div>
@@ -298,7 +298,7 @@ export function renderMedia() {
         <div class="tools">
           <a class="goto" target="_blank" href="${escapeAttr(file.src)}" title="Open Media"><i class="fas fa-external-link-alt"></i></a>
           <a class="download" href="${escapeAttr(file.src)}" title="Download Media"><i class="fas fa-file-download"></i></a>
-          ${buildInfoHTML(tagsHTML + instancesHTML)}
+          ${buildInfoHTML('media')}
         </div>
       </div>
     `

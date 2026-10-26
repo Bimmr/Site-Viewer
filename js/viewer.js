@@ -3,7 +3,7 @@ import { debounce } from './lib/html.js'
 import { store } from './state/store.js'
 import { site } from './state/site.js'
 import { setInitialTab } from './crawl/tabs.js'
-import { testUrl } from './crawl/network.js'
+import { testUrl, getRedirectTarget } from './crawl/network.js'
 import {
   startCrawl, recrawl, crawlPage, startCrawlAll, stopCrawlAll, isCrawlAllRunning, onCrawlAllProgress
 } from './crawl/controller.js'
@@ -11,6 +11,9 @@ import { renderViews, scheduleRender, syncSelection, getSelectedUrls } from './v
 import { renderCrawlProgress, describeCrawlResult } from './views/overview.js'
 import { renderIssues } from './views/issues.js'
 import { openInspector } from './views/inspector.js'
+import { confirmDialog } from './views/dialog.js'
+import { fillInfoPopup } from './views/info.js'
+import { buildTestIconHTML } from './views/rows.js'
 import { applySearchFilter } from './views/search.js'
 import { downloadUrl, queueDownload } from './download/download.js'
 import { showNotification } from '../modules/notifications/notifications.js'
@@ -134,24 +137,19 @@ async function testLink(url, element) {
 
   let result
   let status
+  let redirectsTo = null
   try {
-    status = await testUrl(url)
+    const response = await testUrl(url)
+    status = response.status
+    redirectsTo = getRedirectTarget(url, response.finalUrl)
     result = status === 200 ? 'success' : 'warning'
   } catch (error) {
     result = 'failed'
   }
 
-  const icons = {
-    success: { class: 'success', icon: 'check-circle', title: 'Link is valid' },
-    warning: { class: 'warning', icon: 'exclamation-circle', title: `Returned a status code of ${status}\nClick to retry` },
-    failed: { class: 'error', icon: 'times-circle', title: "Link doesn't exist or took too long to respond\nClick to retry" }
-  }
-  element.classList.remove("testing")
-  element.classList.add(icons[result].class)
-  element.title = icons[result].title
-  element.innerHTML = `<i class="fas fa-${icons[result].icon}"></i>`
-
-  store.setLinkTest(url, result, result === 'warning' ? status : undefined)
+  store.setLinkTest(url, result, result === 'warning' ? status : undefined, redirectsTo)
+  // View rows re-render from the store, but the inspector's don't, so update the icon directly
+  element.outerHTML = buildTestIconHTML({ test: result, statusCode: status, redirectsTo }, url)
 }
 
 /**
@@ -230,9 +228,15 @@ document.addEventListener("DOMContentLoaded", () => {
     else startCrawlAll()
   })
 
-  document.querySelector("#settings #recrawlBtn").addEventListener("click", () => {
-    if (!confirm("Are you sure you want to recrawl? This will clear all current crawl data and start fresh from the base URL."))
-      return
+  document.querySelector("#settings #recrawlBtn").addEventListener("click", async () => {
+    const confirmed = await confirmDialog({
+      title: 'Recrawl the site?',
+      message: 'This clears everything found so far and starts again from the start page.',
+      detail: site.baseUrl,
+      confirmText: 'Recrawl',
+      danger: true
+    })
+    if (!confirmed) return
     recrawl().catch(() => { })
     renderViews()
   })
@@ -269,13 +273,19 @@ document.addEventListener("DOMContentLoaded", () => {
   }))
 
   // Delete crawl data for the inspected page
-  document.querySelector("#inspecter .popup-delete")?.addEventListener("click", () => {
+  document.querySelector("#inspecter .popup-delete")?.addEventListener("click", async () => {
     const popup = document.querySelector("#inspecter")
     const url = popup.dataset.url
     if (!url) return
 
-    if (!confirm(`Delete crawl data for this page?\n\n${url}\n\nThis will remove all content found on this page, but keep it as a discovered link.`))
-      return
+    const confirmed = await confirmDialog({
+      title: 'Delete crawl data for this page?',
+      message: 'Everything found on this page is removed. The page stays in the list so it can be crawled again.',
+      detail: url,
+      confirmText: 'Delete',
+      danger: true
+    })
+    if (!confirmed) return
 
     popup.classList.remove("active")
     if (deleteCrawlData(url)) {
@@ -326,14 +336,19 @@ document.addEventListener("DOMContentLoaded", () => {
     })
   }))
 
-  document.querySelectorAll(".deleteCrawlSelected").forEach(button => button.addEventListener("click", () => {
+  document.querySelectorAll(".deleteCrawlSelected").forEach(button => button.addEventListener("click", async () => {
     const urls = getSelectedUrls(button.closest(".view"), { visibleOnly: true }).filter(url => store.getPage(url))
     if (urls.length === 0) {
       showNotification('No crawled pages selected', 'warning')
       return
     }
-    if (!confirm(`Are you sure you want to delete crawl data for ${urls.length} selected page(s)?`))
-      return
+    const confirmed = await confirmDialog({
+      title: `Delete crawl data for ${urls.length} page${urls.length === 1 ? '' : 's'}?`,
+      message: 'Everything found on these pages is removed. The pages stay in the list so they can be crawled again.',
+      confirmText: 'Delete',
+      danger: true
+    })
+    if (!confirmed) return
 
     const deletedCount = urls.filter(deleteCrawlData).length
     const skippedCount = urls.length - deletedCount
@@ -361,6 +376,18 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }))
 
+  // The open search bar can cover the filter icon, so it can also be closed with its own button or Escape
+  document.querySelectorAll(".view .searchbar").forEach(searchbar => {
+    const close = () => searchbar.closest(".view").querySelector(".filter-icon").click()
+    searchbar.querySelector(".searchbar-close")?.addEventListener("click", close)
+    searchbar.querySelector("input").addEventListener("keydown", event => {
+      if (event.key === "Escape") {
+        event.preventDefault()
+        close()
+      }
+    })
+  })
+
   // Use "input" so the search field's built-in clear button also re-filters
   document.querySelectorAll(".view:not(#issues) .searchbar input").forEach(item => item.addEventListener("input", debounce(() => {
     applySearchFilter('#' + item.closest(".view").id, item.value)
@@ -376,6 +403,15 @@ document.addEventListener("DOMContentLoaded", () => {
     if (inspectLink) {
       event.preventDefault()
       openInspector(inspectLink.closest('.view-row').dataset.url)
+      return
+    }
+
+    // Redirects open the page they redirect to, once it's crawled
+    const redirectLink = event.target.closest('.view .view-items .redirect')
+    if (redirectLink) {
+      event.preventDefault()
+      const target = store.getLink(redirectLink.closest('.view-row').dataset.url)?.redirectsTo
+      if (target && store.getPage(target)) openInspector(target)
       return
     }
 
@@ -396,8 +432,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const crawlLink = event.target.closest('.view .view-items .crawl')
     if (crawlLink) {
       event.preventDefault()
+      // Read the URL before removing the icon, closest() finds nothing once it's detached
+      const url = crawlLink.closest('.view-row').dataset.url
       crawlLink.remove()
-      crawlUrl(crawlLink.closest('.view-row').dataset.url)
+      crawlUrl(url)
       return
     }
 
@@ -408,13 +446,14 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   })
 
-  // Position hover popups after CSS transitions start
+  // Fill hover popups on first hover, and position them after CSS transitions start
   let activePopup = null
   document.body.addEventListener('mouseover', event => {
     const hoverIcon = event.target.closest('.hover-popup-icon')
     const popup = hoverIcon?.querySelector('.hover-popup')
     if (popup && popup !== activePopup) {
       activePopup = popup
+      fillInfoPopup(hoverIcon)
       requestAnimationFrame(() => requestAnimationFrame(() => positionPopup(popup, hoverIcon)))
     }
   })

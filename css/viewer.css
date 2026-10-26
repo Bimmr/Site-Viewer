@@ -458,6 +458,9 @@ hr {
   color: #2196F3;
   cursor: default;
 }
+.view-row .tools .redirect i {
+  color: #7b4fc9;
+}
 
 .view-items .empty-row {
   padding: 5em 0;
@@ -1076,6 +1079,21 @@ hr {
 .searchbar .form-item {
   display: flex;
   align-items: center;
+}
+
+.searchbar .searchbar-close {
+  border: 0;
+  background: transparent;
+  color: #999;
+  padding: 0 15px;
+  font-size: 1.1em;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.searchbar .searchbar-close:hover,
+.searchbar .searchbar-close:focus-visible {
+  color: #333;
 }
 
 .searchbar .form-item .icon {
@@ -2069,4 +2087,85 @@ input[type="checkbox"]{
 
 #issues .view-row.severity-info .severity {
   color: #3498db;
+}
+/* Confirmation dialog */
+
+.app-dialog {
+  border: none;
+  border-radius: 6px;
+  padding: 25px 30px 20px;
+  width: min(460px, calc(100vw - 40px));
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  font-family: 'Roboto', sans-serif;
+}
+
+.app-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.app-dialog h2 {
+  font-size: 1.3em;
+  font-weight: 500;
+  color: #2c3e50;
+  margin-bottom: 10px;
+}
+
+.app-dialog p {
+  color: #555;
+  line-height: 1.5;
+}
+
+.app-dialog .dialog-detail {
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: #f4f4f4;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.9em;
+  word-break: break-all;
+}
+
+.app-dialog .dialog-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.app-dialog button {
+  border: 0;
+  border-radius: 5px;
+  padding: 10px 20px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background-color .35s;
+}
+
+.app-dialog .dialog-cancel {
+  background: #e9ecef;
+  color: #333;
+}
+
+.app-dialog .dialog-cancel:hover,
+.app-dialog .dialog-cancel:focus-visible {
+  background: #d6dadd;
+}
+
+.app-dialog .dialog-confirm {
+  background: var(--colourAccent);
+  color: #fff;
+}
+
+.app-dialog .dialog-confirm:hover,
+.app-dialog .dialog-confirm:focus-visible {
+  background: #04711f;
+}
+
+.app-dialog .dialog-confirm.danger {
+  background: #dc3545;
+}
+
+.app-dialog .dialog-confirm.danger:hover,
+.app-dialog .dialog-confirm.danger:focus-visible {
+  background: #c82333;
 }

@@ -1,6 +1,7 @@
 /**
  * Checks a single search term against a row
- * Supports !term to invert, and is:crawled, is:duplicate, is:warning, is:error, is:iframe filters
+ * Supports !term to invert, is:crawled, is:warning and is:error, and is:<tag> for any of the row's tags
+ * (data-tags, e.g. is:srcset, is:font, is:redirect, is:duplicate)
  * @param {HTMLElement} row - View row
  * @param {string} searchTerm - Term to check
  * @returns {boolean} Whether the row matches
@@ -22,20 +23,14 @@ function rowMatchesTerm(row, searchTerm) {
       case 'crawled':
         termMatches = row.querySelector('.crawl') === null
         break
-      case 'duplicate':
-        termMatches = row.querySelector('.hover-popup')?.innerHTML.includes('Duplicate of:') || false
-        break
       case 'warning':
         termMatches = row.querySelector('.warning') !== null
         break
       case 'error':
         termMatches = row.querySelector('.error') !== null
         break
-      case 'iframe':
-        termMatches = row.querySelector('.type')?.innerHTML.includes('fa-window-restore') || false
-        break
       default:
-        termMatches = false
+        termMatches = (row.dataset.tags || '').split(' ').includes(customFilter[1].toLowerCase())
     }
   } else if (search) {
     const text = row.querySelector('p')?.textContent.toLowerCase() || ''

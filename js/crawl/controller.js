@@ -1,7 +1,7 @@
 import { store } from '../state/store.js'
 import { site, setSite } from '../state/site.js'
 import { settings } from '../settings.js'
-import { fetchPage, fetchResourceText, isAbortError } from './network.js'
+import { fetchPage, fetchResourceText, isAbortError, getRedirectTarget } from './network.js'
 import { extractPage, createLinkObject } from './extract.js'
 import { parseRobotsTxt, getRobotsRules, isAllowedByRobots, parseSitemap, isExcluded } from './rules.js'
 import { showNotification, replaceNotification, dismissNotification } from '../../modules/notifications/notifications.js'
@@ -54,11 +54,20 @@ async function runCrawl(url, { addToAll, isInitialPage, quiet, signal }) {
   if (addToAll) store.markCrawling(url)
 
   try {
-    const { html, method } = await fetchPage(url, {
+    const { html, method, finalUrl } = await fetchPage(url, {
       isInitialPage,
       signal,
       onStart: () => quiet || showNotification(`Crawling: ${url}`, 'info', 30000, notificationId)
     })
+
+    // Redirected pages are recorded as redirects, their content belongs to the page they redirect to
+    const redirectTarget = getRedirectTarget(url, finalUrl)
+    if (addToAll && redirectTarget && store.getLink(url)) {
+      const page = addRedirect(url, redirectTarget, html, method)
+      if (!quiet) replaceNotification(notificationId, `${url} redirects to ${redirectTarget}`, 'info', 3000)
+      return page
+    }
+
     const page = extractPage(html, url, settings.crawl)
     page.crawlMethod = method
 
@@ -76,6 +85,33 @@ async function runCrawl(url, { addToAll, isInitialPage, quiet, signal }) {
     }
     throw error
   }
+}
+
+/**
+ * Records a redirect, and adds the page it redirects to with the content that was fetched
+ * The target is only crawled if it's on this site and hasn't been crawled already
+ * @param {string} url - URL that was crawled
+ * @param {string} target - URL it redirected to
+ * @param {string} html - Content of the target
+ * @param {string} method - How it was crawled ('live' or 'fetch')
+ * @returns {Object|null} The target's page data, or null if it's on another site
+ */
+function addRedirect(url, target, html, method) {
+  const depth = store.getLink(url)?.depth ?? 0
+  store.markRedirect(url, target)
+
+  const targetLink = createDiscoveredLink(target, url)
+  targetLink.instances[0].tags.isRedirectTarget = true
+  store.addDiscoveredLink(targetLink, depth)
+
+  const isLocal = new URL(target).origin === site.hostURL
+  if (!isLocal || store.getPage(target) || isCrawlInProgress(target))
+    return store.getPage(target) || null
+
+  const page = extractPage(html, target, settings.crawl)
+  page.crawlMethod = method
+  store.addPage(target, page)
+  return page
 }
 
 /**

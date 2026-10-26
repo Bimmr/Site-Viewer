@@ -36,10 +36,14 @@ js/
     lists.js                    Pages, Assets, Links, Files, Media views
     issues.js, overview.js      Issues and Overview views, Crawl All progress
     inspector.js                Popup for one crawled page
-    rows.js                     Shared row/tooltip/issue templates
+    rows.js                     Shared row/issue templates, row tags for search
+    info.js                     Fills a row's info popup on first hover
     search.js                   View search filters
+    dialog.js                   Confirmation dialog
   download/
     download.js                 Downloads, including combining a page into one HTML file
+scripts/
+  package.js, zip.js            npm run package: builds Site-Viewer.zip for the stores
 tests/
   unit/                         Vitest + jsdom tests for the pure modules and the store
   e2e/run.js                    Loads the extension in Chrome for Testing and crawls a local test site
@@ -57,6 +61,8 @@ tests/
 
 - **The store is the single source of truth.** Crawling never touches the DOM, and views never change crawl data. Every change goes through a store method (`addPage`, `markCrawling`, `markFailed`, `removePage`...), which notifies listeners with the collections that changed.
 - **Views render from the store.** `views/index.js` batches change events into one render every 250 ms, and only re-renders views whose collections changed (tracked with `store.versions`). Rows carry `data-url`, which actions use to find their item and which keeps checkboxes checked across re-renders.
+- **Info popups are built on hover.** Each row's info popup starts empty with a `data-info-kind`; `views/info.js` looks the item up by the row's `data-url` and fills it the first time it's hovered. Building every popup up front (with every place an item was found) was most of the page's size on large sites.
+- **Rows carry their tags.** `data-tags` lists the item's tags and the tags of everywhere it was found, e.g. `isSrcset` becomes `srcset` and `isInSitemap` becomes `sitemap`, plus `duplicate`, `redirect`, `skipped` and the media kind. Search's `is:<tag>` filters match against it, so new tags are searchable without changing the search code.
 - **Pure modules have no browser-extension dependencies.** `extract.js`, `issues.js`, `rules.js`, `lib/url.js` and the store work in jsdom, which is what the unit tests use.
 
 ## Crawl results (`state/store.js`)
@@ -76,7 +82,7 @@ Links are split into views by `getUrlCategories`, cached per link:
 - **Links**: external pages, anchors, `mailto:`/`tel:` etc., and broken links
 - **Files**: non-HTML files
 
-Link status flags: `isCrawled` (crawled or being crawled), `isCrawling`, `isError` (couldn't be crawled), `isWarning` + `statusCode` (HTTP error status), `isDuplicate` + `duplicateOf` (same content hash as an earlier page), `skipReason` (Crawl All skipped it: `robots`, `depth` or `excluded`), `depth` (clicks from the start page).
+Link status flags: `isCrawled` (crawled or being crawled), `isCrawling`, `isError` (couldn't be crawled), `isWarning` + `statusCode` (HTTP error status), `isDuplicate` + `duplicateOf` (same content hash as an earlier page), `skipReason` (Crawl All skipped it: `robots`, `depth` or `excluded`), `redirectsTo` (where it redirects), `depth` (clicks from the start page).
 
 Crawled pages keep their raw HTML only. Parsed documents use far more memory, so the combine download re-parses with `parsePageDocument` when needed.
 
@@ -103,6 +109,10 @@ If a request can't be made at all and **Retry failed requests through the CORS p
 3. Adds the result with `store.addPage`, or marks it failed or cancelled.
 
 `addToAll: false` crawls a page without adding it to the results (used when downloading an uncrawled page). `quiet: true` skips the per-page notifications; Crawl All shows progress instead.
+
+### Redirects
+
+`fetchPage` returns the URL the content came from after redirects: the response URL for fetches, the tab's URL for live crawls. If it differs from the requested URL (ignoring trailing slashes and hashes), the crawled page is marked with `redirectsTo` and its content is added under the page it redirects to, which is added as a page if it's new. That page is only crawled if it's on the same site and hasn't been crawled already. Link tests record redirects the same way. `fetch` follows redirects without exposing their status codes, so 301 and 302 aren't told apart.
 
 ### Crawl All
 
@@ -159,7 +169,11 @@ npm run test:e2e    # end-to-end: Chrome for Testing + local test site (HEADFUL=
 
 The end-to-end test starts a local site with `robots.txt`, a sitemap, a 404, a client-side rendered page, a stylesheet, and images in most of the places extraction looks. It opens the viewer from the real toolbar popup (falling back to opening it the same way if the browser won't open the popup from a script), then checks the initial crawl, Crawl All (including skips, sitemap pages, stylesheets and live crawling), media and asset discovery, the inspector, search, downloads (named and combined), recrawl, Stop, and tab cleanup when the viewer closes.
 
-The tooling needs Node 18+. `node_modules`, `tests`, `package.json`, `package-lock.json` and `vitest.config.js` aren't part of the extension; leave them out of the store package.
+The tooling needs Node 18+.
+
+## Packaging
+
+`npm run package` builds `Site-Viewer.zip` with only the extension's files (`manifest.json`, `viewer.html`, `css`, `icons`, `js`, `modules`, `setup`). It first checks that every file the manifest, the HTML (`src`/`href`) and the JS (relative imports) refer to is in the package, and fails if one is missing. The zip is written by `scripts/zip.js`, so packaging needs no dependencies.
 
 ## Browser support
 

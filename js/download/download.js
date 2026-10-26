@@ -1,9 +1,9 @@
-import { chromeExtensionRegex, getImageUrlRegex, getDownloadFilename, isUrlHTMLFile } from '../lib/url.js'
+import { chromeExtensionRegex, getImageUrlRegex, getDownloadFilename, getUrlExtension, isUrlHTMLFile } from '../lib/url.js'
 import { createElementFromHTML } from '../lib/html.js'
 import { settings, getManageDownloads } from '../settings.js'
 import { store } from '../state/store.js'
 import { crawlPage } from '../crawl/controller.js'
-import { parsePageDocument } from '../crawl/extract.js'
+import { parsePageDocument, parseSrcset } from '../crawl/extract.js'
 import { toDataURL } from '../crawl/network.js'
 import { showNotification } from '../../modules/notifications/notifications.js'
 
@@ -105,13 +105,23 @@ async function inlineStyleImages(pageDoc, pageUrl) {
  */
 async function inlineImages(pageDoc, pageUrl) {
   let failureCount = 0
-  const elements = pageDoc.querySelectorAll('img[src]:not([src^=data]), img[data-src], *[style*="background"]')
 
+  // Browsers prefer srcset and <picture> sources over src, which would bypass the inlined image
+  pageDoc.querySelectorAll('picture source').forEach(source => source.remove())
+
+  const elements = pageDoc.querySelectorAll('img, *[style*="background"]')
   await Promise.all(Array.from(elements).map(async element => {
     try {
       if (element.tagName.toLowerCase() === 'img') {
-        const src = element.getAttribute('src') || element.getAttribute('data-src')
-        if (src) element.src = await toDataURL(new URL(src, pageUrl).href)
+        const src = element.getAttribute('src')
+        // Use the real image of lazy-loaded images, or the last (usually largest) srcset candidate
+        const lazySrc = element.getAttribute('data-src') || element.getAttribute('data-lazy-src') || element.getAttribute('data-original')
+        const srcsetCandidate = parseSrcset(element.getAttribute('srcset') || element.getAttribute('data-srcset') || '').pop()
+        const imageUrl = (src && !src.startsWith('data:') ? src : null) || lazySrc || srcsetCandidate
+        if (!imageUrl) return
+
+        element.src = await toDataURL(new URL(imageUrl, pageUrl).href)
+        ;['srcset', 'sizes', 'data-srcset', 'loading'].forEach(attribute => element.removeAttribute(attribute))
         return
       }
 
@@ -172,7 +182,9 @@ export async function downloadUrl(url) {
     return downloadCombinedPage(url)
 
   showNotification('Starting download...', 'info')
-  const filename = (await getManageDownloads()) ? getDownloadFilename(url, settings.download.directory) : undefined
+  // Naming adds .html to URLs without an extension, which is wrong for media like /image?id=1, so let the browser name those
+  const isMediaWithoutExtension = store.media.has(url) && !getUrlExtension(url)
+  const filename = (await getManageDownloads()) && !isMediaWithoutExtension ? getDownloadFilename(url, settings.download.directory) : undefined
   await startDownload(url, filename)
 }
 

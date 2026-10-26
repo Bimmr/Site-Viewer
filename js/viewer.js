@@ -16,19 +16,12 @@ import { downloadUrl, queueDownload } from './download/download.js'
 import { showNotification } from '../modules/notifications/notifications.js'
 
 /**
- * Gets the page to crawl and the tab it's open in
- * The viewer is opened with ?url=, or the popup sets tabURL/tabId on this window after opening it
- * @returns {Promise<{url: string|null, tabId: number|null}>}
+ * Gets the page to crawl and the tab it's open in, passed as ?url=&tabId= by the toolbar popup
+ * @returns {{url: string|null, tabId: number|null}}
  */
-async function getStartPage() {
+function getStartPage() {
   const params = new URLSearchParams(location.search)
-  if (params.get('url'))
-    return { url: params.get('url'), tabId: Number(params.get('tabId')) || null }
-
-  // Give the opener a moment to set the values
-  for (let i = 0; i < 40 && !window.tabURL; i++)
-    await new Promise(resolve => setTimeout(resolve, 50))
-  return { url: window.tabURL || null, tabId: window.tabId || null }
+  return { url: params.get('url') || null, tabId: Number(params.get('tabId')) || null }
 }
 
 /**
@@ -46,7 +39,7 @@ async function start() {
   if (!(await getManageDownloads()))
     document.querySelectorAll("#settings .needsManageDownloads").forEach(element => element.classList.add("hidden"))
 
-  const { url, tabId } = await getStartPage()
+  const { url, tabId } = getStartPage()
   if (!url || !/^https?:/i.test(url)) {
     document.querySelector("#crawledSiteText").textContent = url || 'No page selected'
     showNotification('Site Viewer can only crawl http and https pages', 'error', Infinity)
@@ -194,11 +187,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Remove preload class after initial render to enable transitions
   setTimeout(() => document.body.classList.remove("preload"), 100)
 
-  // Refreshing the viewer loses the page it was opened for, so close it instead
-  // Crawler tabs are closed by the background worker when this window closes
-  window.addEventListener("unload", () => window.close())
-
-  document.querySelector(".sidebar .sidebar-footer .version").textContent = window.version || chrome.runtime.getManifest().version
+  document.querySelector(".sidebar .sidebar-footer .version").textContent = chrome.runtime.getManifest().version
 
   // Re-render when crawl data changes
   store.onChange(scheduleRender)

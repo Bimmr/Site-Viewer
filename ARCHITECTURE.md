@@ -1,6 +1,6 @@
 # Site-Viewer Architecture
 
-Site-Viewer is a Chrome/Edge extension (Manifest V3) that crawls a website and organizes what it finds into **Pages**, **Assets** (scripts and stylesheets), **Links**, **Files**, **Media** and accessibility/SEO **Issues**. Everything runs locally in the browser; the optional CORS proxy is the only third-party request, and it's off by default.
+Site-Viewer is a Chrome/Edge extension (Manifest V3) that crawls a website and organizes what it finds into **Pages**, **Assets** (scripts, stylesheets, fonts and manifests), **Links**, **Files**, **Media** and accessibility/SEO **Issues**. Everything runs locally in the browser; the optional CORS proxy is the only third-party request, and it's off by default.
 
 ## Layout
 
@@ -10,7 +10,7 @@ viewer.html                     Main UI, loads js/viewer.js as an ES module
 css/viewer.css
 modules/notifications/          Toast notifications
 setup/
-  popup.html, openPopup.js      Toolbar button: opens viewer.html for the current tab
+  popup.html, openPopup.js      Toolbar button: opens viewer.html?url=&tabId= for the current tab in a popup window
   background.js                 Service worker: closes a viewer's crawler tabs when the viewer closes
   options.html, options.js      Extension options (download naming)
 js/
@@ -88,6 +88,8 @@ Crawled pages keep their raw HTML only. Parsed documents use far more memory, so
 - **Live**: opens the page in a background tab, waits for it to load plus `liveWaitTime` for JavaScript, then reads `document.documentElement.outerHTML`. Checks the HTTP status first so error pages aren't opened.
 - **Smart** (default): fetches the page, then re-crawls it live if `shouldUseLiveCrawling` scores it as client-side rendered (framework markers, little text, many scripts). The page the viewer was opened for is read straight from its tab.
 
+Stylesheets and scripts are always fetched, whatever the mode.
+
 If a request can't be made at all and **Retry failed requests through the CORS proxy** is on, it's retried through the proxy. HTTP error statuses are never retried, since the proxy would get the same answer. Errors with an `httpStatus` (`HttpStatusError`) become warnings; other failures become errors.
 
 ### Scheduling
@@ -107,8 +109,9 @@ If a request can't be made at all and **Retry failed requests through the CORS p
 `startCrawlAll()`:
 1. Reads `robots.txt` (for its rules and `Sitemap:` lines) and the sitemap(s), adding sitemap pages at depth 1. Sitemap indexes are followed, up to 20 sitemap files.
 2. Repeatedly starts every uncrawled page that passes the limits: `maxPages` (counting pages already crawled), `maxDepth`, `excludePatterns`, and robots.txt. Pages that don't pass get a `skipReason`, shown on their crawl icon; they can still be crawled by hand.
-3. Re-checks whenever the store changes, so pages found along the way are picked up, including by crawls the user started.
-4. Finishes when nothing is left to crawl, and reports a summary.
+3. If `crawlStylesheets` is on, also reads the site's own (local) stylesheets for their background images and fonts. These don't count towards `maxPages`.
+4. Re-checks whenever the store changes, so pages found along the way are picked up, including by crawls the user started.
+5. Finishes when nothing is left to crawl, and reports a summary.
 
 `stopCrawlAll()` aborts everything the run started. Queued requests are dropped, in-flight requests and tab waits are cancelled, and those pages go back to uncrawled.
 
@@ -116,18 +119,23 @@ If a request can't be made at all and **Retry failed requests through the CORS p
 
 ### Live crawl tabs
 
-Tabs are opened in the background of the current window and closed after reading. The open tabs are saved in `chrome.storage.session` under `crawlerTabs-<viewer tab id>`. `setup/background.js` closes them when the viewer tab closes, even if the viewer couldn't clean up itself.
+Tabs are opened in the background of the crawled site's window (the viewer runs in a popup window, which can't hold tabs) and closed after reading. The open tabs are saved in `chrome.storage.session` under `crawlerTabs-<viewer tab id>`. `setup/background.js` closes them when the viewer tab closes, even if the viewer couldn't clean up itself.
 
 ## Extraction (`extract.js`)
 
 `extractPage(data, url, { onPageScripts, onPageStyles })`:
 - Parses the HTML with a `<base>` set to the page URL (or the page's own `<base>`), so relative URLs resolve against the crawled page.
-- Finds `<a>`, `<iframe>`, `<img>` (including `data-src`), `<video>`/`<audio>` sources and posters, and inline `style` background images.
-- When enabled, searches `<style>` tags for background images, and `<script>` tags for background images and `<a>` markup. Comments are stripped first; string literals are kept so URLs aren't mistaken for `//` comments.
-- Collects linked stylesheets and scripts as assets.
+- **Links**: `<a>`, `<iframe>`, and `<object>`/`<embed>` documents.
+- **Images**: `<img>` `src` and `srcset`; lazy-loading attributes (`data-src`, `data-lazy-src`, `data-original`, `data-srcset`), skipping `data:` placeholders; `<picture><source srcset>`; `<input type="image">`; `<image>` in inline SVGs; favicons and touch icons; `og:image`/`twitter:image`; images preloaded with `<link rel="preload" as="image">`.
+- **Video and audio**: `src` and every `<source>`, plus posters.
+- **Assets**: stylesheets, scripts, `modulepreload` and preloaded scripts/styles/fonts, and web app manifests.
+- **CSS** (inline `style` attributes, `<style>` tags when enabled, and crawled stylesheets): every `url()` and `@import`. Images become media (whatever the property, e.g. `mask-image`), fonts and imported stylesheets become assets. URLs resolve against the stylesheet they're in.
+- **Scripts** (when enabled): background images and `<a>` markup in `<script>` tags. Comments are stripped first; string literals are kept so URLs aren't mistaken for `//` comments.
 - Runs `detectIssues` for HTML pages.
 
-Crawled CSS and JS files are wrapped in `<style>`/`<script>` so the same extraction finds their background images and links.
+Media found in a place that says what it is (an `<img>`, a `<video>`...) gets a `kind` (`image`, `video` or `audio`), so URLs without a file extension, like `/cdn/photo?id=7`, still preview correctly. Instance tags record where each was found: `isSrcset`, `isLazy`, `isPictureSource`, `isIcon`, `isSocialImage`, `isPreload`, `isPoster`, `isInSvg`, `isBackground`, `cssProperty`, `isImport`, `isManifest`.
+
+Crawled CSS and JS files are wrapped in `<style>`/`<script>` so the same extraction runs on them.
 
 ## Settings (`settings.js`)
 
@@ -138,7 +146,8 @@ The options page has one setting, `manageDownloads` (stored separately): whether
 ## Downloads (`download.js`)
 
 - Regular downloads go through a queue of 3 at a time.
-- **Combine** (when enabled) builds one HTML file from a page. It can inline linked scripts and stylesheets, convert `<img>`/inline background images to data URLs, and convert background images in `<style>` tags. Images in an inlined stylesheet resolve against the stylesheet's URL.
+- Media without a file extension is named by the browser, since naming it after the URL would add `.html`.
+- **Combine** (when enabled) builds one HTML file from a page. It can inline linked scripts and stylesheets, convert `<img>`/inline background images to data URLs, and convert background images in `<style>` tags. Images use their lazy-loaded or largest `srcset` image, and `srcset`/`<picture>` sources are removed so the browser shows the inlined image. Images in an inlined stylesheet resolve against the stylesheet's URL.
 
 ## Testing
 
@@ -148,7 +157,7 @@ npm test            # unit tests (Vitest + jsdom)
 npm run test:e2e    # end-to-end: Chrome for Testing + local test site (HEADFUL=1 to watch)
 ```
 
-The end-to-end test starts a local site with `robots.txt`, a sitemap, a 404, a client-side rendered page and an image. It checks the initial crawl, Crawl All (including skips, sitemap pages and live crawling), the inspector, search, downloads (named and combined), recrawl, Stop, and tab cleanup when the viewer closes.
+The end-to-end test starts a local site with `robots.txt`, a sitemap, a 404, a client-side rendered page, a stylesheet, and images in most of the places extraction looks. It opens the viewer from the real toolbar popup (falling back to opening it the same way if the browser won't open the popup from a script), then checks the initial crawl, Crawl All (including skips, sitemap pages, stylesheets and live crawling), media and asset discovery, the inspector, search, downloads (named and combined), recrawl, Stop, and tab cleanup when the viewer closes.
 
 The tooling needs Node 18+. `node_modules`, `tests`, `package.json`, `package-lock.json` and `vitest.config.js` aren't part of the extension; leave them out of the store package.
 

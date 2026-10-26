@@ -13,12 +13,20 @@ const extensionPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
 
 // === Test site ===
 
-const page = (title, body) => `<!doctype html><html lang="en"><head><title>${title}</title>
-  <meta name="description" content="${title} page"></head><body><h1>${title}</h1>${body}</body></html>`
+const page = (title, body, head = '') => `<!doctype html><html lang="en"><head><title>${title}</title>
+  <meta name="description" content="${title} page">${head}</head><body><h1>${title}</h1>${body}</body></html>`
+
+// 1x1 transparent PNG, served for every image
+const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64')
 
 let origin = ''
 const routes = {
   '/': () => page('Home', `
+    <img src="/img/photo.jpg" srcset="/img/photo.jpg 1x, /img/photo-2x.jpg 2x" alt="Photo">
+    <picture><source srcset="/img/hero.webp" type="image/webp"><img src="/img/hero.jpg" alt="Hero"></picture>
+    <img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" data-src="/img/lazy.jpg" alt="Lazy">
+    <video src="/media/intro.mp4"></video>
+    <div class="hero">Hero</div>
     <a href="/about">About</a>
     <a href="/blog/">Blog</a>
     <a href="/missing">Missing</a>
@@ -27,7 +35,14 @@ const routes = {
     <a href="/files/report.pdf">Report</a>
     <a href="https://example.org/">External</a>
     <a href="mailto:hi@example.org">Email</a>
-    <img src="/img/logo.png" alt="Logo">`),
+    <img src="/img/logo.png" alt="Logo">`, `
+    <link rel="stylesheet" href="/css/site.css">
+    <link rel="icon" href="/img/favicon.png">
+    <link rel="preload" href="/fonts/heading.woff2" as="font" crossorigin>
+    <meta property="og:image" content="${origin}/img/share.png">`),
+  // Read by Crawl All for its font and background image
+  '/css/site.css': () => `@font-face { font-family: Body; src: url("../fonts/body.woff2") format("woff2") }
+    .hero { background-image: url(../img/background.jpg) }`,
   '/about': () => page('About', '<a href="/">Home</a><a href="/team">Team</a><img src="/img/logo.png" alt="Logo">'),
   '/team': () => page('Team', '<a href="/about">About</a>'),
   '/blog/': () => page('Blog', '<a href="/blog/post-1">Post 1</a>'),
@@ -39,8 +54,6 @@ const routes = {
     <script>document.getElementById('root').innerHTML = '<h1>App</h1><a href="/app/rendered">Rendered by JavaScript</a>'</script>
     </body></html>`,
   '/app/rendered': () => page('Rendered', ''),
-  // 1x1 transparent PNG
-  '/img/logo.png': () => Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64'),
   '/robots.txt': () => `User-agent: *\nDisallow: /private/\nSitemap: ${origin}/sitemap.xml\n`,
   '/sitemap.xml': () => `<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url><loc>${origin}/</loc></url><url><loc>${origin}/orphan</loc></url></urlset>`
@@ -48,13 +61,16 @@ const routes = {
 
 const server = http.createServer((req, res) => {
   const pathname = new URL(req.url, origin).pathname
+  // Every image is the same PNG, fonts and video are empty
   const route = routes[pathname]
+    || (pathname.startsWith('/img/') && (() => png))
+    || ((pathname.startsWith('/fonts/') || pathname.startsWith('/media/')) && (() => ''))
   if (!route) {
     res.writeHead(404, { 'Content-Type': 'text/html' })
     return res.end(page('Not found', ''))
   }
-  const types = { txt: 'text/plain', xml: 'application/xml', png: 'image/png' }
-  const type = types[pathname.split('.').pop()] || 'text/html'
+  const types = { txt: 'text/plain', xml: 'application/xml', css: 'text/css', woff2: 'font/woff2', mp4: 'video/mp4' }
+  const type = pathname.startsWith('/img/') ? 'image/png' : types[pathname.split('.').pop()] || 'text/html'
   res.writeHead(200, { 'Content-Type': type })
   res.end(req.method === 'HEAD' ? undefined : route())
 })
@@ -82,6 +98,9 @@ const getPageRows = viewer => viewer.$$eval('#pages .view-row[data-url]', rows =
   return { url: row.dataset.url, status, title: statusIcon?.title || '' }
 }))
 
+// Tabs showing the test site, other than the tab the viewer was opened from
+const isCrawlerTabUrl = url => url.startsWith(origin) && url !== origin + '/'
+
 /**
  * Waits for a file to appear in the download folder
  * @param {string} name - File name
@@ -106,6 +125,56 @@ const waitForDownload = name => new Promise(resolve => {
 async function showView(viewer, viewId) {
   await viewer.click(`.sidebar-item[data-view="${viewId}"]`)
   await new Promise(resolve => setTimeout(resolve, 600))
+}
+
+/**
+ * Records errors and accepts confirm dialogs on a viewer page
+ * @param {Page} viewer - Viewer page
+ * @returns {string[]} Errors, filled in as they happen
+ */
+function watchViewer(viewer) {
+  const errors = []
+  viewer.on('pageerror', error => errors.push(error.message))
+  viewer.on('console', message => {
+    // Chrome logs every failed request, like the test site's intentional 404, which aren't errors in the viewer
+    if (message.type() === 'error' && !message.text().startsWith('Failed to load resource')) errors.push(message.text())
+  })
+  viewer.on('dialog', dialog => dialog.accept())
+  return errors
+}
+
+/**
+ * Opens the viewer the way the toolbar button does, from a tab showing the test site
+ * Uses the real toolbar popup if this Chrome allows opening it from a script, otherwise opens the viewer
+ * window the same way setup/openPopup.js does
+ * @returns {Promise<{viewer: Page, errors: string[], siteTabId: number, usedToolbar: boolean}>}
+ */
+async function openViewerFromToolbar(browser, worker, extensionId, settings) {
+  const setup = await browser.newPage()
+  await setup.goto(`chrome-extension://${extensionId}/setup/options.html`)
+  await setup.evaluate(settings => chrome.storage.local.set({ settings }), settings)
+  await setup.close()
+
+  const site = await browser.newPage()
+  await site.goto(origin + '/')
+  await site.bringToFront()
+  const siteTabId = await worker.evaluate(url => chrome.tabs.query({ url }).then(tabs => tabs[0].id), origin + '/')
+
+  const viewerTarget = browser.waitForTarget(target => target.url().includes('/viewer.html?'), { timeout: 10000 })
+  let usedToolbar = true
+  try {
+    await worker.evaluate(() => chrome.action.openPopup())
+    await viewerTarget
+  } catch (error) {
+    usedToolbar = false
+    await worker.evaluate((siteTabId, url) => chrome.windows.create({
+      url: chrome.runtime.getURL(`viewer.html?${new URLSearchParams({ url, tabId: siteTabId })}`),
+      type: 'popup', width: 1280, height: 700
+    }), siteTabId, origin + '/')
+  }
+
+  const viewer = await (await browser.waitForTarget(target => target.url().includes('/viewer.html?'))).page()
+  return { viewer, errors: watchViewer(viewer), siteTabId, usedToolbar }
 }
 
 async function openViewer(browser, extensionId, settings) {
@@ -148,13 +217,16 @@ const browser = await puppeteer.launch({
 try {
   const workerTarget = await browser.waitForTarget(target => target.type() === 'service_worker' && target.url().endsWith('/setup/background.js'))
   const extensionId = new URL(workerTarget.url()).host
+  const worker = await workerTarget.worker()
   check('background worker starts', !!extensionId)
 
   const settings = {
     crawl: { crawlMode: 'smart', liveWaitTime: 1000, rateLimitMs: 20, maxPages: 500, maxDepth: 0, respectRobots: true, useSitemap: true },
     download: { directory: '' }
   }
-  const { viewer, errors } = await openViewer(browser, extensionId, settings)
+  const { viewer, errors, siteTabId, usedToolbar } = await openViewerFromToolbar(browser, worker, extensionId, settings)
+  console.log(`      (viewer opened ${usedToolbar ? 'from the toolbar popup' : 'the way the toolbar popup does'})`)
+  check('the viewer gets the current tab in its URL', viewer.url().includes(`tabId=${siteTabId}`) && viewer.url().includes(encodeURIComponent(origin + '/')), viewer.url())
 
   // Initial crawl
   await viewer.waitForFunction(url => document.querySelector(`#pages .view-row[data-url="${url}"] .inspect`), { timeout: 30000 }, origin + '/')
@@ -187,13 +259,24 @@ try {
 
   const summary = await viewer.$$eval('.toast-notification', toasts => toasts.map(toast => toast.textContent.trim()).join(' | '))
   check('a summary is shown when Crawl All finishes', /Crawl finished: \d+ pages crawled/.test(summary), summary)
+  check('Crawl All reads the site\'s stylesheets', summary.includes('1 stylesheet read'), summary)
+
+  // Media and asset discovery
+  const mediaUrls = await viewer.$$eval('#media .view-row[data-url]', rows => rows.map(row => row.dataset.url))
+  const missingMedia = ['/img/photo-2x.jpg', '/img/hero.webp', '/img/lazy.jpg', '/img/favicon.png', '/img/share.png', '/media/intro.mp4', '/img/background.jpg']
+    .filter(p => !mediaUrls.includes(origin + p))
+  check('finds srcset, picture, lazy, icon, social, video and stylesheet media', missingMedia.length === 0, `missing: ${missingMedia.join(', ')}`)
+  check('skips lazy-loading placeholders', !mediaUrls.some(url => url.startsWith('data:')))
+  const assetUrls = await viewer.$$eval('#assets .view-row[data-url]', rows => rows.map(row => row.dataset.url))
+  const missingAssets = ['/css/site.css', '/fonts/body.woff2', '/fonts/heading.woff2'].filter(p => !assetUrls.includes(origin + p))
+  check('finds stylesheets, fonts in stylesheets and preloaded fonts', missingAssets.length === 0, `missing: ${missingAssets.join(', ')}`)
 
   const badge = await viewer.$eval('.sidebar-item[data-view="pages"] .count-badge', element => element.textContent)
   check('pages badge shows crawled/total', /^\d+\/\d+$/.test(badge), badge)
 
   // The crawler tabs should be closed
   const openPages = (await browser.pages()).map(p => p.url())
-  check('crawler tabs are closed after crawling', !openPages.some(url => url.startsWith(origin)), JSON.stringify(openPages))
+  check('crawler tabs are closed after crawling', !openPages.some(isCrawlerTabUrl), JSON.stringify(openPages))
 
   // Selections survive re-renders
   await showView(viewer, 'pages')
@@ -236,6 +319,10 @@ try {
     notifications: await viewer.$$eval('.toast-notification', toasts => toasts.map(toast => toast.textContent.trim())),
     content: combined.substring(0, 300)
   }))
+  // Browsers prefer srcset and <picture> sources over src, so they'd load the images from the site
+  const srcsets = combined.match(/srcset="[^"]*"/g) || []
+  check('combined downloads drop srcset and picture sources', srcsets.length === 0 && combined.includes('<picture>'), JSON.stringify(srcsets))
+  check('combined downloads use the real image of lazy images', !combined.includes('data:image/gif'))
   await showView(viewer, 'settings')
   await viewer.click('#combine-enabled')
 
@@ -253,7 +340,7 @@ try {
   // Live crawls are slow enough to stop part way
   const live = await openViewer(browser, extensionId, { ...settings, crawl: { ...settings.crawl, crawlMode: 'live', liveWaitTime: 3000 } })
   await live.viewer.waitForFunction(url => document.querySelector(`#pages .view-row[data-url="${url}"] .inspect`), { timeout: 30000 }, origin + '/')
-  const isCrawlerTab = target => target.url().startsWith(origin + '/') && target.url() !== origin + '/'
+  const isCrawlerTab = target => isCrawlerTabUrl(target.url())
 
   // Stopping Crawl All cancels its crawls, returning the pages to uncrawled
   await live.viewer.click('.crawlAllBtn')
@@ -263,7 +350,7 @@ try {
   rows = await getPageRows(live.viewer)
   check('stopping Crawl All cancels its crawls', rows.every(row => ['crawled', 'uncrawled'].includes(row.status)),
     JSON.stringify(rows.map(row => `${row.url.replace(origin, '')}=${row.status}`)))
-  const afterStop = (await browser.pages()).map(p => p.url()).filter(url => url.startsWith(origin))
+  const afterStop = (await browser.pages()).map(p => p.url()).filter(isCrawlerTabUrl)
   check('stopping Crawl All closes its crawler tabs', afterStop.length === 0, JSON.stringify(afterStop))
   check('no errors in the live viewer', live.errors.length === 0, live.errors.join('\n      '))
 
@@ -272,7 +359,7 @@ try {
   await browser.waitForTarget(isCrawlerTab, { timeout: 15000 })
   await live.viewer.close()
   await new Promise(resolve => setTimeout(resolve, 1500))
-  const remaining = (await browser.pages()).map(p => p.url()).filter(url => url.startsWith(origin))
+  const remaining = (await browser.pages()).map(p => p.url()).filter(isCrawlerTabUrl)
   check('closing the viewer closes its crawler tabs', remaining.length === 0, JSON.stringify(remaining))
 } finally {
   await browser.close()

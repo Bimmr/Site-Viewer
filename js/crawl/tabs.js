@@ -44,6 +44,24 @@ async function saveCrawlerTabs() {
 const abortError = () => new DOMException('Crawl cancelled', 'AbortError')
 
 /**
+ * Gets the window to open crawler tabs in
+ * The viewer usually runs in a popup window, which can't hold tabs, so use the crawled site's window
+ * @returns {Promise<number|undefined>} Window ID, or undefined to let the browser pick
+ */
+async function getCrawlerWindowId() {
+  try {
+    if (initialTabId) return (await chrome.tabs.get(initialTabId)).windowId
+  } catch (error) {
+    // The site's tab was closed
+  }
+  try {
+    return (await chrome.windows.getLastFocused({ windowTypes: ['normal'] })).id
+  } catch (error) {
+    return undefined
+  }
+}
+
+/**
  * Open a URL for crawling in a tab
  * @param {string} url - URL to open
  * @param {boolean} isInitial - Whether this is the initial page (use the tab the viewer was opened from)
@@ -61,8 +79,7 @@ async function openTabForCrawling(url, isInitial) {
   }
 
   // Opens in the background so the user stays on their current tab
-  const currentWindow = await chrome.windows.getCurrent()
-  const tab = await chrome.tabs.create({ url, active: false, windowId: currentWindow.id })
+  const tab = await chrome.tabs.create({ url, active: false, windowId: await getCrawlerWindowId() })
 
   crawlerTabs.add(tab.id)
   saveCrawlerTabs()

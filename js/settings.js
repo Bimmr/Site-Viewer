@@ -21,7 +21,9 @@ export const DEFAULT_SETTINGS = Object.freeze({
     // Comma separated, * matches anything, e.g. "/tag/*, *?page=*"
     excludePatterns: '',
     respectRobots: true,
-    useSitemap: true
+    useSitemap: true,
+    // Crawl All also reads the site's stylesheets for background images and fonts
+    crawlStylesheets: true
   }),
   combine: Object.freeze({
     enabled: false,

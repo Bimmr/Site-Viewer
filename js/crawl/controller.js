@@ -153,6 +153,7 @@ function getProgress(run) {
     total: run.crawled + run.failed + run.active.size,
     limitReached: run.limitReached,
     sitemapPages: run.sitemapPages,
+    stylesheets: run.stylesheets,
     skipped: {
       robots: skippedBy('robots'),
       depth: skippedBy('depth'),
@@ -176,13 +177,16 @@ export async function startCrawlAll() {
 
   const run = {
     abort: new AbortController(),
-    // URLs this run is crawling
+    // Page URLs this run is crawling
     active: new Set(),
+    // Stylesheet URLs this run is reading
+    activeStylesheets: new Set(),
     // URL -> reason this run won't crawl it
     skipped: new Map(),
     crawled: 0,
     failed: 0,
     sitemapPages: 0,
+    stylesheets: 0,
     limitReached: false,
     preparing: true,
     stopped: false,
@@ -307,6 +311,35 @@ function schedulePump(run) {
 }
 
 /**
+ * Starts reading the site's stylesheets that haven't been read yet, for their background images and fonts
+ * They don't count towards the page limit
+ * @param {Object} run - Crawl All run
+ */
+function crawlStylesheets(run) {
+  if (!settings.crawl.crawlStylesheets) return
+
+  store.getAssets().forEach(asset => {
+    const url = asset.link
+    if (!asset.tags.isStyleSheet || !asset.tags.isLocal) return
+    if (asset.isCrawled || asset.isError || asset.isWarning || run.skipped.has(url) || isCrawlInProgress(url)) return
+    if (run.robotsRules && !isAllowedByRobots(run.robotsRules, url)) {
+      run.skipped.set(url, 'robots')
+      return
+    }
+
+    run.activeStylesheets.add(url)
+    crawlPage(url, { signal: run.abort.signal, quiet: true })
+      .then(() => run.stylesheets++)
+      // A missing stylesheet shows on the asset, it isn't a failed page
+      .catch(() => { })
+      .finally(() => {
+        run.activeStylesheets.delete(url)
+        schedulePump(run)
+      })
+  })
+}
+
+/**
  * Starts crawling every page that should be crawled, and finishes the run once nothing is left
  * @param {Object} run - Crawl All run
  */
@@ -345,10 +378,11 @@ function pump(run) {
       })
   }
 
+  crawlStylesheets(run)
   report(run)
 
   // Wait for crawls the user started too, they may find more pages
-  if (run.active.size === 0 && inProgress.size === 0)
+  if (run.active.size === 0 && run.activeStylesheets.size === 0 && inProgress.size === 0)
     finishRun(run)
 }
 

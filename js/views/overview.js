@@ -133,6 +133,7 @@ export function describeCrawlResult(progress) {
   const parts = [`${progress.crawled} page${progress.crawled === 1 ? '' : 's'} crawled`]
   if (progress.failed > 0) parts.push(`${progress.failed} failed`)
   if (progress.sitemapPages > 0) parts.push(`${progress.sitemapPages} found in sitemap`)
+  if (progress.stylesheets > 0) parts.push(`${progress.stylesheets} stylesheet${progress.stylesheets === 1 ? '' : 's'} read`)
 
   const { robots, depth, excluded } = progress.skipped
   if (robots > 0) parts.push(`${robots} blocked by robots.txt`)

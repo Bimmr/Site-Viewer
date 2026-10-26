@@ -265,13 +265,14 @@ export function renderFiles() {
  * @returns {string} HTML string
  */
 export function buildMediaPreviewHTML(file, expandable = true) {
-  if (isUrlImage(file.src)) {
+  // Where it was found says what it is, otherwise go by the extension
+  if (file.kind === 'image' || (!file.kind && isUrlImage(file.src))) {
     const altText = file.instances?.[0]?.alt || ''
     return `<img ${expandable ? 'class="expand-image"' : ''} src="${escapeAttr(file.src)}" alt="${escapeAttr(altText)}" title="${escapeAttr(altText)}">`
   }
-  if (isUrlVideo(file.src))
+  if (file.kind === 'video' || (!file.kind && isUrlVideo(file.src)))
     return `<video controls style="max-width: 100%; max-height: 100px;"><source src="${escapeAttr(file.src)}"></video>`
-  if (isUrlAudio(file.src))
+  if (file.kind === 'audio' || (!file.kind && isUrlAudio(file.src)))
     return `<audio controls style="width: 100%;"><source src="${escapeAttr(file.src)}"></audio>`
   return getFAIcon(file.src).icon
 }

@@ -1,4 +1,5 @@
 import { settings } from '../settings.js'
+import { isUrlHTMLFile } from '../lib/url.js'
 import { getLiveHtml } from './tabs.js'
 
 /**
@@ -271,6 +272,10 @@ export async function fetchPage(url, { isInitialPage = false, signal, onStart } 
     started = true
   }
   const crawlMode = settings.crawl.crawlMode
+
+  // Stylesheets and scripts have no JavaScript to run, and a tab would wrap them in its own HTML
+  if (!isUrlHTMLFile(url))
+    return { html: await fetchStatic(url, signal, start), method: 'fetch' }
 
   if (crawlMode === 'live')
     return { html: await fetchLive(url, { isInitialPage, signal, onStart: start }), method: 'live' }

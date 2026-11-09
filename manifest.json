@@ -6,6 +6,7 @@
   "description": "Crawl/Map a website for Pages, Links, Files and Media.",
 
   "manifest_version": 3,
+  "minimum_chrome_version": "116",
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
   },
@@ -14,7 +15,8 @@
     "open_in_tab": false
   },
   "background": {
-    "service_worker": "setup/background.js"
+    "service_worker": "setup/background.js",
+    "type": "module"
   },
   "permissions": [
     "activeTab",

@@ -1,0 +1,105 @@
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { RequestScheduler, shouldUseLiveCrawling, isAbortError, getRedirectTarget, fetchPage } from '../../js/crawl/network.js'
+import { settings } from '../../js/settings.js'
+
+describe('getRedirectTarget', () => {
+  it('ignores trailing slashes and hashes', () => {
+    expect(getRedirectTarget('https://example.com/a', 'https://example.com/a/')).toBeNull()
+    expect(getRedirectTarget('https://example.com/a#top', 'https://example.com/a')).toBeNull()
+    expect(getRedirectTarget('https://example.com/a', undefined)).toBeNull()
+  })
+
+  it('returns where a URL redirected to', () => {
+    expect(getRedirectTarget('https://example.com/old', 'https://example.com/new')).toBe('https://example.com/new')
+    expect(getRedirectTarget('http://example.com/', 'https://example.com/')).toBe('https://example.com/')
+  })
+})
+
+describe('fetchPage', () => {
+  const { crawlMode, rateLimitMs } = settings.crawl
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    Object.assign(settings.crawl, { crawlMode, rateLimitMs })
+  })
+
+  it('reports the URL the page came from after redirects', async () => {
+    Object.assign(settings.crawl, { crawlMode: 'fetch', rateLimitMs: 0 })
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      url: 'https://example.com/new',
+      text: async () => '<title>New</title>'
+    })))
+
+    await expect(fetchPage('https://example.com/old')).resolves.toEqual({
+      html: '<title>New</title>',
+      finalUrl: 'https://example.com/new',
+      method: 'fetch'
+    })
+  })
+})
+
+const deferred = () => {
+  let resolve
+  const promise = new Promise(r => resolve = r)
+  return { promise, resolve }
+}
+
+describe('RequestScheduler', () => {
+  it('limits concurrent tasks per lane', async () => {
+    const scheduler = new RequestScheduler({ tab: () => 2, fetch: () => 1 }, () => 0)
+    let active = 0
+    let maxActive = 0
+    const task = async () => {
+      active++
+      maxActive = Math.max(maxActive, active)
+      await new Promise(r => setTimeout(r, 10))
+      active--
+    }
+
+    await Promise.all(Array.from({ length: 6 }, () => scheduler.run('tab', task)))
+    expect(maxActive).toBe(2)
+  })
+
+  it('waits between starting tasks', async () => {
+    const scheduler = new RequestScheduler({ fetch: () => 10 }, () => 30)
+    const starts = []
+    await Promise.all(Array.from({ length: 3 }, () => scheduler.run('fetch', async () => starts.push(Date.now()))))
+
+    expect(starts[1] - starts[0]).toBeGreaterThanOrEqual(25)
+    expect(starts[2] - starts[1]).toBeGreaterThanOrEqual(25)
+  })
+
+  it('removes queued tasks when aborted', async () => {
+    const scheduler = new RequestScheduler({ tab: () => 1 }, () => 0)
+    const blocker = deferred()
+    const first = scheduler.run('tab', () => blocker.promise)
+
+    const controller = new AbortController()
+    let ran = false
+    const second = scheduler.run('tab', async () => ran = true, controller.signal)
+    controller.abort()
+    blocker.resolve()
+
+    await first
+    await expect(second).rejects.toSatisfy(isAbortError)
+    expect(ran).toBe(false)
+  })
+
+  it('passes results and errors through', async () => {
+    const scheduler = new RequestScheduler({ fetch: () => 1 }, () => 0)
+    await expect(scheduler.run('fetch', async () => 'ok')).resolves.toBe('ok')
+    await expect(scheduler.run('fetch', async () => { throw new Error('nope') })).rejects.toThrow('nope')
+  })
+})
+
+describe('shouldUseLiveCrawling', () => {
+  it('flags client-side rendered pages', () => {
+    expect(shouldUseLiveCrawling('<body><div id="root"></div><script src="/app.js"></script></body>')).toBe(true)
+  })
+
+  it('leaves static pages alone', () => {
+    const text = 'Plenty of server rendered content. '.repeat(10)
+    expect(shouldUseLiveCrawling(`<body><h1>Hello</h1><p>${text}</p></body>`)).toBe(false)
+  })
+})

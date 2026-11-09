@@ -16,7 +16,7 @@ const MAX_NOTIFICATIONS = 5
  * @param {boolean} skipAnimation - Skip the slide-in animation (useful when replacing notifications)
  * @returns {string} - The notification ID
  */
-function showNotification(message, type = 'info', duration = 2000, id = null, insertAtIndex = null, skipAnimation = false) {
+export function showNotification(message, type = 'info', duration = 2000, id = null, insertAtIndex = null, skipAnimation = false) {
   // Generate ID if not provided
   if (!id) {
     id = `notif-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
@@ -107,7 +107,7 @@ function showNotification(message, type = 'info', duration = 2000, id = null, in
  * @param {string} id - The notification ID to dismiss
  * @param {boolean} skipAnimation - Skip the slide-out animation (useful when replacing notifications)
  */
-function dismissNotification(id, skipAnimation = false) {
+export function dismissNotification(id, skipAnimation = false) {
   const notification = document.querySelector(`[data-notification-id="${CSS.escape(id)}"]`)
   if (notification && notification.parentElement) {
     if (skipAnimation) {
@@ -145,7 +145,7 @@ function dismissNotification(id, skipAnimation = false) {
  * @param {number} duration - How long to show the notification in ms (default: 2000)
  * @returns {string} - The new notification ID
  */
-function replaceNotification(oldId, message, type = 'info', duration = 2000) {
+export function replaceNotification(oldId, message, type = 'info', duration = 2000) {
   // Get the index of the old notification
   const notificationIndex = getNotificationIndex(oldId)
   
@@ -172,7 +172,7 @@ function getNotificationIndex(id) {
 /**
  * Dismiss all notifications
  */
-function dismissAllNotifications() {
+export function dismissAllNotifications() {
   const container = document.querySelector('.notification-container')
   if (container) {
     container.remove()
@@ -185,7 +185,7 @@ function dismissAllNotifications() {
  * @param {string} message - New message (optional)
  * @param {string} type - New type (optional)
  */
-function updateNotification(id, message = null, type = null) {
+export function updateNotification(id, message = null, type = null) {
   const notification = document.querySelector(`[data-notification-id="${CSS.escape(id)}"]`)
   if (notification) {
     if (message !== null) {
